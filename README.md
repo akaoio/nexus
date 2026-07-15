@@ -55,7 +55,9 @@ Nexus combines what each got right and refuses what each got wrong:
 
 ## Status
 
-**Design phase.** The full architectural plan — grounded in source-level research of Frappe, Strapi, Directus, NocoDB, Kysely, and SQLite's longevity practices — lives in [ARCHITECTURE.md](ARCHITECTURE.md) (currently in Vietnamese). No production code exists yet; per our TDD discipline, Phase 0 is writing the conformance test suites that *define* the Query AST, Model Schema, and Permission semantics.
+**Phase 0 — spec as red tests.** The full architectural plan — grounded in source-level research of Frappe, Strapi, Directus, NocoDB, Kysely, and SQLite's longevity practices — lives in [ARCHITECTURE.md](ARCHITECTURE.md) (currently in Vietnamese).
+
+Per our TDD discipline, the spec is written as executable conformance tests *before* any implementation. The [Query AST v1 conformance suite](test/conformance/ast/) is in: **83 numbered, immutable clauses** covering structure invariants, all 13 operator semantics (including SQL null semantics), dynamic variables, the JS predicate reference target, permission injection (with the never-widen security invariant), versioning, and seeded property-based laws (De Morgan, double negation, injection narrowing). Run `npm test` — all 83 are red by design, waiting for the implementation to earn them.
 
 ## Lineage
 

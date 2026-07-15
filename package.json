@@ -1,0 +1,16 @@
+{
+  "name": "nexus",
+  "version": "0.0.0",
+  "description": "A pure-web meta-framework: models as data; forms, queries, permissions and APIs generated from metadata.",
+  "license": "MIT",
+  "author": "akaoio",
+  "type": "module",
+  "homepage": "https://github.com/akaoio/nexus#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akaoio/nexus.git"
+  },
+  "scripts": {
+    "test": "node test.js"
+  }
+}
