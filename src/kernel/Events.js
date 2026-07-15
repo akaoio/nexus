@@ -1,0 +1,84 @@
+/**
+ * Universal event system that works in both browser and Node.js environments.
+ * Abstracts platform-specific event handling differences.
+ * Extracted from akao src/core/Events.js.
+ */
+
+import { NODE, BROWSER } from "./environment.js"
+
+// Load EventEmitter class once at module level (Node.js only)
+let EventEmitterClass = null
+if (NODE && !BROWSER) {
+    const { EventEmitter } = await import("events")
+    EventEmitterClass = EventEmitter
+}
+
+export class Events {
+    constructor(target = null) {
+        // Each instance gets its own independent event dispatcher
+        this.$target = target || null
+        if (BROWSER && !NODE) this.$events = new EventTarget()
+        else if (NODE && !BROWSER) this.$events = new EventEmitterClass()
+    }
+
+    /**
+     * Register an event listener with automatic unsubscribe capability.
+     * @param {string} event - The event name to listen for
+     * @param {Function} listener - Callback executed when the event fires
+     * @returns {Function} Unsubscribe function that removes the listener
+     */
+    on(event, listener, options) {
+        if (BROWSER && !NODE) this.$events.addEventListener(event, listener, options)
+        else if (NODE && !BROWSER) this.$events.on(event, listener)
+        const off = () => this.off(event, listener, options)
+        off.off = off
+        return off
+    }
+
+    once(event, listener, options) {
+        if (BROWSER && !NODE) {
+            const browserOptions = typeof options === "object" && options !== null ? options : {}
+            return this.on(event, listener, { ...browserOptions, once: true })
+        }
+
+        if (NODE && !BROWSER) this.$events.once(event, listener)
+        const off = () => this.off(event, listener)
+        off.off = off
+        return off
+    }
+
+    off(event, listener, options) {
+        if (BROWSER && !NODE) this.$events.removeEventListener(event, listener, options)
+        else if (NODE && !BROWSER) this.$events.removeListener(event, listener)
+    }
+
+    /**
+     * Emit an event to all registered listeners. The payload always arrives
+     * as { detail } on both platforms.
+     * @param {string} event - The event name to emit
+     * @param {*} detail - Event payload passed to listeners
+     */
+    emit(event, detail, options = {}) {
+        if (BROWSER && !NODE) {
+            const init = {
+                detail,
+                bubbles: options?.bubbles,
+                composed: options?.composed,
+                cancelable: options?.cancelable
+            }
+            const e = new CustomEvent(event, init)
+            this.$events.dispatchEvent(e)
+            if (this.$target) this.$target.dispatchEvent(new CustomEvent(event, init))
+            return e
+        }
+        else if (NODE && !BROWSER) return this.$events.emit(event, { detail })
+    }
+}
+
+export default Events
+
+// Create or reuse global Events singleton for app-wide event bus
+globalThis.events = globalThis.events || new Events()
+
+// Export the global event instance for convenient access throughout the app
+export const events = globalThis.events

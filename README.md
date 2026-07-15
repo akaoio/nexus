@@ -56,6 +56,8 @@ Nexus combines what each got right and refuses what each got wrong:
 
 ## Status
 
+**Phase 1 underway — kernel extraction from akao begun; 215/215 clauses green.** The isomorphic kernel core is in: environment detection, `Events` (one bus, both platforms), `States`/`Context` (proxy-based reactive state, decoupled from akao's app concerns), `Router` (pure pattern matching, no global reads), and `Thread`/`Threads` (real Web Worker / worker_threads protocol with manager relay, pinned by tests that run actual Node workers). Browser-side kernel modules (UI engine, OPFS/IDB, SQL worker) and the CLI skeleton come next.
+
 **Phase 0 complete — spec triad implemented, 168/168 green.** The full architectural plan — grounded in source-level research of Frappe, Strapi, Directus, NocoDB, Kysely, and SQLite's longevity practices — lives in [ARCHITECTURE.md](ARCHITECTURE.md) (currently in Vietnamese).
 
 Per our TDD discipline, the spec was written as executable conformance tests *before* any implementation — **168 numbered, immutable clauses** (`npm test`), every one earned green without a single test edited: Query AST v1 ([src/ast/AST.js](src/ast/AST.js), 83), Model Schema v1 ([src/model/Model.js](src/model/Model.js), 54), Permission v1 ([src/permission/Permission.js](src/permission/Permission.js), 31 — composing the other two: its filters are AST documents validated and resolved by the AST module itself):

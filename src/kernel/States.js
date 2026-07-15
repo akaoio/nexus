@@ -1,0 +1,55 @@
+/**
+ * State management system with reactive updates via ES6 Proxy.
+ * Tracks state changes and notifies subscribers; supports nested property
+ * watching and multiple subscription types.
+ * Extracted from akao src/core/States.js (submodules copied verbatim).
+ */
+
+import { same } from "./States/same.js"
+import { notify } from "./States/notify.js"
+import { has } from "./States/has.js"
+import { get } from "./States/get.js"
+import { set } from "./States/set.js"
+import { del } from "./States/del.js"
+import { on } from "./States/on.js"
+import { off } from "./States/off.js"
+import { clear } from "./States/clear.js"
+
+export class States {
+    /**
+     * Initialize state manager with optional initial state.
+     * @param {Object} proxy - Initial state object (default: empty object)
+     */
+    constructor(proxy = {}) {
+        // Notifications as results of state changes
+        this.notifications = []
+        // Set of global subscribers notified on any state change
+        this.SET = new Set()
+        // Map of path-specific subscribers (key -> Set of subscribers)
+        this.MAP = new Map()
+        // Proxied state object that intercepts property assignments
+        this.proxy = new Proxy(proxy, {
+            set: (target, key, value, receiver) => {
+                const last = target[key]
+                if (!this.MAP.has(key)) this.MAP.set(key, new Set())
+                const result = Reflect.set(target, key, value, receiver)
+                // Only notify if value actually changed (deep equality check)
+                if (!this.same(last, value)) this.notifications.push({ key, value, last, target, receiver })
+                return result
+            }
+        })
+        this.states = this.proxy
+    }
+
+    same = same
+    notify = notify
+    has = has
+    get = get
+    set = set
+    del = del
+    on = on
+    off = off
+    clear = clear
+}
+
+export default States

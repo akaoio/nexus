@@ -33,6 +33,13 @@ import "./test/conformance/permission/rules.test.js"
 import "./test/conformance/permission/fields.test.js"
 import "./test/conformance/permission/sharing.test.js"
 
+// Kernel — extracted from akao (clauses KRN-EN/UT/EV/ST/RT/TH)
+import "./test/kernel/utils.test.js"
+import "./test/kernel/events.test.js"
+import "./test/kernel/states.test.js"
+import "./test/kernel/router.test.js"
+import "./test/kernel/threads.test.js"
+
 const results = await Test.run(process.argv[2])
 
 console.log(
