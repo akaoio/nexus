@@ -42,6 +42,9 @@ import "./test/data/compile.test.js"
 // Data Plane — Model→DDL compiler on a real engine (clauses DDL-*)
 import "./test/data/ddl.test.js"
 
+// Data Plane — Migration Engine on a real engine (clauses MIG-*)
+import "./test/data/migrate.test.js"
+
 // Kernel — extracted from akao (clauses KRN-EN/UT/EV/ST/RT/TH/UI)
 import "./test/kernel/utils.test.js"
 import "./test/kernel/events.test.js"
