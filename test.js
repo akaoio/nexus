@@ -39,6 +39,9 @@ import "./test/data/vendor.test.js"
 // Data Plane — AST→Kysely compiler vs the reference predicate (clauses CMP-*)
 import "./test/data/compile.test.js"
 
+// Data Plane — Model→DDL compiler on a real engine (clauses DDL-*)
+import "./test/data/ddl.test.js"
+
 // Kernel — extracted from akao (clauses KRN-EN/UT/EV/ST/RT/TH/UI)
 import "./test/kernel/utils.test.js"
 import "./test/kernel/events.test.js"
