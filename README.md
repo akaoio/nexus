@@ -23,9 +23,10 @@ Frappe is the most powerful meta-framework in its class — and nearly impossibl
 | **Field-level permissions** | ✅ permlevel 0–9 | ⚠️ | ✅ per-field grants | ⚠️ | ✅ permlevel + policies |
 | **Row-level permissions** | ✅ User Permissions | ⚠️ plugin | ✅ filter-rule policies | ⚠️ | ✅ rules written in the same query AST |
 | **Customize without forking** | ✅ Custom Field / Property Setter | ❌ | ⚠️ | ❌ | ✅ CustomField / PropertyOverride, survives app updates |
-| **Database choice** | ❌ MariaDB (Postgres second-class) | ✅ SQLite/PG/MySQL | ✅ SQLite/PG/MySQL/MSSQL… | ✅ | ✅ SQLite / libSQL / PostgreSQL / MariaDB — **tested as equals**, incl. SQLite WASM in-browser |
+| **Database choice** | ❌ MariaDB (Postgres second-class) | ✅ SQLite/PG/MySQL | ✅ SQLite/PG/MySQL/MSSQL… | ✅ | ✅ SQLite / Turso / PostgreSQL / MariaDB — **tested as equals**, incl. SQLite WASM in-browser |
 | **Schema changes in production** | ⚠️ hot-synced silently, no confirmation | ❌ **disabled by design** — edit in dev, redeploy ² | ✅ | ✅ | ✅ hybrid: additive = instant; structural = reviewed migration + dry-run + rollback |
 | **Installation** | ❌ bench + Redis ×3 + NGINX + Supervisor + wkhtmltopdf; WSL/Docker only on Windows | ✅ npx | ✅ npm/Docker | ✅ | ✅ one command, Node ≥18, self-served HTTPS — no NGINX, no Redis, no Supervisor |
+| **CLI** | ✅ bench — powerful but heavy, Linux-only | ✅ polished DX | ⚠️ | ⚠️ | ✅ `nexus` — Strapi-grade polish, bench-grade coverage, zero-dep, dry-run by default, `--json` everywhere |
 | **Runs 100% in the browser (offline)** | ❌ | ❌ | ❌ | ❌ | ✅ SQLite WASM + OPFS, same app schema as server mode |
 | **P2P sync / no central server required** | ❌ | ❌ | ❌ | ❌ | ✅ signed CRDT event log (ZEN); super-peers accelerate, never required |
 | **Identity** | password sessions | password/JWT | password/SSO | password | ✅ WebAuthn passkey → deterministic keypair; no passwords stored |
@@ -48,16 +49,16 @@ Nexus combines what each got right and refuses what each got wrong:
 - **Universal Query AST** — one recursive filter structure (infinite AND/OR nesting) that drives queries, permissions, validations, and the visual query builder. Frappe core's own filter UI is actually flat; Nexus goes past it.
 - **Meta-model** — entities defined in versioned YAML/JSON; forms, list views, APIs, and migrations derive from schema. Customize without forking.
 - **Deep permissions** — role/policy matrix, field-level levels, row-level rules written in the same AST as queries.
-- **Your database** — SQLite, libSQL, PostgreSQL, MySQL/MariaDB, tested as equals; plus SQLite WASM fully in the browser.
+- **Your database** — SQLite, [Turso](https://github.com/tursodatabase/turso) (the async-native Rust rewrite of SQLite — file-format compatible, so the exit path back to plain SQLite always stays open), PostgreSQL, MySQL/MariaDB, tested as equals; plus SQLite WASM fully in the browser.
 - **Dual runtime** — the same app schema runs on a single-process Node server *or* 100% locally in the browser (OPFS persistence, P2P sync over ZEN), with super-peers as accelerators, never as dependencies.
 - **Semantic layer** — schema-aware full-text + vector search with local-first embeddings. Nexus doesn't just record data; it understands it.
 - **Built to last** — zero-dependency kernel, frozen data formats, "never break userspace" compatibility policy, spec-as-conformance-tests. Lessons taken from SQLite, Linux, TeX, and Go.
 
 ## Status
 
-**Phase 0 — spec as red tests.** The full architectural plan — grounded in source-level research of Frappe, Strapi, Directus, NocoDB, Kysely, and SQLite's longevity practices — lives in [ARCHITECTURE.md](ARCHITECTURE.md) (currently in Vietnamese).
+**Phase 0 complete; implementation begun.** The full architectural plan — grounded in source-level research of Frappe, Strapi, Directus, NocoDB, Kysely, and SQLite's longevity practices — lives in [ARCHITECTURE.md](ARCHITECTURE.md) (currently in Vietnamese).
 
-Per our TDD discipline, the spec is written as executable conformance tests *before* any implementation — **168 numbered, immutable clauses**, all red by design (`npm test`), waiting for the implementation to earn them:
+Per our TDD discipline, the spec is written as executable conformance tests *before* any implementation — **168 numbered, immutable clauses** (`npm test`). The Query AST v1 implementation ([src/ast/AST.js](src/ast/AST.js)) has earned all 83 of its clauses green without a single test edited; Model Schema and Permission remain red, awaiting theirs:
 
 - **[Query AST v1](test/conformance/ast/)** (83): structure invariants incl. unlimited logic nesting, all 13 operator semantics (incl. SQL null semantics), dynamic variables with an injected clock, the JS predicate reference target, permission injection with the never-widen security invariant, versioning, and seeded property-based laws (De Morgan, double negation, injection narrowing).
 - **[Model Schema v1](test/conformance/model/)** (54): entity envelope, the closed 10-type field set with per-type rules, additive-vs-structural change classification (the hybrid Migration Engine's safety boundary), customize-without-forking merge semantics with the update-safety property, and versioning.
