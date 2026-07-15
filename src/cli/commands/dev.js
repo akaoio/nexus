@@ -14,12 +14,12 @@
 import { createServer } from "http"
 import { existsSync, readFileSync, statSync, mkdirSync } from "fs"
 import { join, resolve, extname } from "path"
-import { DatabaseSync } from "node:sqlite"
 import { loadInstance } from "../instance.js"
 import { DataPlane } from "../../data/DataPlane.js"
 import { createApi } from "../../http/api.js"
 import { createCompiler } from "../../data/kysely.js"
 import { tableDDL } from "../../data/ddl.js"
+import { createExecutor } from "../../data/adapters.js"
 import { ACTIONS } from "../../permission/Permission.js"
 
 const MIME = {
@@ -79,19 +79,27 @@ export async function dev(args, flags, out) {
     // Load and validate the instance — broken schemas are refused, not served
     const { config, schemas } = loadInstance(root)
 
-    // Data Plane over a persistent local database, tables ensured from schemas
+    // Data Plane over the configured engine (nexus.config.json → database),
+    // default: the built-in sqlite engine persisting to .nexus/data.db
     let api = null
+    let engine = "sqlite"
     if (schemas.length) {
-        mkdirSync(join(root, ".nexus"), { recursive: true })
-        const db = new DatabaseSync(join(root, ".nexus", "data.db"))
-        const kysely = createCompiler("sqlite")
-        for (const schema of schemas)
-            for (const builder of tableDDL(kysely, schema, { ifNotExists: true })) db.exec(builder.compile().sql)
-        const executor = {
-            run: (sql, params = []) => void db.prepare(sql).run(...params),
-            all: (sql, params = []) => db.prepare(sql).all(...params)
+        const database = config.database ?? {}
+        engine = database.engine ?? "sqlite"
+        const connection = { ...database, root }
+        delete connection.engine
+        if (engine === "sqlite" && !connection.path) {
+            mkdirSync(join(root, ".nexus"), { recursive: true })
+            connection.path = join(root, ".nexus", "data.db")
         }
-        const plane = new DataPlane({ executor, schemas, dialect: "sqlite" })
+        const executor = await createExecutor(engine, connection)
+        const kysely = createCompiler(executor.dialect)
+        for (const schema of schemas)
+            for (const builder of tableDDL(kysely, schema, { dialect: executor.dialect, ifNotExists: true })) {
+                const compiled = builder.compile()
+                await executor.run(compiled.sql, [...compiled.parameters])
+            }
+        const plane = new DataPlane({ executor, schemas, dialect: executor.dialect })
         const policies = devPolicies(schemas)
         api = createApi({
             plane,
@@ -127,7 +135,7 @@ export async function dev(args, flags, out) {
     if (schemas.length) {
         out.print(`  ${out.dim("api")}   ${url}/api/v1/${schemas[0].name} ${out.dim(`(+ ${schemas.length - 1} more)`)}`)
         out.print(`  ${out.dim("auth")}  ${out.yellow("DEV identity")} — wide-open policies, user via x-nexus-user header`)
-        out.print(`  ${out.dim("data")}  .nexus/data.db`)
+        out.print(`  ${out.dim("data")}  engine ${engine}${engine === "sqlite" ? " · .nexus/data.db" : ""}`)
     }
     out.emit({ ok: true, url, port: actual, entities: schemas.map((s) => s.name) })
     return server

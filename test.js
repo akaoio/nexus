@@ -48,6 +48,9 @@ import "./test/data/migrate.test.js"
 // Data Plane — CRUD API full-stack on a real engine (clauses DPL-*)
 import "./test/data/dataplane.test.js"
 
+// Data Plane — engine adapters behind the executor contract (clauses ADP-*)
+import "./test/data/adapters.test.js"
+
 // Kernel — extracted from akao (clauses KRN-EN/UT/EV/ST/RT/TH/UI)
 import "./test/kernel/utils.test.js"
 import "./test/kernel/events.test.js"
