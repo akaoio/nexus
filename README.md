@@ -56,9 +56,9 @@ Nexus combines what each got right and refuses what each got wrong:
 
 ## Status
 
-**Phase 0 complete; implementation begun.** The full architectural plan — grounded in source-level research of Frappe, Strapi, Directus, NocoDB, Kysely, and SQLite's longevity practices — lives in [ARCHITECTURE.md](ARCHITECTURE.md) (currently in Vietnamese).
+**Phase 0 complete — spec triad implemented, 168/168 green.** The full architectural plan — grounded in source-level research of Frappe, Strapi, Directus, NocoDB, Kysely, and SQLite's longevity practices — lives in [ARCHITECTURE.md](ARCHITECTURE.md) (currently in Vietnamese).
 
-Per our TDD discipline, the spec is written as executable conformance tests *before* any implementation — **168 numbered, immutable clauses** (`npm test`). Query AST v1 ([src/ast/AST.js](src/ast/AST.js), 83/83) and Model Schema v1 ([src/model/Model.js](src/model/Model.js), 54/54) have earned their clauses green without a single test edited; Permission remains red, awaiting its implementation:
+Per our TDD discipline, the spec was written as executable conformance tests *before* any implementation — **168 numbered, immutable clauses** (`npm test`), every one earned green without a single test edited: Query AST v1 ([src/ast/AST.js](src/ast/AST.js), 83), Model Schema v1 ([src/model/Model.js](src/model/Model.js), 54), Permission v1 ([src/permission/Permission.js](src/permission/Permission.js), 31 — composing the other two: its filters are AST documents validated and resolved by the AST module itself):
 
 - **[Query AST v1](test/conformance/ast/)** (83): structure invariants incl. unlimited logic nesting, all 13 operator semantics (incl. SQL null semantics), dynamic variables with an injected clock, the JS predicate reference target, permission injection with the never-widen security invariant, versioning, and seeded property-based laws (De Morgan, double negation, injection narrowing).
 - **[Model Schema v1](test/conformance/model/)** (54): entity envelope, the closed 10-type field set with per-type rules, additive-vs-structural change classification (the hybrid Migration Engine's safety boundary), customize-without-forking merge semantics with the update-safety property, and versioning.
