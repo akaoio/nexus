@@ -67,7 +67,9 @@ nexus test                                # validate every schema — CI-ready e
 nexus dev                                 # serve it (self-contained http, no NGINX/Redis/Supervisor)
 ```
 
-Its 13 CLI-* clauses spawn the real binary and pin exit codes, JSON shapes, and the dev server end-to-end (including path-traversal protection). Storage modules (FS/OPFS/IDB, SQL worker) come next.
+Its 13 CLI-* clauses spawn the real binary and pin exit codes, JSON shapes, and the dev server end-to-end (including path-traversal protection).
+
+**Storage is in**: the isomorphic `FS` (Node fs / browser OPFS behind one 10-method driver contract, with a pluggable **format registry** — the kernel ships JSON only; YAML/CSV register app-side — and pluggable miss-fallbacks where akao hard-wired its torrent leech), `OPFS` and `IDB` verbatim, and the `SQL` facade + WASM worker (serialized dispatch pinned in Node against a scripted worker; real SQLite execution awaits the Phase 2 vendored build with FTS5 + sqlite-vec). Remaining in Phase 1: HMR.
 
 **Phase 0 complete — spec triad implemented, 168/168 green.** The full architectural plan — grounded in source-level research of Frappe, Strapi, Directus, NocoDB, Kysely, and SQLite's longevity practices — lives in [ARCHITECTURE.md](ARCHITECTURE.md) (currently in Vietnamese).
 

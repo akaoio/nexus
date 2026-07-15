@@ -6,6 +6,7 @@
  */
 
 export { NODE, BROWSER, WIN, DEV, detectEnvironment } from "./environment.js"
+export { sha256 } from "./Utils/sha256.js"
 
 /** Deep clone plain data. Functions are stripped; circular references are preserved. */
 export function clone(data, seen = new WeakMap()) {
