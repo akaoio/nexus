@@ -103,6 +103,8 @@ Spec của Nexus **là** bộ conformance test, không phải văn bản chết.
 
 **Quy tắc phụ thuộc**: tầng trên chỉ gọi xuống tầng dưới, qua public API của tầng đó. Không tầng nào với ngang hoặc xuyên tầng. App (L4) **chỉ** thấy L2 + L3 public API — không bao giờ thấy Kysely, dialect, hay nội bộ kernel. Đây là ranh giới giúp N3 khả thi: nội bộ đổi tự do, hợp đồng không đổi.
 
+**Một cơ chế cho một việc (hệ quả của N5)**: kernel có đúng **một** hệ phản ứng — `States` (reactive theo key, per-component hoặc global qua `Context`) + `Events` (pub/sub). Không có hệ phản ứng thứ hai (signals tự chế, observable tự chế…) — bài học rút từ chính akao: `signals.js` được thêm vào song song với States khiến 2/31 component rẽ khỏi pattern chuẩn, tạo drift "hai cách làm một việc". `signals.js` **không** được tách vào kernel Nexus. Ngoại lệ duy nhất trong tương lai: nếu TC39 Signals thành chuẩn và ship native trong engine — khi đó dùng chuẩn platform theo N1, không bao giờ dùng bản tự chế.
+
 ---
 
 ## 4. Data Plane — trái tim của Nexus
