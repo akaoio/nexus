@@ -5,6 +5,9 @@
   "license": "MIT",
   "author": "akaoio",
   "type": "module",
+  "bin": {
+    "nexus": "./bin/nexus.js"
+  },
   "homepage": "https://github.com/akaoio/nexus#readme",
   "repository": {
     "type": "git",

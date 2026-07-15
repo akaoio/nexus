@@ -41,6 +41,9 @@ import "./test/kernel/router.test.js"
 import "./test/kernel/threads.test.js"
 import "./test/kernel/ui.test.js"
 
+// CLI — spawned as a real process (clauses CLI-*)
+import "./test/cli/cli.test.js"
+
 const results = await Test.run(process.argv[2])
 
 console.log(

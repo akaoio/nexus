@@ -56,7 +56,18 @@ Nexus combines what each got right and refuses what each got wrong:
 
 ## Status
 
-**Phase 1 underway — kernel extraction from akao; 230 clauses, 0 red.** The isomorphic kernel core is in: environment detection, `Events` (one bus, both platforms), `States`/`Context` (proxy-based reactive state, decoupled from akao's app concerns), `Router` (pure pattern matching, no global reads), `Thread`/`Threads` (real Web Worker / worker_threads protocol with manager relay, pinned by tests that run actual Node workers), and the **UI engine** — `html()` (pure tagged-template → TemplateResult, fully pinned in Node), `render()`/`css()`/`Component` (browser-marked clauses await the browser runner). The kernel carries exactly **one reactivity system** (States + Events) by architectural rule. Storage modules (FS/OPFS/IDB, SQL worker) and the CLI skeleton come next.
+**Phase 1 underway — kernel extraction from akao; 230 clauses, 0 red.** The isomorphic kernel core is in: environment detection, `Events` (one bus, both platforms), `States`/`Context` (proxy-based reactive state, decoupled from akao's app concerns), `Router` (pure pattern matching, no global reads), `Thread`/`Threads` (real Web Worker / worker_threads protocol with manager relay, pinned by tests that run actual Node workers), and the **UI engine** — `html()` (pure tagged-template → TemplateResult, fully pinned in Node), `render()`/`css()`/`Component` (browser-marked clauses await the browser runner). The kernel carries exactly **one reactivity system** (States + Events) by architectural rule.
+
+The **`nexus` CLI skeleton** is alive — zero-dependency, bound by the §5.2 rules (thin shell over public APIs, `--json` everywhere as a versioned contract, plain output when piped, never overwrites existing data):
+
+```bash
+npx nexus create my-app --site "My App"   # scaffold an instance (validated via the public Model API)
+cd my-app
+nexus test                                # validate every schema — CI-ready exit codes
+nexus dev                                 # serve it (self-contained http, no NGINX/Redis/Supervisor)
+```
+
+Its 13 CLI-* clauses spawn the real binary and pin exit codes, JSON shapes, and the dev server end-to-end (including path-traversal protection). Storage modules (FS/OPFS/IDB, SQL worker) come next.
 
 **Phase 0 complete — spec triad implemented, 168/168 green.** The full architectural plan — grounded in source-level research of Frappe, Strapi, Directus, NocoDB, Kysely, and SQLite's longevity practices — lives in [ARCHITECTURE.md](ARCHITECTURE.md) (currently in Vietnamese).
 
