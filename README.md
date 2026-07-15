@@ -57,7 +57,11 @@ Nexus combines what each got right and refuses what each got wrong:
 
 **Phase 0 — spec as red tests.** The full architectural plan — grounded in source-level research of Frappe, Strapi, Directus, NocoDB, Kysely, and SQLite's longevity practices — lives in [ARCHITECTURE.md](ARCHITECTURE.md) (currently in Vietnamese).
 
-Per our TDD discipline, the spec is written as executable conformance tests *before* any implementation. The [Query AST v1 conformance suite](test/conformance/ast/) is in: **83 numbered, immutable clauses** covering structure invariants, all 13 operator semantics (including SQL null semantics), dynamic variables, the JS predicate reference target, permission injection (with the never-widen security invariant), versioning, and seeded property-based laws (De Morgan, double negation, injection narrowing). Run `npm test` — all 83 are red by design, waiting for the implementation to earn them.
+Per our TDD discipline, the spec is written as executable conformance tests *before* any implementation — **168 numbered, immutable clauses**, all red by design (`npm test`), waiting for the implementation to earn them:
+
+- **[Query AST v1](test/conformance/ast/)** (83): structure invariants incl. unlimited logic nesting, all 13 operator semantics (incl. SQL null semantics), dynamic variables with an injected clock, the JS predicate reference target, permission injection with the never-widen security invariant, versioning, and seeded property-based laws (De Morgan, double negation, injection narrowing).
+- **[Model Schema v1](test/conformance/model/)** (54): entity envelope, the closed 10-type field set with per-type rules, additive-vs-structural change classification (the hybrid Migration Engine's safety boundary), customize-without-forking merge semantics with the update-safety property, and versioning.
+- **[Permission v1](test/conformance/permission/)** (31): deny-by-default, the frozen 7-action lifecycle, additive policy union returning a fully-resolved AST filter, ifOwner, Frappe-faithful permlevel field access, and per-user/per-action document sharing.
 
 ## Lineage
 

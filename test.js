@@ -20,6 +20,19 @@ import "./test/conformance/ast/inject.test.js"
 import "./test/conformance/ast/version.test.js"
 import "./test/conformance/ast/property.test.js"
 
+// Conformance — Model Schema v1 (clauses MS-S/T/D/C/N)
+import "./test/conformance/model/structure.test.js"
+import "./test/conformance/model/types.test.js"
+import "./test/conformance/model/diff.test.js"
+import "./test/conformance/model/customize.test.js"
+import "./test/conformance/model/version.test.js"
+
+// Conformance — Permission v1 (clauses PERM-A/R/F/SH)
+import "./test/conformance/permission/resolve.test.js"
+import "./test/conformance/permission/rules.test.js"
+import "./test/conformance/permission/fields.test.js"
+import "./test/conformance/permission/sharing.test.js"
+
 const results = await Test.run(process.argv[2])
 
 console.log(
