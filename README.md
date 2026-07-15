@@ -12,6 +12,37 @@ Like Frappe, but: installs in one command, runs natively on every OS, has zero r
 
 Frappe is the most powerful meta-framework in its class — and nearly impossible to install (Gunicorn + 3 Redis instances + MariaDB-specific + NGINX + Supervisor + patched wkhtmltopdf, no native Windows). Strapi forbids schema editing in production and broke its entire plugin ecosystem between major versions. Directus left open source. Nobody ships local-first.
 
+### Nexus vs. the giants
+
+| | **Frappe** | **Strapi** | **Directus** | **NocoDB** | **Nexus** † |
+|---|---|---|---|---|---|
+| **Meta-model** (models as data) | ✅ DocType (JSON) | ✅ Content-Types | ✅ Collections | ⚠️ table-centric | ✅ Entity (versioned YAML/JSON) |
+| **Visual query builder depth** | ⚠️ flat list + one optional OR level ¹ | ❌ none | ✅ recursive `_and`/`_or` | ⚠️ capped at 5 nesting levels | ✅ unlimited recursive AND/OR/NOT |
+| **One AST for query + permission + validation** | ❌ separate systems | ❌ | ✅ (validated the pattern) | ❌ | ✅ + compiled to SQL, P2P policy VM, and JS predicate |
+| **Form builder** | ✅ drag-and-drop (v15) | ⚠️ basic Content-Type Builder | ⚠️ interfaces, no layout designer | ❌ | ✅ drag-and-drop → schema, no codegen |
+| **Field-level permissions** | ✅ permlevel 0–9 | ⚠️ | ✅ per-field grants | ⚠️ | ✅ permlevel + policies |
+| **Row-level permissions** | ✅ User Permissions | ⚠️ plugin | ✅ filter-rule policies | ⚠️ | ✅ rules written in the same query AST |
+| **Customize without forking** | ✅ Custom Field / Property Setter | ❌ | ⚠️ | ❌ | ✅ CustomField / PropertyOverride, survives app updates |
+| **Database choice** | ❌ MariaDB (Postgres second-class) | ✅ SQLite/PG/MySQL | ✅ SQLite/PG/MySQL/MSSQL… | ✅ | ✅ SQLite / libSQL / PostgreSQL / MariaDB — **tested as equals**, incl. SQLite WASM in-browser |
+| **Schema changes in production** | ⚠️ hot-synced silently, no confirmation | ❌ **disabled by design** — edit in dev, redeploy ² | ✅ | ✅ | ✅ hybrid: additive = instant; structural = reviewed migration + dry-run + rollback |
+| **Installation** | ❌ bench + Redis ×3 + NGINX + Supervisor + wkhtmltopdf; WSL/Docker only on Windows | ✅ npx | ✅ npm/Docker | ✅ | ✅ one command, Node ≥18, self-served HTTPS — no NGINX, no Redis, no Supervisor |
+| **Runs 100% in the browser (offline)** | ❌ | ❌ | ❌ | ❌ | ✅ SQLite WASM + OPFS, same app schema as server mode |
+| **P2P sync / no central server required** | ❌ | ❌ | ❌ | ❌ | ✅ signed CRDT event log (ZEN); super-peers accelerate, never required |
+| **Identity** | password sessions | password/JWT | password/SSO | password | ✅ WebAuthn passkey → deterministic keypair; no passwords stored |
+| **Semantic + full-text search built in** | ❌ | ❌ | ❌ | ⚠️ external glue (webhooks + n8n + OpenAI) ³ | ✅ schema-aware FTS + vector + RRF hybrid, **local-first embeddings** |
+| **Update safety for apps** | ⚠️ no public/private API boundary | ❌ v4→v5 broke the plugin ecosystem ⁴ | ⚠️ major-version migration pain | ⚠️ | ✅ enumerated public API, deprecation windows, behavior switches, core updates go through the same migration engine |
+| **i18n** | ⚠️ runtime | ⚠️ plugin | ⚠️ | ⚠️ | ✅ build-time static routes per locale (SEO-grade), translations in schema |
+| **Multi-tenancy** | ✅ bench sites | ❌ | ⚠️ | ⚠️ | ✅ sites with **isolated databases**, domain-mapped |
+| **Kernel dependencies** | Python stack | Node + Knex stack | Node + Knex stack | Node stack | ✅ **zero** external runtime deps (vendored Kysely behind the AST boundary) |
+| **License** | MIT | MIT (core) | ❌ BSL → MSCL (left open source) | AGPL | ✅ MIT, permanently |
+
+† The Nexus column describes the design contract in [ARCHITECTURE.md](ARCHITECTURE.md) — not shipped code yet. Every claim is backed by a conformance test before implementation (see Status).
+
+¹ Frappe core's list-view/report filters are a flat `[field, operator, value]` list ANDed together, plus a single optional `["or", …]` level. Arbitrary nesting exists only in the server-side Python API (`frappe.qb`) and in Frappe Insights, a separate product.
+² Strapi's Content-Type Builder is disabled in production ([strapi/strapi#4798](https://github.com/strapi/strapi/issues/4798)); `strapi import` deletes all existing data at the destination before restoring.
+³ Documented community pattern: NocoDB semantic search requires wiring webhooks through n8n to OpenAI and pgvector by hand.
+⁴ Strapi v5 removed `helper-plugin`, changed the response shape, and replaced `id` with `documentId` — most v4 plugins required manual rewrites ([official breaking-changes list](https://docs.strapi.io/cms/migration/v4-to-v5/breaking-changes)).
+
 Nexus combines what each got right and refuses what each got wrong:
 
 - **Universal Query AST** — one recursive filter structure (infinite AND/OR nesting) that drives queries, permissions, validations, and the visual query builder. Frappe core's own filter UI is actually flat; Nexus goes past it.
