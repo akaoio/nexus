@@ -36,6 +36,9 @@ import "./test/conformance/permission/sharing.test.js"
 // Data Plane — vendored Kysely boundary (clauses VND-*)
 import "./test/data/vendor.test.js"
 
+// Data Plane — AST→Kysely compiler vs the reference predicate (clauses CMP-*)
+import "./test/data/compile.test.js"
+
 // Kernel — extracted from akao (clauses KRN-EN/UT/EV/ST/RT/TH/UI)
 import "./test/kernel/utils.test.js"
 import "./test/kernel/events.test.js"
