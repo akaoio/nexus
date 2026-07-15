@@ -33,6 +33,9 @@ import "./test/conformance/permission/rules.test.js"
 import "./test/conformance/permission/fields.test.js"
 import "./test/conformance/permission/sharing.test.js"
 
+// Data Plane — vendored Kysely boundary (clauses VND-*)
+import "./test/data/vendor.test.js"
+
 // Kernel — extracted from akao (clauses KRN-EN/UT/EV/ST/RT/TH/UI)
 import "./test/kernel/utils.test.js"
 import "./test/kernel/events.test.js"
