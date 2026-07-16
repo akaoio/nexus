@@ -21,7 +21,7 @@ import { appliedMigrations, ensureLedger } from "../../data/migrate.js"
 import { restorableRow } from "../../model/Model.js"
 
 const BACKUP_VERSION = 1
-const quote = (name) => `"${name}"`
+const quote = (name) => `"${String(name).replace(/"/g, '""')}"` // SEC: double embedded quotes
 
 async function backup(args, flags, out, root) {
     const { config, schemas, apps } = loadInstance(root)

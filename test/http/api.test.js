@@ -136,8 +136,9 @@ Test.describe("HTTP API — auto-generated from schemas (API-*)", () => {
         assert.truthy(html.includes("API Shop"))
         assert.truthy(html.includes("<code>task</code>"), "the entity list names each entity")
         assert.truthy(html.includes("/api/v1/:entity/query"), "the API summary names the query endpoint")
+        // SEC-01: the instance config (which may hold api_keys) is NOT served
         const config = await fetch((await ensureServer()) + "/nexus.config.json")
-        assert.equal(config.status, 200)
+        assert.equal(config.status, 404)
     })
 
     Test.it("API-08 the index page mounts nx-query-builder and the framework modules are served", async () => {

@@ -13,13 +13,14 @@
 
 import { createServer } from "http"
 import { existsSync, readFileSync, statSync } from "fs"
-import { join, resolve, extname } from "path"
+import { join, resolve, extname, sep } from "path"
 import { loadInstance } from "../instance.js"
 import { DataPlane } from "../../data/DataPlane.js"
 import { createApi } from "../../http/api.js"
 import { openInstanceData, ensureTables } from "../data.js"
 import { loadExtensions } from "../../app/Extensions.js"
 import { policiesFor } from "../../app/Policies.js"
+import { timingSafeStringEqual } from "../output.js"
 import { ACTIONS } from "../../permission/Permission.js"
 
 const MIME = {
@@ -222,7 +223,10 @@ export async function dev(args, flags, out) {
             context = (req) => {
                 const header = req.headers["authorization"] ?? ""
                 const presented = header.startsWith("Bearer ") ? header.slice(7) : req.headers["x-nexus-key"]
-                const entry = keys.find((k) => k.key && k.key === presented)
+                // Constant-time compare (SEC-06) — every key is checked so the
+                // timing does not depend on which one (if any) matches.
+                let entry = null
+                for (const k of keys) if (k.key && timingSafeStringEqual(k.key, presented ?? "")) entry = k
                 if (!entry) throw new Error("E_AUTH: a valid API key is required")
                 const roles = entry.roles ?? []
                 return { user: entry.user, roles, policies: policiesFor(appPolicies, roles), shares: [] }
@@ -255,9 +259,19 @@ export async function dev(args, flags, out) {
             res.writeHead(200, { "content-type": MIME[extname(path)] ?? "application/octet-stream" })
             return res.end(readFileSync(path))
         }
-        // Static files — resolved path must stay inside the instance root
-        const path = resolve(root, "." + url.pathname)
-        if (!path.startsWith(root) || !existsSync(path) || !statSync(path).isFile()) {
+        // Static files — SECURITY (SEC-01..04): served ONLY from <root>/public/,
+        // never from the instance root. The root holds nexus.config.json (API
+        // keys), .nexus/data.db (the whole database) and backups — none of
+        // which may ever leave over HTTP. The public/ dir is the one place an
+        // instance opts into exposing assets; the startsWith guard keeps a
+        // traversal inside it.
+        const publicDir = join(root, "public")
+        const path = resolve(publicDir, "." + url.pathname)
+        if (path !== publicDir && !path.startsWith(publicDir + sep)) {
+            res.writeHead(404, { "content-type": "text/plain" })
+            return res.end("Not found")
+        }
+        if (!existsSync(path) || !statSync(path).isFile()) {
             res.writeHead(404, { "content-type": "text/plain" })
             return res.end("Not found")
         }

@@ -282,15 +282,30 @@ function compileOperator(op, sv) {
 const REGEX_META = /[.*+?^${}()|[\]\\]/g
 const escapeRegExp = (s) => s.replace(REGEX_META, "\\$&")
 
-/** LIKE → RegExp: % any run, _ one char, backslash escapes; anchored, ASCII case-insensitive. */
+/**
+ * LIKE → RegExp: % any run, _ one char, backslash escapes; anchored, ASCII
+ * case-insensitive. SECURITY (SEC-07): a run of consecutive % collapses to a
+ * single `[\s\S]*` so a pattern like "%%%%%…x" cannot produce nested
+ * quantifiers and catastrophic backtracking (ReDoS) on a long non-match.
+ */
 function likeToRegExp(pattern) {
     let out = ""
+    let lastWasStar = false
     for (let i = 0; i < pattern.length; i++) {
         const ch = pattern[i]
-        if (ch === "\\" && i + 1 < pattern.length) out += escapeRegExp(pattern[++i])
-        else if (ch === "%") out += "[\\s\\S]*"
-        else if (ch === "_") out += "[\\s\\S]"
-        else out += escapeRegExp(ch)
+        if (ch === "\\" && i + 1 < pattern.length) {
+            out += escapeRegExp(pattern[++i])
+            lastWasStar = false
+        } else if (ch === "%") {
+            if (!lastWasStar) out += "[\\s\\S]*"
+            lastWasStar = true
+        } else if (ch === "_") {
+            out += "[\\s\\S]"
+            lastWasStar = false
+        } else {
+            out += escapeRegExp(ch)
+            lastWasStar = false
+        }
     }
     return new RegExp(`^${out}$`, "i")
 }

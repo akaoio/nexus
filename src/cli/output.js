@@ -9,6 +9,20 @@
 
 export const JSON_VERSION = 1
 
+/**
+ * Constant-time string equality for secrets (API keys) — SEC-06. Compares in
+ * time independent of WHERE the first difference is, so an attacker cannot
+ * recover a key byte-by-byte via timing. A length mismatch returns false
+ * without leaking beyond length (acceptable for high-entropy random keys).
+ */
+export function timingSafeStringEqual(a, b) {
+    if (typeof a !== "string" || typeof b !== "string") return false
+    if (a.length !== b.length) return false
+    let diff = 0
+    for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+    return diff === 0
+}
+
 export function createOutput(flags = {}) {
     const json = flags.json === true
     const tty = !!process.stdout.isTTY && !json

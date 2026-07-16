@@ -46,6 +46,9 @@ const matchAll = { astVersion: 1, root: null }
 const idDoc = (id) => ({ astVersion: 1, root: { field: "id", operator: "eq", value: id } })
 
 export class DataPlane {
+    /** The hard ceiling on any list/search result set (SEC-05, DoS bound). */
+    static MAX_LIMIT = 1000
+
     /**
      * @param {Object} config
      * @param {{run: Function, all: Function}} config.executor - Engine executor
@@ -228,7 +231,10 @@ export class DataPlane {
             if (dir !== "asc" && dir !== "desc") throw err("E_ORDER", `direction "${dir}"`)
             query = query.orderBy(order.field, dir)
         }
-        if (options.limit !== undefined) query = query.limit(options.limit)
+        // SEC-05: a result set is ALWAYS bounded — an unbounded or absurd
+        // limit is clamped to MAX_LIMIT so no request can exhaust memory.
+        const requested = Number.isInteger(options.limit) && options.limit >= 0 ? options.limit : DataPlane.MAX_LIMIT
+        query = query.limit(Math.min(requested, DataPlane.MAX_LIMIT))
         if (options.offset !== undefined) query = query.offset(options.offset)
 
         const rows = await this.#all(query.compile())

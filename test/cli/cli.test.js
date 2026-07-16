@@ -148,9 +148,9 @@ Test.describe("CLI — nexus (CLI-*)", () => {
             assert.equal(index.status, 200)
             assert.truthy((await index.text()).includes("My Shop"))
 
+            // SEC-01: instance files (config with any secrets) are NOT served
             const config = await fetch(`${url}/nexus.config.json`)
-            assert.equal(config.status, 200)
-            assert.equal((await config.json()).site.name, "My Shop")
+            assert.equal(config.status, 404)
 
             const traversal = await fetch(`${url}/..%2f..%2fetc%2fpasswd`)
             assert.equal(traversal.status, 404)

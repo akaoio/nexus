@@ -40,7 +40,7 @@ import { tableDDL, columnType } from "./ddl.js"
 
 const err = (code, detail) => new Error(detail ? `${code}: ${detail}` : code)
 const clone = (x) => JSON.parse(JSON.stringify(x))
-const quote = (name) => `"${name}"`
+const quote = (name) => `"${String(name).replace(/"/g, '""')}"` // SEC: double embedded quotes
 const fieldMap = (schema) => new Map(schema.fields.map((f) => [f.name, f]))
 
 const METADATA_ONLY = new Set(["label", "default", "permlevel", "options"])
