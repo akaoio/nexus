@@ -72,6 +72,9 @@ import "./test/http/api.test.js"
 // Studio — nx-query-builder (clauses NXQ-*; DOM clauses run in the browser)
 import "./test/studio/query-builder.test.js"
 
+// Studio — nx-form-builder + nx-form (clauses NXF-*)
+import "./test/studio/form-builder.test.js"
+
 const results = await Test.run(process.argv[2])
 
 console.log(
