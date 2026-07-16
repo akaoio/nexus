@@ -9,6 +9,7 @@
 import { existsSync, readdirSync, readFileSync } from "fs"
 import { join } from "path"
 import { validate } from "../../model/Model.js"
+import * as Manifest from "../../app/Manifest.js"
 
 function listInstanceFiles(root) {
     const files = []
@@ -44,9 +45,8 @@ export async function test(args, flags, out) {
                 const result = validate(content)
                 results.push(result.valid ? { file, valid: true } : { file, valid: false, errors: result.errors })
             } else {
-                // Manifest spec lands in Phase 4 — today: must parse and declare a version.
-                const valid = Number.isInteger(content.manifestVersion)
-                results.push(valid ? { file, valid: true } : { file, valid: false, errors: [{ code: "E_MANIFEST_VERSION", path: "/manifestVersion" }] })
+                const result = Manifest.validate(content)
+                results.push(result.valid ? { file, valid: true } : { file, valid: false, errors: result.errors })
             }
         } catch (error) {
             results.push({ file, valid: false, errors: [{ code: "E_PARSE", path: "", message: error.message }] })

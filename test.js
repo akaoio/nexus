@@ -81,6 +81,12 @@ import "./test/studio/permission-manager.test.js"
 // Studio — nx-schema-designer (clauses NXS-*)
 import "./test/studio/schema-designer.test.js"
 
+// Studio — nx-list-view (clauses NXL-*)
+import "./test/studio/list-view.test.js"
+
+// App system — manifest format (clauses MF-*)
+import "./test/app/manifest.test.js"
+
 const results = await Test.run(process.argv[2])
 
 console.log(

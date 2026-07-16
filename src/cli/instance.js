@@ -8,12 +8,21 @@
 import { existsSync, readdirSync, readFileSync } from "fs"
 import { join } from "path"
 import { validate } from "../model/Model.js"
+import * as Manifest from "../app/Manifest.js"
 
 const err = (code, detail) => new Error(detail ? `${code}: ${detail}` : code)
 
+/** The running core version (the §8.4.2 gate compares app engines to this). */
+export const CORE_VERSION = JSON.parse(
+    readFileSync(new URL("../../package.json", import.meta.url), "utf8")
+).version
+
 /**
+ * Load an instance: config + per-app manifests (validated, engines-gated)
+ * + entity schemas. Broken schemas, invalid manifests and out-of-range apps
+ * are refused loudly — never served, never crashed-into later (§8.4.2).
  * @param {string} root - Instance directory (must contain nexus.config.json)
- * @returns {{config: Object, schemas: Array}} Validated Entity schemas
+ * @returns {{config: Object, schemas: Array, apps: Array}}
  */
 export function loadInstance(root) {
     const configPath = join(root, "nexus.config.json")
@@ -21,9 +30,23 @@ export function loadInstance(root) {
     const config = JSON.parse(readFileSync(configPath, "utf8"))
 
     const schemas = []
+    const apps = []
     const appsDir = join(root, "apps")
     if (existsSync(appsDir))
         for (const app of readdirSync(appsDir)) {
+            const manifestPath = join(appsDir, app, "manifest.json")
+            if (existsSync(manifestPath)) {
+                const manifest = JSON.parse(readFileSync(manifestPath, "utf8"))
+                const result = Manifest.validate(manifest)
+                if (!result.valid)
+                    throw err("E_INVALID", `apps/${app}/manifest.json: ${JSON.stringify(result.errors)}`)
+                if (!Manifest.compatible(manifest, CORE_VERSION))
+                    throw err(
+                        "E_ENGINE_RANGE",
+                        `app "${manifest.name}" requires nexus ${manifest.engines.nexus} — this core is ${CORE_VERSION}`
+                    )
+                apps.push({ dir: app, manifest })
+            }
             const modelsDir = join(appsDir, app, "models")
             if (!existsSync(modelsDir)) continue
             for (const entry of readdirSync(modelsDir)) {
@@ -37,5 +60,5 @@ export function loadInstance(root) {
                 schemas.push(schema)
             }
         }
-    return { config, schemas }
+    return { config, schemas, apps }
 }
