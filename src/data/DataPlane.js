@@ -52,13 +52,16 @@ export class DataPlane {
      * @param {string} [config.dialect] - sqlite|turso|postgres|mysql
      * @param {Function} [config.now] - Injected clock → ISO string
      */
-    constructor({ executor, schemas = [], dialect = "sqlite", now } = {}) {
+    constructor({ executor, schemas = [], dialect = "sqlite", now, hooks = null } = {}) {
         if (!executor) throw err("E_EXECUTOR", "an executor { run, all } is required")
         this.executor = executor
         this.dialect = dialect
         this.family = dialect === "turso" ? "sqlite" : dialect
         this.kysely = createCompiler(dialect)
         this.now = now ?? (() => new Date().toISOString())
+        // App hooks (Extensions): before-hooks may mutate their payload or
+        // throw to veto; after-hooks observe. null = no hooks.
+        this.hooks = hooks
         this.schemas = new Map()
         for (const schema of schemas) {
             const result = validateSchema(schema)
@@ -165,6 +168,11 @@ export class DataPlane {
     /** Create a row. options.id is the sync-fold seam (fixed rowIds on replay). */
     async create(entity, data, ctx = {}, options = {}) {
         const { schema, filter, fields } = this.#gate(entity, "create", ctx)
+        if (this.hooks) {
+            const payload = { data }
+            await this.hooks.run("before:create", entity, payload, ctx)
+            data = payload.data
+        }
         this.#validateData(schema, data, { partial: false, writable: fields })
 
         const stamp = this.now()
@@ -181,6 +189,7 @@ export class DataPlane {
 
         const values = Object.fromEntries(Object.entries(row).map(([k, v]) => [k, this.#toBinding(v)]))
         await this.#run(this.kysely.insertInto(entity).values(values).compile())
+        if (this.hooks) await this.hooks.run("after:create", entity, { row }, ctx)
         return row
     }
 
@@ -222,6 +231,11 @@ export class DataPlane {
     /** Patch a row. Pre-image gated by the injected WHERE, post-image by the predicate. */
     async update(entity, id, patch, ctx = {}) {
         const { schema, filter, fields } = this.#gate(entity, "write", ctx)
+        if (this.hooks) {
+            const payload = { id, patch }
+            await this.hooks.run("before:update", entity, payload, ctx)
+            patch = payload.patch
+        }
         this.#validateData(schema, patch, { partial: true, writable: fields })
 
         const where = AST.inject(idDoc(id), filter ?? matchAll)
@@ -236,6 +250,7 @@ export class DataPlane {
         const set = Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, this.#toBinding(v ?? null)]))
         set.updated_at = post.updated_at
         await this.#run(this.kysely.updateTable(entity).set(set).where("id", "=", id).compile())
+        if (this.hooks) await this.hooks.run("after:update", entity, { row: post }, ctx)
         return post
     }
 
@@ -246,7 +261,9 @@ export class DataPlane {
         const query = applyWhere(this.kysely.selectFrom(entity).select(["id"]), where, { dialect: this.dialect })
         const rows = await this.#all(query.compile())
         if (!rows.length) throw err("E_NOT_FOUND", `${entity}/${id}`)
+        if (this.hooks) await this.hooks.run("before:remove", entity, { id }, ctx)
         await this.#run(this.kysely.deleteFrom(entity).where("id", "=", id).compile())
+        if (this.hooks) await this.hooks.run("after:remove", entity, { id }, ctx)
         return true
     }
 }

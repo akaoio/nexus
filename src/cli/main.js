@@ -36,6 +36,20 @@ export function parseArgs(argv) {
     return { command: positional[0], args: positional.slice(1), flags }
 }
 
+async function resolveAppCommand(name) {
+    try {
+        const { existsSync } = await import("fs")
+        if (!existsSync("nexus.config.json")) return null
+        const { loadInstance } = await import("./instance.js")
+        const { loadExtensions } = await import("../app/Extensions.js")
+        const { apps } = loadInstance(process.cwd())
+        const extensions = await loadExtensions(process.cwd(), apps)
+        return extensions.commands.get(name) ?? null
+    } catch {
+        return null // a broken instance never masks the unknown-command error
+    }
+}
+
 function version(out) {
     const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"))
     out.print(`nexus v${pkg.version}`)
@@ -80,10 +94,15 @@ export async function main(argv) {
                 return await dev(args, flags, out)
             case "test":
                 return await test(args, flags, out)
-            default:
+            default: {
+                // App commands (§8.3 "commands"): inside an instance, unknown
+                // commands fall through to the apps' registered subcommands
+                const appCommand = await resolveAppCommand(command)
+                if (appCommand) return await appCommand.run({ args, flags, out, root: process.cwd() })
                 out.error(`Unknown command: ${command}`, { code: "E_USAGE" })
                 out.hint("Run `nexus help` for available commands")
                 process.exitCode = 2
+            }
         }
     } catch (error) {
         out.error(error?.message || String(error))

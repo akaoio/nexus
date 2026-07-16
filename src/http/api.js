@@ -99,7 +99,7 @@ function listOptions(searchParams) {
  * @param {string} [config.base] - URL prefix (default /api/v1)
  * @returns {(req, res) => Promise<boolean>} true when the request was handled
  */
-export function createApi({ plane, context, base = "/api/v1" }) {
+export function createApi({ plane, context, base = "/api/v1", endpoints = [] }) {
     return async function handle(req, res) {
         const url = new URL(req.url, "http://localhost")
         if (url.pathname !== base && !url.pathname.startsWith(base + "/")) return false
@@ -109,6 +109,15 @@ export function createApi({ plane, context, base = "/api/v1" }) {
             const ctx = context(req)
             const [entity, tail] = segments
             if (!entity) throw new Error("E_ENTITY: missing entity in path")
+
+            // App endpoints — the "_" namespace can never collide with an entity
+            if (entity === "_") {
+                const path = segments.slice(1).join("/")
+                const endpoint = endpoints.find((e) => e.method === req.method && e.path === path)
+                if (!endpoint) throw new Error(`E_NOT_FOUND: no endpoint ${req.method} /_/${path}`)
+                const body = req.method === "GET" || req.method === "DELETE" ? {} : await readBody(req)
+                return ok(res, await endpoint.handler({ req, url, body, ctx, plane })), true
+            }
 
             if (!tail) {
                 if (req.method === "GET") return ok(res, await plane.list(entity, listOptions(url.searchParams), ctx)), true

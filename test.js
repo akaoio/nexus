@@ -87,6 +87,9 @@ import "./test/studio/list-view.test.js"
 // App system — manifest format (clauses MF-*)
 import "./test/app/manifest.test.js"
 
+// App system — extension points (clauses EXT-*)
+import "./test/app/extensions.test.js"
+
 const results = await Test.run(process.argv[2])
 
 console.log(

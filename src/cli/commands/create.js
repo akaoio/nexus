@@ -63,6 +63,27 @@ export async function create(args, flags, out) {
             version: "0.1.0"
         },
         "apps/starter/models/task.json": STARTER_MODEL,
+        "apps/starter/hooks.js": `/**
+ * Starter extension points — hooks, an endpoint, a CLI command.
+ * See the Nexus App API: hooks may mutate/veto, endpoints mount under
+ * /api/v1/_/<path>, commands run as \`nexus <name>\`.
+ */
+export default ({ hook, endpoint, command }) => {
+    hook("task", "before:create", (payload) => {
+        if (typeof payload.data.title === "string") payload.data.title = payload.data.title.trim()
+    })
+
+    endpoint("GET", "stats", async ({ plane, ctx }) => {
+        const rows = await plane.list("task", {}, ctx)
+        return { total: rows.length, done: rows.filter((row) => row.done).length }
+    })
+
+    command("hello", {
+        description: "Say hello from the starter app",
+        run: ({ out }) => out.print("hello from starter")
+    })
+}
+`,
         "README.md": `# ${site}\n\nA [Nexus](https://github.com/akaoio/nexus) instance.\n\n- \`nexus dev\` — serve locally\n- \`nexus test\` — validate schemas\n`
     }
 

@@ -20,6 +20,7 @@ import { createApi } from "../../http/api.js"
 import { createCompiler } from "../../data/kysely.js"
 import { tableDDL } from "../../data/ddl.js"
 import { createExecutor } from "../../data/adapters.js"
+import { loadExtensions } from "../../app/Extensions.js"
 import { ACTIONS } from "../../permission/Permission.js"
 
 const MIME = {
@@ -195,7 +196,8 @@ export async function dev(args, flags, out) {
     }
 
     // Load and validate the instance — broken schemas are refused, not served
-    const { config, schemas } = loadInstance(root)
+    const { config, schemas, apps } = loadInstance(root)
+    const extensions = await loadExtensions(root, apps)
 
     // Data Plane over the configured engine (nexus.config.json → database),
     // default: the built-in sqlite engine persisting to .nexus/data.db
@@ -217,10 +219,11 @@ export async function dev(args, flags, out) {
                 const compiled = builder.compile()
                 await executor.run(compiled.sql, [...compiled.parameters])
             }
-        const plane = new DataPlane({ executor, schemas, dialect: executor.dialect })
+        const plane = new DataPlane({ executor, schemas, dialect: executor.dialect, hooks: extensions })
         const policies = devPolicies(schemas)
         api = createApi({
             plane,
+            endpoints: extensions.endpoints,
             context: (req) => ({ user: req.headers["x-nexus-user"] || "dev", roles: ["dev"], policies, shares: [] })
         })
     }
