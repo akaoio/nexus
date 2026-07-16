@@ -20,8 +20,10 @@ import { createApi } from "../../http/api.js"
 import { openInstanceData, ensureTables } from "../data.js"
 import { loadExtensions } from "../../app/Extensions.js"
 import { policiesFor } from "../../app/Policies.js"
+import { verifyChallenge, issueToken, verifyToken } from "../../app/auth.js"
 import { timingSafeStringEqual } from "../output.js"
 import { ACTIONS } from "../../permission/Permission.js"
+import { randomBytes } from "crypto"
 
 const MIME = {
     ".html": "text/html; charset=utf-8",
@@ -204,6 +206,9 @@ export async function dev(args, flags, out) {
     let api = null
     let engine = "sqlite"
     let authMode = "no entities"
+    // ZEN challenge–response state, shared with the request handler below.
+    const authState = { required: false, secret: null, rolesForPub: () => [] }
+    const challenges = new Map() // nonce → expiry (one-time, 60s)
     if (schemas.length) {
         const data = await openInstanceData(root, config)
         engine = data.engine
@@ -215,34 +220,89 @@ export async function dev(args, flags, out) {
         const { hashProvider } = await import("../../semantic/semantic.js")
         const embedder = schemas.some((s) => s.semantic) ? hashProvider() : null
         const plane = new DataPlane({ executor, schemas, dialect: executor.dialect, hooks: extensions, embedder })
-        // Auth (docs/authn-design.md): api_keys configured → key auth REQUIRED
-        // with app-policy role assignment; otherwise the loud DEV identity.
+        // Auth (docs/authn-design.md): ZEN session tokens and/or API keys →
+        // auth REQUIRED with app-policy role assignment; otherwise the loud
+        // DEV identity. Configuring either disables DEV — no half-modes.
         const keys = Array.isArray(config.api_keys) ? config.api_keys : []
+        const identities = Array.isArray(config.identities) ? config.identities : [] // [{ pub, roles }]
+        authState.required = keys.length > 0 || identities.length > 0
+        authState.secret = config.token_secret || randomBytes(32).toString("hex") // ephemeral if unset
+        authState.rolesForPub = (pub) => identities.find((i) => i.pub === pub)?.roles ?? []
         let context
-        if (keys.length) {
+        if (authState.required) {
             context = (req) => {
                 const header = req.headers["authorization"] ?? ""
-                const presented = header.startsWith("Bearer ") ? header.slice(7) : req.headers["x-nexus-key"]
-                // Constant-time compare (SEC-06) — every key is checked so the
-                // timing does not depend on which one (if any) matches.
+                const bearer = header.startsWith("Bearer ") ? header.slice(7) : null
+                // 1) a ZEN session token (issued by /_auth/verify)
+                if (bearer) {
+                    const claims = verifyToken(bearer, authState.secret)
+                    if (claims) return { user: claims.user, roles: claims.roles, policies: policiesFor(appPolicies, claims.roles), shares: [] }
+                }
+                // 2) a static API key (constant-time, SEC-06)
+                const presented = bearer ?? req.headers["x-nexus-key"]
                 let entry = null
                 for (const k of keys) if (k.key && timingSafeStringEqual(k.key, presented ?? "")) entry = k
-                if (!entry) throw new Error("E_AUTH: a valid API key is required")
-                const roles = entry.roles ?? []
-                return { user: entry.user, roles, policies: policiesFor(appPolicies, roles), shares: [] }
+                if (entry) {
+                    const roles = entry.roles ?? []
+                    return { user: entry.user, roles, policies: policiesFor(appPolicies, roles), shares: [] }
+                }
+                throw new Error("E_AUTH: a valid session token or API key is required")
             }
         } else {
             const policies = [...devPolicies(schemas), ...appPolicies]
             context = (req) => ({ user: req.headers["x-nexus-user"] || "dev", roles: ["dev"], policies, shares: [] })
         }
         api = createApi({ plane, endpoints: extensions.endpoints, context })
-        authMode = keys.length ? `${keys.length} API keys (E_AUTH without one)` : "DEV identity — wide-open policies, user via x-nexus-user header"
+        authMode = authState.required
+            ? `${[keys.length && `${keys.length} API keys`, identities.length && `${identities.length} ZEN identities`].filter(Boolean).join(" + ")} (E_AUTH without credentials)`
+            : "DEV identity — wide-open policies, user via x-nexus-user header"
     }
 
+    const json = (res, code, obj) => {
+        res.writeHead(code, { "content-type": "application/json; charset=utf-8" })
+        res.end(JSON.stringify(obj))
+    }
+    const readJson = (req) =>
+        new Promise((resolve) => {
+            let raw = ""
+            req.on("data", (c) => {
+                raw += c
+                if (raw.length > 65536) req.destroy()
+            })
+            req.on("end", () => {
+                try {
+                    resolve(JSON.parse(raw || "{}"))
+                } catch {
+                    resolve(null)
+                }
+            })
+        })
+
     const server = createServer(async (req, res) => {
+        const url = new URL(req.url, "http://localhost")
+
+        // ZEN auth handshake — issue a nonce, verify a signature, mint a token.
+        // Only live once a token secret exists (i.e. the instance has data).
+        if (authState.secret && url.pathname === "/api/v1/_auth/challenge" && req.method === "POST") {
+            const nonce = randomBytes(24).toString("base64url")
+            challenges.set(nonce, Date.now() + 60000)
+            return json(res, 200, { ok: true, data: { nonce } })
+        }
+        if (authState.secret && url.pathname === "/api/v1/_auth/verify" && req.method === "POST") {
+            const b = await readJson(req)
+            if (!b || typeof b.pub !== "string") return json(res, 400, { ok: false, error: { code: "E_REQUEST" } })
+            const expiry = challenges.get(b.nonce)
+            if (!expiry || expiry < Date.now()) return json(res, 401, { ok: false, error: { code: "E_CHALLENGE", message: "no live challenge" } })
+            challenges.delete(b.nonce) // one-time use
+            if (!(await verifyChallenge(b.pub, b.nonce, b.signature)))
+                return json(res, 401, { ok: false, error: { code: "E_AUTH", message: "signature does not prove the key" } })
+            const roles = authState.rolesForPub(b.pub)
+            const token = issueToken({ user: b.pub, roles }, authState.secret)
+            return json(res, 200, { ok: true, data: { token, roles } })
+        }
+
         if (api && (await api(req, res))) return
 
-        const url = new URL(req.url, "http://localhost")
         if (url.pathname === "/") {
             res.writeHead(200, { "content-type": MIME[".html"] })
             return res.end(indexPage(config, schemas))

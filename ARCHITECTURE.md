@@ -476,7 +476,7 @@ Những mục sau **không** nằm trong lõi vì phụ thuộc dịch vụ/hạ
 2. **Custom sqlite-wasm build** (FTS5 + sqlite-vec) + **live ANN** (pgvector/Turso native) — capability nâng cấp per engine sau matrix; baseline brute-force cosine + text score đã portable và pin trên engine thật, sau cùng một `search()` contract.
 3. **PEN graph gate** (cổng 3 của sync) + **ZEN graph/relay transport** — `onemit` là seam; cổng 4 đã re-check permission bất kể. Là tích hợp mạng, không đổi ngữ nghĩa fold.
 4. **Checkpoint/pruning + super-peer roles** (§5.1, §8 sync-design) — cần vai trò arbiter + phân phối snapshot.
-5. **ZEN keypair auth flow đầy đủ** (challenge-sign → HMAC token) — `context(req)` resolver là điểm cắm duy nhất; API key interim đã chạy.
+5. ✅ **ZEN keypair auth flow (challenge-sign → HMAC token) — ĐÃ HOÀN THÀNH** (`src/app/auth.js`, AUTH-05/06/07; docs/authn-design.md §5). Còn lại: WebAuthn PRF binding phía client + ZEN graph transport (tích hợp mạng/UI, không phải core).
 6. **NL→AST** (§4.6f) — tầng LLM đời sau, dựng trên Query AST + hybrid search đã có; ngoài core (N5).
 7. **Background jobs** (extension point `jobs`) + **client-side extension registries** (interfaces/displays/views/pages) — ride Threads / Studio integration.
 

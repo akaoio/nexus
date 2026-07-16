@@ -35,6 +35,12 @@ Vì vậy khi flow ZEN server-mode được implement, nó test được đầy 
 
 ## 5. Trạng thái triển khai
 
-- ✅ Interim API keys + role assignment + policies loading (kèm tài liệu này).
-- ✅ Chứng minh khả năng test key xác định từ seed (AUTH-04) — nền cho flow ZEN.
-- ⏳ ZEN challenge-sign flow + HMAC token: ship cùng tích hợp ZEN — ZEN đã vendored (`vendor/zen/`, secp256k1, pair/sign/verify/recover đã chạy trong test); seam đã sẵn (`context(req)` resolver của `createApi` là điểm cắm duy nhất, mọi flow mới chỉ thay resolver).
+- ✅ Interim API keys + role assignment + policies loading.
+- ✅ Chứng minh khả năng test key xác định từ seed (AUTH-04).
+- ✅ **ZEN challenge-sign flow + HMAC token — HOÀN THÀNH** (`src/app/auth.js`, AUTH-05/06/07):
+  - `POST /api/v1/_auth/challenge` → nonce (một lần, TTL 60s).
+  - `POST /api/v1/_auth/verify` `{ pub, nonce, signature }` → server `recover(sig)===pub` **và** message ký === nonce → phát token HMAC-SHA256 (ký bởi `token_secret` của site, mang `{user: pub, roles, exp}`, TTL 1h).
+  - Request sau: `Authorization: Bearer <token>` → `verifyToken` (HMAC constant-time + exp) → identity. Token tồn tại song song với API key (thử token trước, rồi key).
+  - Role assignment: `config.identities = [{ pub, roles }]` ánh xạ ZEN pub → roles; pub không map = đã xác thực nhưng roles rỗng (baseline policies). Bật `api_keys` **hoặc** `identities` là tắt DEV identity.
+  - Đã kiểm chứng e2e: replay nonce bị chặn (một lần), token forge (sai secret) → 401, identity chính là ZEN pub được chứng minh bằng mật mã.
+- ⏳ Còn lại (cần tích hợp mạng/UI, không phải core): WebAuthn PRF binding phía client (browser tạo credential → hash → seed), và ZEN graph transport. Seam `context(req)` + `authState` đã sẵn.
