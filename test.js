@@ -72,6 +72,9 @@ import "./test/cli/ops.test.js"
 // HTTP API — auto-generated from schemas, e2e over real HTTP (clauses API-*)
 import "./test/http/api.test.js"
 
+// Sync — event log → SQL projection (clauses SYNC-*)
+import "./test/sync/sync.test.js"
+
 // AuthN — API keys + role assignment (clauses AUTH-*)
 import "./test/http/auth.test.js"
 

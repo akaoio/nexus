@@ -1,0 +1,13 @@
+{
+    "name": "@akaoio/zen",
+    "version": "1.0.22",
+    "source": "github:akaoio/zen (first-party — N2: not an external dependency)",
+    "files": [
+        "zen.js",
+        "crypto.wasm",
+        "pen.wasm",
+        "LICENSE.md"
+    ],
+    "vendoredAt": "2026-07-16",
+    "note": "Bundled browser/Node artifact. Used for sync event signing (pair/sign/verify/recover, secp256k1) — pen.wasm ships as part of the bundle (the PEN policy gate itself is a deferred integration). Graph/relay transport is a later phase."
+}
