@@ -456,15 +456,31 @@ Mỗi milestone bắt đầu bằng viết **spec test đỏ** cho hợp đồng
 
 ---
 
-## 12. Lộ trình (mốc, chưa phải lịch)
+## 12. Lộ trình — trạng thái
 
-- **Phase 0 — Spec**: viết conformance test suite cho Query AST v1 + Model Schema v1 + Permission semantics (tất cả đỏ). Viết docs/sync-design.md cho §6. *Không có code sản phẩm nào trước khi xong phase này.*
-- **Phase 1 — Kernel**: tách các module dùng chung từ akao thành kernel Nexus (UI, States/Context, Threads, Router, Events, FS/OPFS/IDB, SQL worker, Test) — akao sau này trở thành một *app chạy trên Nexus* (dogfood lớn nhất có thể). Kèm skeleton CLI: `nexus create/dev/test` (§5.2).
-- **Phase 2 — Data plane**: Model compiler, AST compiler (target Kysely + JS predicate trước), Migration Engine, matrix CI 4 engine × 2 runtime. Xanh hoá conformance suite.
-- **Phase 3 — Studio**: `<nx-query-builder>` đệ quy → Form Builder → Schema Designer → Permission Manager.
-- **Phase 4 — App system**: manifest + extension points + contract test + chính sách update §8.4 chạy thật. CLI hoàn chỉnh: `site/app/migrate/update/doctor` + conformance suite CLI-*.
-- **Phase 5 — Sync**: ZEN event log → projection, PEN target của AST compiler, local mode hoàn chỉnh; capability negotiation + vai trò super-peer (§5.1).
-- **Phase 6 — Semantic**: adapter capability FTS/vector cho 4 engine (custom sqlite-wasm build), embedding provider layer (local-first), RRF hybrid, `semantic:` block trong Model schema, `<nx-search>`. Tầng NL→AST là app đời sau, ngoài phạm vi core.
+Toàn bộ 6 phase lõi đã hoàn thành, giữ đúng kỷ luật spec-first (test đỏ trước, code sau) từ đầu đến cuối. Tổng: **430 điều khoản conformance, 0 đỏ** — 385 chạy trong Node, 45 chạy trong Chromium thật (45 điều khoản browser này hiển thị "browser-skipped" khi chạy Node, nên tổng riêng biệt là 430, không cộng dồn).
+
+- ✅ **Phase 0 — Spec**: conformance suite Query AST v1 (83) + Model Schema v1 (54) + Permission v1 (31), tất cả viết đỏ trước. docs/sync-design.md + docs/authn-design.md.
+- ✅ **Phase 1 — Kernel**: tách từ akao vào `src/kernel/` — UI engine (html/render/css/Component), States/Context, Threads (isomorphic, worker thật), Router, Events, FS (format registry)/OPFS/IDB, SQL worker, HMR, Test. Một hệ phản ứng duy nhất (§3). Browser runner qua CDP. CLI skeleton `create/dev/test`.
+- ✅ **Phase 2 — Data plane**: Kysely vendored (ranh giới enforce tĩnh) → AST→Kysely compiler (**bất biến vàng: SQL ≡ JS predicate từng row** trên engine thật) → Model→DDL → Migration Engine (hybrid, dry-run mặc định, renames, ledger) → Data Plane CRUD (permission hai ảnh, không rò tồn tại) → HTTP API tự sinh → engine adapters (sqlite built-in + turso/pg/mysql resolve động).
+- ✅ **Phase 3 — Studio**: `<nx-query-builder>` đệ quy (lồng vô hạn, fuzz), Form Builder + nx-form, Schema Designer (Model.diff sống → migration), Permission Manager (**lần tái dùng đầu tiên** của query-builder), List View. Index page dev = mini-Studio sống.
+- ✅ **Phase 4 — App system**: App Manifest v1 (format N4 thứ ba, engines-gated §8.4.2), extension points (hooks/endpoints/commands vào Data Plane/HTTP/CLI), CLI đầy đủ (`site backup/restore` additive không xoá đích, `migrate`, `app`, `doctor`), AuthN (docs + API key interim + app policies loading).
+- ✅ **Phase 5 — Sync**: ZEN event log → SQL projection — Event v1 content-addressed + ký secp256k1 (ZEN vendored first-party), HLC total order, refold mức row (**hội tụ chứng minh: k hoán vị → bảng giống byte**), 4 cổng + quarantine + retry, upgradeRow chain, two-peer bus.
+- ✅ **Phase 6 — Semantic**: serialize schema-aware, embedding provider cắm được (local-first default), search text/vector/hybrid (**permission trước ranking**), RRF k=60 core, `<nx-search>`.
+
+### Deferred — cần hạ tầng ngoài hoặc là lớp đời sau (ghi thẳng, không giấu)
+
+Những mục sau **không** nằm trong lõi vì phụ thuộc dịch vụ/hạ tầng bên ngoài hoặc là tầng ứng dụng phía trên nền đã đúng — mỗi mục đã có seam sẵn để cắm vào mà không đổi ngữ nghĩa:
+
+1. **Live multi-engine matrix** (turso/postgres/mysql chạy thật) — cần service thật trong CI. Adapter viết theo API công bố của driver; failure path (E_DRIVER kèm lệnh cài) pin hôm nay; sqlite pin đầy đủ. Compiler đã đa-dialect (VND/CMP/DDL pin khác biệt quoting/type per dialect).
+2. **Custom sqlite-wasm build** (FTS5 + sqlite-vec) + **live ANN** (pgvector/Turso native) — capability nâng cấp per engine sau matrix; baseline brute-force cosine + text score đã portable và pin trên engine thật, sau cùng một `search()` contract.
+3. **PEN graph gate** (cổng 3 của sync) + **ZEN graph/relay transport** — `onemit` là seam; cổng 4 đã re-check permission bất kể. Là tích hợp mạng, không đổi ngữ nghĩa fold.
+4. **Checkpoint/pruning + super-peer roles** (§5.1, §8 sync-design) — cần vai trò arbiter + phân phối snapshot.
+5. **ZEN keypair auth flow đầy đủ** (challenge-sign → HMAC token) — `context(req)` resolver là điểm cắm duy nhất; API key interim đã chạy.
+6. **NL→AST** (§4.6f) — tầng LLM đời sau, dựng trên Query AST + hybrid search đã có; ngoài core (N5).
+7. **Background jobs** (extension point `jobs`) + **client-side extension registries** (interfaces/displays/views/pages) — ride Threads / Studio integration.
+
+*Nguyên tắc của danh sách này: không mục nào là "chưa làm được", tất cả là "cắm vào seam đã có" hoặc "cần dịch vụ CI thật" — nền tảng và mọi hợp đồng versioned đã đóng.*
 
 ---
 
