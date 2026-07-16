@@ -69,6 +69,9 @@ import "./test/cli/cli.test.js"
 // HTTP API — auto-generated from schemas, e2e over real HTTP (clauses API-*)
 import "./test/http/api.test.js"
 
+// Studio — nx-query-builder (clauses NXQ-*; DOM clauses run in the browser)
+import "./test/studio/query-builder.test.js"
+
 const results = await Test.run(process.argv[2])
 
 console.log(
