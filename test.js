@@ -78,6 +78,9 @@ import "./test/studio/form-builder.test.js"
 // Studio — nx-permission-manager (clauses NXP-*)
 import "./test/studio/permission-manager.test.js"
 
+// Studio — nx-schema-designer (clauses NXS-*)
+import "./test/studio/schema-designer.test.js"
+
 const results = await Test.run(process.argv[2])
 
 console.log(
