@@ -24,8 +24,12 @@ const TASK = schema({
     fields: [field("title", "text", { required: true }), field("done", "boolean", { default: false }), field("points", "integer")]
 })
 
+// A DETERMINISTIC keypair for the whole suite: seeded, so every run signs
+// identical events and failures reproduce. In production this seed is the
+// hash of a WebAuthn credential (no hardware in a headless test — the seed
+// stands in for it); the derivation is the same ZEN.pair(seed) either way.
 let PAIR = null
-const pair = async () => (PAIR ??= await ZEN.pair())
+const pair = async () => (PAIR ??= await ZEN.pair(null, { seed: "nexus-sync-test-author" }))
 
 async function makeEngine(overrides = {}) {
     const { DatabaseSync } = await import("node:sqlite")

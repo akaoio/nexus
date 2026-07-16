@@ -295,6 +295,31 @@ export function merge(schema, customization = {}) {
 // ─── upgrade — the only path between versions (N4) ────────────────────────────
 
 /**
+ * Fit a STORED row (from a backup/dump) to this schema's table today.
+ * PROJECTS the row onto the current columns — a field the schema has since
+ * dropped is simply left behind (its data is gone from the schema anyway) —
+ * and REJECTS only when a required-without-default field cannot be satisfied
+ * (there is no way to invent that value). Used by `nexus site restore` so a
+ * backup taken before a schema change restores what it can and rejects, not
+ * crashes into, what it cannot. Pure, never throws.
+ * @returns {{valid: true, row: Object} | {valid: false, errors: Array<{code, path}>}}
+ */
+export function restorableRow(schema, row) {
+    if (row === null || typeof row !== "object" || Array.isArray(row))
+        return { valid: false, errors: [{ code: "E_ROW", path: "" }] }
+    const columns = new Set([...SYSTEM_FIELDS, ...schema.fields.filter((f) => f.type !== "table").map((f) => f.name)])
+    const projected = {}
+    for (const [key, value] of Object.entries(row)) if (columns.has(key)) projected[key] = value
+    const errors = []
+    for (const field of schema.fields) {
+        if (field.type === "table" || field.required !== true || "default" in field) continue
+        if (projected[field.name] === undefined || projected[field.name] === null)
+            errors.push({ code: "E_REQUIRED", path: `/${field.name}` })
+    }
+    return errors.length ? { valid: false, errors } : { valid: true, row: projected }
+}
+
+/**
  * Upgrade a schema of any known schemaVersion to the current one.
  * v1 is the only version today, so this is the identity on v1.
  * @param {Object} schema - Schema with a known schemaVersion
@@ -305,4 +330,4 @@ export function upgrade(schema) {
     throw err("E_VERSION_UNKNOWN", `cannot upgrade schemaVersion ${schema?.schemaVersion}`)
 }
 
-export default { SCHEMA_VERSION, FIELD_TYPES, SYSTEM_FIELDS, validate, diff, merge, upgrade }
+export default { SCHEMA_VERSION, FIELD_TYPES, SYSTEM_FIELDS, validate, diff, merge, restorableRow, upgrade }

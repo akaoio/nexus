@@ -25,7 +25,16 @@ Resolver: `policiesFor(user, roles) = policies.filter(p => !p.roles || p.roles.s
 - Thiếu/sai credential khi site yêu cầu auth → **401** `{ ok: false, error: { code: "E_AUTH" } }` — trước khi chạm Data Plane.
 - Mọi enforce còn lại (403/404/không-rò-tồn-tại) giữ nguyên ở Data Plane — tầng auth chỉ trả lời "bạn là ai", không bao giờ trả lời "bạn được làm gì".
 
-## 4. Trạng thái triển khai
+## 4. Test được không khi không có phần cứng WebAuthn?
+
+Được — và đây là mấu chốt của cả thiết kế. WebAuthn không tự sinh keypair theo nghĩa ngẫu nhiên: nó tạo ra một **bí mật ổn định gắn với thiết bị** (credential, hoặc output của PRF extension). Nexus **hash bí mật đó thành một seed**, rồi `ZEN.pair(null, { seed })` **suy ra keypair một cách xác định** — cùng credential luôn cho cùng public key, không cần lưu private key ở đâu cả.
+
+Hệ quả cho test: không có authenticator trong môi trường headless, nên **seed cố định đứng thay cho hash credential** — phần suy ra keypair y hệt production. Điều khoản **AUTH-04** chứng minh trên chính ZEN vendored: cùng seed → cùng pub (mọi lần), seed khác → pub khác, và `recover(sign(nonce)) === pub` (đúng vòng challenge-sign của §1). Đây cũng chính là cách akao DEV mode làm (`zen.pair(null, { seed: "seed" })`).
+
+Vì vậy khi flow ZEN server-mode được implement, nó test được đầy đủ mà không cần phần cứng: tiêm seed cố định để mô phỏng "user X đăng nhập bằng passkey của họ".
+
+## 5. Trạng thái triển khai
 
 - ✅ Interim API keys + role assignment + policies loading (kèm tài liệu này).
-- ⏳ ZEN challenge-sign flow + HMAC token: ship cùng tích hợp ZEN (Phase 5 mở rộng) — cần vendor ZEN crypto; seam đã sẵn (`context(req)` resolver của `createApi` là điểm cắm duy nhất, mọi flow mới chỉ thay resolver).
+- ✅ Chứng minh khả năng test key xác định từ seed (AUTH-04) — nền cho flow ZEN.
+- ⏳ ZEN challenge-sign flow + HMAC token: ship cùng tích hợp ZEN — ZEN đã vendored (`vendor/zen/`, secp256k1, pair/sign/verify/recover đã chạy trong test); seam đã sẵn (`context(req)` resolver của `createApi` là điểm cắm duy nhất, mọi flow mới chỉ thay resolver).

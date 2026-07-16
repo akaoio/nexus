@@ -18,6 +18,7 @@ import { join, dirname } from "path"
 import { loadInstance } from "../instance.js"
 import { openInstanceData, ensureTables } from "../data.js"
 import { appliedMigrations, ensureLedger } from "../../data/migrate.js"
+import { restorableRow } from "../../model/Model.js"
 
 const BACKUP_VERSION = 1
 const quote = (name) => `"${name}"`
@@ -71,7 +72,7 @@ async function restore(args, flags, out, root) {
         return
     }
     const apply = flags.apply === true
-    const report = { appsWritten: [], appsSkipped: [], inserted: {}, skipped: {}, ledger: 0 }
+    const report = { appsWritten: [], appsSkipped: [], inserted: {}, skipped: {}, rejected: {}, ledger: 0 }
 
     // App files — only where the app directory does not exist (never overwrite)
     for (const [dir, files] of Object.entries(document.apps ?? {})) {
@@ -97,10 +98,19 @@ async function restore(args, flags, out, root) {
     for (const [entity, rows] of Object.entries(document.data ?? {})) {
         report.inserted[entity] = 0
         report.skipped[entity] = 0
-        const known = schemas.some((s) => s.name === entity)
+        report.rejected[entity] = 0
+        const schema = schemas.find((s) => s.name === entity)
         for (const row of rows) {
-            if (!known) {
-                report.skipped[entity]++
+            if (!schema) {
+                report.skipped[entity]++ // the entity itself is gone from this instance
+                continue
+            }
+            // Fit the row to the DESTINATION schema — dropped columns fall
+            // away, required-without-default gaps reject; a backup from before
+            // a schema change restores what it can, additively, never crashing.
+            const fitted = restorableRow(schema, row)
+            if (!fitted.valid) {
+                report.rejected[entity]++
                 continue
             }
             const existing = await executor.all(`SELECT id FROM ${quote(entity)} WHERE id = ?`, [row.id])
@@ -110,7 +120,7 @@ async function restore(args, flags, out, root) {
             }
             report.inserted[entity]++
             if (apply) {
-                const compiled = kysely.insertInto(entity).values(row).compile()
+                const compiled = kysely.insertInto(entity).values(fitted.row).compile()
                 await executor.run(compiled.sql, [...compiled.parameters])
             }
         }
@@ -127,7 +137,8 @@ async function restore(args, flags, out, root) {
 
     const total = Object.values(report.inserted).reduce((a, b) => a + b, 0)
     const skipped = Object.values(report.skipped).reduce((a, b) => a + b, 0)
-    out.print(`${apply ? out.green("✓ Restored") : "Would restore"}: ${total} rows inserted, ${skipped} already present ${out.dim("(never overwritten)")}`)
+    const rejected = Object.values(report.rejected).reduce((a, b) => a + b, 0)
+    out.print(`${apply ? out.green("✓ Restored") : "Would restore"}: ${total} rows inserted, ${skipped} already present ${out.dim("(never overwritten)")}${rejected ? out.yellow(`, ${rejected} rejected (incompatible with the current schema)`) : ""}`)
     if (report.appsWritten.length) out.print(`  apps written: ${report.appsWritten.join(", ")}`)
     if (report.appsSkipped.length) out.print(`  apps kept as-is: ${report.appsSkipped.join(", ")}`)
     if (!apply) out.print(out.dim("  preview only — run with --apply"))

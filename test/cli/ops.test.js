@@ -160,6 +160,43 @@ Test.describe("CLI operations (OPS-*)", () => {
         writeFileSync(modelPath, good)
     })
 
+    Test.it("OPS-09 restore FITS rows to the destination schema — dropped columns project away, unsatisfiable required rows reject", async () => {
+        const home = mkdtempSync(join(tmpdir(), "nexus-ops-restore-"))
+        // Source has an extra `legacy` field (later dropped) and an optional
+        // `tag` (later made required at the destination).
+        run(["create", "src"], home)
+        const src = join(home, "src")
+        const srcModel = join(src, "apps/starter/models/task.json")
+        const m = JSON.parse(readFileSync(srcModel, "utf8"))
+        m.fields.push({ name: "legacy", type: "text" }, { name: "tag", type: "text" })
+        writeFileSync(srcModel, JSON.stringify(m, null, 4))
+        run(["migrate", "--apply"], src)
+        const { DatabaseSync } = await import("node:sqlite")
+        const sdb = new DatabaseSync(join(src, ".nexus", "data.db"))
+        sdb.prepare("INSERT INTO task (id, title, legacy, tag) VALUES (?, ?, ?, ?)").run("R-fit", "keeps tag", "obsolete", "urgent")
+        sdb.prepare("INSERT INTO task (id, title, legacy, tag) VALUES (?, ?, ?, ?)").run("R-notag", "no tag", "obsolete", null)
+        sdb.close()
+        run(["site", "backup", "dump.json"], src)
+
+        // Destination: no `legacy`, and `tag` is REQUIRED without a default
+        run(["create", "dst"], home)
+        const dst = join(home, "dst")
+        const dstModel = join(dst, "apps/starter/models/task.json")
+        const dm = JSON.parse(readFileSync(dstModel, "utf8"))
+        dm.fields.push({ name: "tag", type: "text", required: true })
+        writeFileSync(dstModel, JSON.stringify(dm, null, 4))
+        copyFileSync(join(src, "dump.json"), join(dst, "dump.json"))
+        run(["migrate", "--apply"], dst)
+
+        const result = run(["site", "restore", "dump.json", "--apply"], dst)
+        assert.equal(result.code, 0, "restore must not crash")
+        assert.equal(result.data.inserted.task, 1, "R-fit restores (legacy dropped, tag satisfied)")
+        assert.equal(result.data.rejected.task, 1, "R-notag rejects (required tag cannot be invented)")
+        const rows = await sqlite(dst, "SELECT id, tag FROM task ORDER BY id")
+        assert.deepEqual(rows, [{ id: "R-fit", tag: "urgent" }], "only the fitted row, its dropped column gone")
+        rmSync(home, { recursive: true, force: true })
+    })
+
     Test.it("OPS-99 cleanup", () => {
         rmSync(scratch, { recursive: true, force: true })
         assert.equal(existsSync(scratch), false)

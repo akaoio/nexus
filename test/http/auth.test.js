@@ -13,6 +13,7 @@ import Test, { assert } from "../../src/kernel/Test.js"
 import { policiesFor, loadPolicies, validatePolicy } from "../../src/app/Policies.js"
 
 const BIN = new URL("../../bin/nexus.js", import.meta.url).pathname
+const ZEN = (await import("../../vendor/zen/zen.js")).default
 
 Test.describe("AuthN — assignment helpers (AUTH)", () => {
     Test.it("AUTH-01 policiesFor: role-gated policies match by intersection; bare policies apply to everyone", () => {
@@ -23,6 +24,26 @@ Test.describe("AuthN — assignment helpers (AUTH)", () => {
         assert.equal(policiesFor(all, []).length, 1)
         assert.equal(policiesFor(all, ["sales"]).length, 1)
         assert.equal(policiesFor(all, ["admin"]).length, 2)
+    })
+
+    Test.it("AUTH-04 ZEN identity is deterministically derivable from a seed — the WebAuthn testability answer", async () => {
+        // Production identity = WebAuthn passkey → hash → ZEN keypair. There is
+        // no authenticator in a headless test, so the credential hash is stood
+        // in for by a fixed seed — the DERIVATION is identical: ZEN.pair(seed)
+        // is deterministic, so the same credential always yields the same
+        // public key, and a challenge-sign round-trip recovers the author.
+        const credentialHash = "webauthn-credential-hash-for-alice"
+        const a = await ZEN.pair(null, { seed: credentialHash })
+        const b = await ZEN.pair(null, { seed: credentialHash })
+        assert.equal(a.pub, b.pub, "same credential → same public key, every time")
+        assert.notEqual(a.pub, (await ZEN.pair(null, { seed: "someone-else" })).pub)
+
+        // The deferred server-mode flow (docs/authn-design.md §1): server issues
+        // a nonce, client signs it, server recovers the pub → that IS the user.
+        const nonce = "server-challenge-" + Date.now()
+        const signature = await ZEN.sign(nonce, a)
+        assert.equal(await ZEN.recover(signature), a.pub, "recover(sign(nonce)) === the author's pub")
+        assert.equal(await ZEN.verify(signature, a.pub), nonce, "and the signed message is exactly the nonce")
     })
 
     Test.it("AUTH-02 loadPolicies reads permissions/*.json and validates loudly", () => {
