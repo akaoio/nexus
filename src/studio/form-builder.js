@@ -264,6 +264,9 @@ export class NxFormBuilder extends Component {
 
         this.$preview = document.createElement("nx-form")
         this.$preview.schema = this.value
+        // Preview events must not escape as the BUILDER's events
+        this.$preview.addEventListener("change", (e) => e.stopPropagation())
+        this.$preview.addEventListener("submit", (e) => e.stopPropagation())
         this.$previewSlot.appendChild(this.$preview)
     }
 

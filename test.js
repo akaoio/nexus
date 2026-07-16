@@ -75,6 +75,9 @@ import "./test/studio/query-builder.test.js"
 // Studio — nx-form-builder + nx-form (clauses NXF-*)
 import "./test/studio/form-builder.test.js"
 
+// Studio — nx-permission-manager (clauses NXP-*)
+import "./test/studio/permission-manager.test.js"
+
 const results = await Test.run(process.argv[2])
 
 console.log(
