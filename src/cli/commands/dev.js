@@ -19,6 +19,7 @@ import { DataPlane } from "../../data/DataPlane.js"
 import { createApi } from "../../http/api.js"
 import { openInstanceData, ensureTables } from "../data.js"
 import { loadExtensions } from "../../app/Extensions.js"
+import { policiesFor } from "../../app/Policies.js"
 import { ACTIONS } from "../../permission/Permission.js"
 
 const MIME = {
@@ -194,25 +195,39 @@ export async function dev(args, flags, out) {
     }
 
     // Load and validate the instance — broken schemas are refused, not served
-    const { config, schemas, apps } = loadInstance(root)
+    const { config, schemas, apps, policies: appPolicies } = loadInstance(root)
     const extensions = await loadExtensions(root, apps)
 
     // Data Plane over the configured engine (nexus.config.json → database),
     // default: the built-in sqlite engine persisting to .nexus/data.db
     let api = null
     let engine = "sqlite"
+    let authMode = "no entities"
     if (schemas.length) {
         const data = await openInstanceData(root, config)
         engine = data.engine
         const { executor, kysely } = data
         await ensureTables(executor, kysely, schemas, executor.dialect)
         const plane = new DataPlane({ executor, schemas, dialect: executor.dialect, hooks: extensions })
-        const policies = devPolicies(schemas)
-        api = createApi({
-            plane,
-            endpoints: extensions.endpoints,
-            context: (req) => ({ user: req.headers["x-nexus-user"] || "dev", roles: ["dev"], policies, shares: [] })
-        })
+        // Auth (docs/authn-design.md): api_keys configured → key auth REQUIRED
+        // with app-policy role assignment; otherwise the loud DEV identity.
+        const keys = Array.isArray(config.api_keys) ? config.api_keys : []
+        let context
+        if (keys.length) {
+            context = (req) => {
+                const header = req.headers["authorization"] ?? ""
+                const presented = header.startsWith("Bearer ") ? header.slice(7) : req.headers["x-nexus-key"]
+                const entry = keys.find((k) => k.key && k.key === presented)
+                if (!entry) throw new Error("E_AUTH: a valid API key is required")
+                const roles = entry.roles ?? []
+                return { user: entry.user, roles, policies: policiesFor(appPolicies, roles), shares: [] }
+            }
+        } else {
+            const policies = [...devPolicies(schemas), ...appPolicies]
+            context = (req) => ({ user: req.headers["x-nexus-user"] || "dev", roles: ["dev"], policies, shares: [] })
+        }
+        api = createApi({ plane, endpoints: extensions.endpoints, context })
+        authMode = keys.length ? `${keys.length} API keys (E_AUTH without one)` : "DEV identity — wide-open policies, user via x-nexus-user header"
     }
 
     const server = createServer(async (req, res) => {
@@ -254,7 +269,7 @@ export async function dev(args, flags, out) {
     out.print(`${out.green("⬡")} Nexus dev · ${out.cyan(url)}  ${out.dim("(Ctrl+C to stop)")}`)
     if (schemas.length) {
         out.print(`  ${out.dim("api")}   ${url}/api/v1/${schemas[0].name} ${out.dim(`(+ ${schemas.length - 1} more)`)}`)
-        out.print(`  ${out.dim("auth")}  ${out.yellow("DEV identity")} — wide-open policies, user via x-nexus-user header`)
+        out.print(`  ${out.dim("auth")}  ${out.yellow(authMode)}`)
         out.print(`  ${out.dim("data")}  engine ${engine}${engine === "sqlite" ? " · .nexus/data.db" : ""}`)
     }
     out.emit({ ok: true, url, port: actual, entities: schemas.map((s) => s.name) })

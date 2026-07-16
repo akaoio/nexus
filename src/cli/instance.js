@@ -9,6 +9,7 @@ import { existsSync, readdirSync, readFileSync } from "fs"
 import { join } from "path"
 import { validate } from "../model/Model.js"
 import * as Manifest from "../app/Manifest.js"
+import { loadPolicies } from "../app/Policies.js"
 
 const err = (code, detail) => new Error(detail ? `${code}: ${detail}` : code)
 
@@ -60,5 +61,6 @@ export function loadInstance(root) {
                 schemas.push(schema)
             }
         }
-    return { config, schemas, apps }
+    const policies = loadPolicies(root, apps, schemas)
+    return { config, schemas, apps, policies }
 }

@@ -23,6 +23,7 @@
 const BODY_LIMIT = 1024 * 1024 // 1MB
 
 const STATUS = {
+    E_AUTH: 401,
     E_FORBIDDEN: 403,
     E_FORBIDDEN_ROW: 403,
     E_FIELD_FORBIDDEN: 403,

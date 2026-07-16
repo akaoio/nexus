@@ -20,8 +20,12 @@ import { Component } from "../kernel/UI/Component.js"
 import { html, render } from "../kernel/UI.js"
 import { css } from "../kernel/UI/css.js"
 import { ACTIONS } from "../permission/Permission.js"
-import * as AST from "../ast/AST.js"
+import { validatePolicy, validatePolicies } from "../app/Policies.js"
 import "./query-builder.js" // registers <nx-query-builder>
+
+// The canonical validator lives in app/Policies.js (shared with the app
+// loaders); the manager re-exports it so its public surface is unchanged.
+export { validatePolicy, validatePolicies }
 
 const clone = (x) => JSON.parse(JSON.stringify(x))
 
@@ -31,41 +35,6 @@ const clone = (x) => JSON.parse(JSON.stringify(x))
 export function emptyPolicy(schemas) {
     return { entity: schemas?.[0]?.name ?? "entity", actions: ["read"], rule: null, permlevel: 0, ifOwner: false }
 }
-
-/**
- * Non-throwing policy validation — the manager's side of the bridge to
- * Permission.resolve (which rejects loudly). When `schemas` is provided the
- * entity must be one of them.
- * @returns {{valid: true} | {valid: false, errors: Array<{code: string}>}}
- */
-export function validatePolicy(policy, schemas = null) {
-    const errors = []
-    if (policy === null || typeof policy !== "object" || Array.isArray(policy))
-        return { valid: false, errors: [{ code: "E_POLICY" }] }
-
-    if (typeof policy.entity !== "string" || !policy.entity) errors.push({ code: "E_ENTITY" })
-    else if (schemas && !schemas.some((s) => s.name === policy.entity)) errors.push({ code: "E_ENTITY" })
-
-    if (!Array.isArray(policy.actions) || policy.actions.length === 0) errors.push({ code: "E_ACTIONS" })
-    else if (!policy.actions.every((a) => ACTIONS.includes(a))) errors.push({ code: "E_ACTIONS" })
-
-    const permlevel = policy.permlevel ?? 0
-    if (!Number.isInteger(permlevel) || permlevel < 0 || permlevel > 9) errors.push({ code: "E_PERMLEVEL" })
-
-    if (policy.rule !== null && policy.rule !== undefined && !AST.validate(policy.rule).valid)
-        errors.push({ code: "E_RULE" })
-
-    if (policy.ifOwner !== undefined && typeof policy.ifOwner !== "boolean") errors.push({ code: "E_IFOWNER" })
-
-    if (policy.roles !== undefined && (!Array.isArray(policy.roles) || !policy.roles.every((r) => typeof r === "string")))
-        errors.push({ code: "E_ROLES" })
-
-    return errors.length ? { valid: false, errors } : { valid: true }
-}
-
-/** The whole set at once. */
-export const validatePolicies = (policies, schemas = null) =>
-    Array.isArray(policies) && policies.every((p) => validatePolicy(p, schemas).valid)
 
 // ─── styling ──────────────────────────────────────────────────────────────────
 

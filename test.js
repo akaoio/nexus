@@ -72,6 +72,9 @@ import "./test/cli/ops.test.js"
 // HTTP API — auto-generated from schemas, e2e over real HTTP (clauses API-*)
 import "./test/http/api.test.js"
 
+// AuthN — API keys + role assignment (clauses AUTH-*)
+import "./test/http/auth.test.js"
+
 // Studio — nx-query-builder (clauses NXQ-*; DOM clauses run in the browser)
 import "./test/studio/query-builder.test.js"
 
