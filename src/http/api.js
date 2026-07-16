@@ -131,6 +131,11 @@ export function createApi({ plane, context, base = "/api/v1", endpoints = [] }) 
                 return ok(res, await plane.search(entity, body, ctx)), true
             }
 
+            if (tail === "ask" && req.method === "POST") {
+                const body = await readBody(req)
+                return ok(res, await plane.ask(entity, body.query ?? "", ctx, { limit: body.limit })), true
+            }
+
             if (tail === "query" && req.method === "POST") {
                 const body = await readBody(req)
                 const options = {}

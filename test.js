@@ -85,6 +85,9 @@ import "./test/http/auth.test.js"
 // Security — pentest findings pinned as clauses (clauses SEC-*)
 import "./test/security/security.test.js"
 
+// NL→AST — natural language to Query AST (clauses NL-*)
+import "./test/nl/nl.test.js"
+
 // Studio — nx-query-builder (clauses NXQ-*; DOM clauses run in the browser)
 import "./test/studio/query-builder.test.js"
 

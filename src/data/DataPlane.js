@@ -37,6 +37,7 @@ import { createCompiler } from "./kysely.js"
 import { applyWhere } from "./compile.js"
 import { ulid } from "./ulid.js"
 import { serializeRow, cosine, textScore, rrf } from "../semantic/semantic.js"
+import { translate, ruleProvider } from "../nl/nl.js"
 
 const err = (code, detail) => new Error(detail ? `${code}: ${detail}` : code)
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -71,6 +72,10 @@ export class DataPlane {
         // Embedding provider (§4.6b) — pluggable; embeddings are DERIVED
         // data maintained on the write path, never synced (recomputable).
         this.embedder = embedder
+        // NL→AST provider (§4.6f) — deterministic rule parser by default; a
+        // real LLM provider plugs in with the same signature. Whatever it
+        // returns is validated and runs the full permission pipeline.
+        this.nlProvider = arguments[0]?.nlProvider ?? ruleProvider
         this.schemas = new Map()
         for (const schema of schemas) {
             const result = validateSchema(schema)
@@ -222,6 +227,10 @@ export class DataPlane {
         const { schema, filter, fields } = this.#gate(entity, "read", ctx)
         const astCtx = { user: ctx.user, roles: ctx.roles ?? [], now: this.now() }
         const userFilter = options.filter ? AST.resolve(options.filter, astCtx) : matchAll
+        // SECURITY: the caller may only FILTER by fields it may READ — else a
+        // permlevel-gated field becomes an oracle (filter by it, infer values
+        // from which rows return). The permission filter itself is trusted.
+        this.#assertFilterFields(userFilter.root, fields)
         const where = AST.inject(userFilter, filter ?? matchAll)
 
         let query = applyWhere(this.kysely.selectFrom(entity).select(fields), where, { dialect: this.dialect })
@@ -282,6 +291,14 @@ export class DataPlane {
         return true
     }
 
+    /** Every field a caller's filter references must be in its readable set. */
+    #assertFilterFields(node, fields) {
+        if (!node) return
+        if (node.op) return node.children.forEach((c) => this.#assertFilterFields(c, fields))
+        const base = node.field.split(".")[0]
+        if (!fields.includes(base)) throw err("E_FIELD_FORBIDDEN", `cannot filter by "${node.field}" — above your permission level`)
+    }
+
     // ─── semantic search (§4.6) ───────────────────────────────────────────────
 
     async #ensureEmbeddings() {
@@ -307,6 +324,22 @@ export class DataPlane {
         if (!this.embedder) return
         await this.#ensureEmbeddings()
         await this.executor.run(`DELETE FROM _nexus_embeddings WHERE entity = ? AND row_id = ?`, [entity, id])
+    }
+
+    /**
+     * Natural-language query (§4.6f): translate the phrase to a validated AST
+     * against this entity's schema, then run it through list() — so
+     * permission injection applies exactly as to any query. An LLM can shape
+     * the filter but can never widen access or reference an unknown field.
+     * @param {string} query - Natural-language phrase
+     * @param {Object} [options] - { limit, offset, orderBy }
+     * @returns {Promise<{filter: Object, rows: Array}>}
+     */
+    async ask(entity, query, ctx = {}, options = {}) {
+        const schema = this.schema(entity)
+        const filter = await translate(query, schema, this.nlProvider)
+        const rows = await this.list(entity, { ...options, filter }, ctx)
+        return { filter, rows }
     }
 
     /**

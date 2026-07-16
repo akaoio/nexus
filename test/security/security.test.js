@@ -113,6 +113,22 @@ Test.describe("Security (SEC-*)", () => {
         assert.truthy(Date.now() - start < 1000, "must finish well under a second")
     })
 
+    Test.it("SEC-08 a caller cannot FILTER by a field above its permlevel (oracle prevention)", async () => {
+        const { DatabaseSync } = await import("node:sqlite")
+        const TASK = schema({ name: "task", fields: [field("title", "text"), field("salary", "number", { permlevel: 2 })] })
+        const db = new DatabaseSync(":memory:")
+        const kysely = createCompiler("sqlite")
+        for (const b of tableDDL(kysely, TASK)) db.exec(b.compile().sql)
+        const executor = { run: (s, p = []) => void db.prepare(s).run(...p), all: (s, p = []) => db.prepare(s).all(...p) }
+        const plane = new DataPlane({ executor, schemas: [TASK], dialect: "sqlite" })
+        const base = { user: "u", roles: [], policies: [{ entity: "task", actions: ["read", "create"], rule: null, permlevel: 0, ifOwner: false }], shares: [] }
+        await plane.create("task", { title: "x" }, { ...base, policies: [...base.policies, { entity: "task", actions: ["create"], rule: null, permlevel: 2, ifOwner: false }] })
+        // permlevel-0 caller may read title but must not filter by salary
+        await Test.assert.rejects(plane.list("task", { filter: doc(leaf("salary", "gt", 0)) }, base), "E_FIELD_FORBIDDEN")
+        // filtering by a readable field is fine
+        assert.equal((await plane.list("task", { filter: doc(leaf("title", "eq", "x")) }, base)).length, 1)
+    })
+
     Test.it("SEC-99 cleanup", () => {
         if (server) server.kill()
         rmSync(scratch, { recursive: true, force: true })
