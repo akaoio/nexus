@@ -208,7 +208,12 @@ export async function dev(args, flags, out) {
         engine = data.engine
         const { executor, kysely } = data
         await ensureTables(executor, kysely, schemas, executor.dialect)
-        const plane = new DataPlane({ executor, schemas, dialect: executor.dialect, hooks: extensions })
+        // Semantic (§4.6): the deterministic hash provider is the dev/offline
+        // default when any entity declares a semantic block — real providers
+        // (transformers.js locally, API) plug in with the same interface
+        const { hashProvider } = await import("../../semantic/semantic.js")
+        const embedder = schemas.some((s) => s.semantic) ? hashProvider() : null
+        const plane = new DataPlane({ executor, schemas, dialect: executor.dialect, hooks: extensions, embedder })
         // Auth (docs/authn-design.md): api_keys configured → key auth REQUIRED
         // with app-policy role assignment; otherwise the loud DEV identity.
         const keys = Array.isArray(config.api_keys) ? config.api_keys : []

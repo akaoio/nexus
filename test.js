@@ -75,6 +75,9 @@ import "./test/http/api.test.js"
 // Sync — event log → SQL projection (clauses SYNC-*)
 import "./test/sync/sync.test.js"
 
+// Semantic — serialize/embed/search/RRF (clauses SEM-*)
+import "./test/semantic/semantic.test.js"
+
 // AuthN — API keys + role assignment (clauses AUTH-*)
 import "./test/http/auth.test.js"
 

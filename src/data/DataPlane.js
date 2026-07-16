@@ -36,6 +36,7 @@ import * as AST from "../ast/AST.js"
 import { createCompiler } from "./kysely.js"
 import { applyWhere } from "./compile.js"
 import { ulid } from "./ulid.js"
+import { serializeRow, cosine, textScore, rrf } from "../semantic/semantic.js"
 
 const err = (code, detail) => new Error(detail ? `${code}: ${detail}` : code)
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -52,7 +53,9 @@ export class DataPlane {
      * @param {string} [config.dialect] - sqlite|turso|postgres|mysql
      * @param {Function} [config.now] - Injected clock → ISO string
      */
-    constructor({ executor, schemas = [], dialect = "sqlite", now, hooks = null } = {}) {
+    #embeddingsReady = false
+
+    constructor({ executor, schemas = [], dialect = "sqlite", now, hooks = null, embedder = null } = {}) {
         if (!executor) throw err("E_EXECUTOR", "an executor { run, all } is required")
         this.executor = executor
         this.dialect = dialect
@@ -62,6 +65,9 @@ export class DataPlane {
         // App hooks (Extensions): before-hooks may mutate their payload or
         // throw to veto; after-hooks observe. null = no hooks.
         this.hooks = hooks
+        // Embedding provider (§4.6b) — pluggable; embeddings are DERIVED
+        // data maintained on the write path, never synced (recomputable).
+        this.embedder = embedder
         this.schemas = new Map()
         for (const schema of schemas) {
             const result = validateSchema(schema)
@@ -189,6 +195,7 @@ export class DataPlane {
 
         const values = Object.fromEntries(Object.entries(row).map(([k, v]) => [k, this.#toBinding(v)]))
         await this.#run(this.kysely.insertInto(entity).values(values).compile())
+        await this.#maintainEmbedding(entity, row)
         if (this.hooks) await this.hooks.run("after:create", entity, { row }, ctx)
         return row
     }
@@ -250,6 +257,7 @@ export class DataPlane {
         const set = Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, this.#toBinding(v ?? null)]))
         set.updated_at = post.updated_at
         await this.#run(this.kysely.updateTable(entity).set(set).where("id", "=", id).compile())
+        await this.#maintainEmbedding(entity, post)
         if (this.hooks) await this.hooks.run("after:update", entity, { row: post }, ctx)
         return post
     }
@@ -263,8 +271,87 @@ export class DataPlane {
         if (!rows.length) throw err("E_NOT_FOUND", `${entity}/${id}`)
         if (this.hooks) await this.hooks.run("before:remove", entity, { id }, ctx)
         await this.#run(this.kysely.deleteFrom(entity).where("id", "=", id).compile())
+        await this.#dropEmbedding(entity, id)
         if (this.hooks) await this.hooks.run("after:remove", entity, { id }, ctx)
         return true
+    }
+
+    // ─── semantic search (§4.6) ───────────────────────────────────────────────
+
+    async #ensureEmbeddings() {
+        if (this.#embeddingsReady) return
+        await this.executor.run(
+            `CREATE TABLE IF NOT EXISTS _nexus_embeddings (entity TEXT, row_id TEXT, model TEXT, vector TEXT, PRIMARY KEY (entity, row_id))`
+        )
+        this.#embeddingsReady = true
+    }
+
+    async #maintainEmbedding(entity, row) {
+        const schema = this.schemas.get(entity)
+        if (!this.embedder || !schema?.semantic) return
+        await this.#ensureEmbeddings()
+        const [vector] = await this.embedder.embed([serializeRow(schema, row)])
+        await this.executor.run(`DELETE FROM _nexus_embeddings WHERE entity = ? AND row_id = ?`, [entity, row.id])
+        await this.executor.run(`INSERT INTO _nexus_embeddings (entity, row_id, model, vector) VALUES (?, ?, ?, ?)`, [
+            entity, row.id, `${this.embedder.name}@${this.embedder.version}`, JSON.stringify(vector)
+        ])
+    }
+
+    async #dropEmbedding(entity, id) {
+        if (!this.embedder) return
+        await this.#ensureEmbeddings()
+        await this.executor.run(`DELETE FROM _nexus_embeddings WHERE entity = ? AND row_id = ?`, [entity, id])
+    }
+
+    /**
+     * Hybrid search (§4.6e): the caller's filter + permission narrow the
+     * CANDIDATES (through list() — permission is enforced before any
+     * ranking; no row a plain query could not see can surface here), then
+     * text/vector/hybrid RANKING orders them. Brute-force cosine is the
+     * declared engine-portable baseline; ANN capabilities upgrade per
+     * engine behind this same contract.
+     * @param {Object} options - { query, mode = "hybrid"|"text"|"vector", filter, k = 10 }
+     * @returns {Promise<Array<{score: number, row: Object}>>}
+     */
+    async search(entity, options = {}, ctx = {}) {
+        const { query = "", mode = "hybrid", k = 10 } = options
+        const schema = this.schema(entity)
+        if (!["text", "vector", "hybrid"].includes(mode)) throw err("E_MODE", `unknown search mode "${mode}"`)
+        const wantVector = mode !== "text"
+        if (wantVector && !this.embedder) {
+            if (mode === "vector") throw err("E_EMBEDDER", "no embedding provider configured")
+        }
+
+        const candidates = await this.list(entity, { filter: options.filter }, ctx)
+        if (!candidates.length || !String(query).trim()) return []
+
+        const textRanked = candidates
+            .map((row) => ({ id: row.id, score: textScore(serializeRow(schema, row), query) }))
+            .filter((r) => r.score > 0)
+            .sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1))
+
+        let vectorRanked = []
+        if (wantVector && this.embedder) {
+            await this.#ensureEmbeddings()
+            const stored = await this.executor.all(
+                `SELECT row_id, vector FROM _nexus_embeddings WHERE entity = ?`, [entity]
+            )
+            const vectors = new Map(stored.map((r) => [r.row_id, JSON.parse(r.vector)]))
+            const [queryVector] = await this.embedder.embed([String(query)])
+            vectorRanked = candidates
+                .filter((row) => vectors.has(row.id))
+                .map((row) => ({ id: row.id, score: cosine(queryVector, vectors.get(row.id)) }))
+                .filter((r) => r.score > 0)
+                .sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1))
+        }
+
+        let fused
+        if (mode === "text") fused = textRanked
+        else if (mode === "vector") fused = vectorRanked
+        else fused = rrf([textRanked.map((r) => r.id), vectorRanked.map((r) => r.id)])
+
+        const byId = new Map(candidates.map((row) => [row.id, row]))
+        return fused.slice(0, k).map((r) => ({ score: r.score, row: byId.get(r.id) }))
     }
 }
 

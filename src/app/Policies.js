@@ -10,10 +10,16 @@
  * deny-by-default covers everything else.
  */
 
-import { readFileSync, readdirSync, existsSync } from "fs"
-import { join } from "path"
 import { ACTIONS } from "../permission/Permission.js"
 import * as AST from "../ast/AST.js"
+
+// This module is imported by the Studio permission-manager (browser) for the
+// pure validators, so it must stay browser-loadable — no top-level fs/path
+// import. loadPolicies (Node-only) reaches the built-ins synchronously via
+// process.getBuiltinModule (Node ≥22), which simply does not exist in a
+// browser and is never called there.
+const _fs = () => process.getBuiltinModule("fs")
+const _path = () => process.getBuiltinModule("path")
 
 const err = (code, detail) => new Error(detail ? `${code}: ${detail}` : code)
 
@@ -51,8 +57,10 @@ export function validatePolicy(policy, schemas = null) {
 export const validatePolicies = (policies, schemas = null) =>
     Array.isArray(policies) && policies.every((p) => validatePolicy(p, schemas).valid)
 
-/** Load and validate every app's permissions/*.json — loudly. */
+/** Load and validate every app's permissions/*.json — loudly. Node-only. */
 export function loadPolicies(root, apps, schemas) {
+    const { readFileSync, readdirSync, existsSync } = _fs()
+    const { join } = _path()
     const policies = []
     for (const app of apps ?? []) {
         const dir = join(root, "apps", app.dir, "permissions")

@@ -126,6 +126,11 @@ export function createApi({ plane, context, base = "/api/v1", endpoints = [] }) 
                 throw new Error("E_METHOD: unsupported method")
             }
 
+            if (tail === "search" && req.method === "POST") {
+                const body = await readBody(req)
+                return ok(res, await plane.search(entity, body, ctx)), true
+            }
+
             if (tail === "query" && req.method === "POST") {
                 const body = await readBody(req)
                 const options = {}
