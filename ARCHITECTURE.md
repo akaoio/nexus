@@ -470,17 +470,17 @@ Toàn bộ 6 phase lõi đã hoàn thành, giữ đúng kỷ luật spec-first (
 
 ### Deferred — cần hạ tầng ngoài hoặc là lớp đời sau (ghi thẳng, không giấu)
 
-Những mục sau **không** nằm trong lõi vì phụ thuộc dịch vụ/hạ tầng bên ngoài hoặc là tầng ứng dụng phía trên nền đã đúng — mỗi mục đã có seam sẵn để cắm vào mà không đổi ngữ nghĩa:
+**Sửa nhận thức (quan trọng)**: bản trước của mục này gộp nhầm "cần dịch vụ CI đám mây" với "cần SaaS/phần cứng thật". Sự thật: **hầu hết đều test được cục bộ ngay trên máy này** bằng cách dựng giả lập nhiều môi trường/instance. Chỉ **WebAuthn PRF** mới thật sự cần tương tác người + phần cứng. Trạng thái đã sửa:
 
-1. **Live multi-engine matrix** (turso/postgres/mysql chạy thật) — cần service thật trong CI. Adapter viết theo API công bố của driver; failure path (E_DRIVER kèm lệnh cài) pin hôm nay; sqlite pin đầy đủ. Compiler đã đa-dialect (VND/CMP/DDL pin khác biệt quoting/type per dialect).
-2. **Custom sqlite-wasm build** (FTS5 + sqlite-vec) + **live ANN** (pgvector/Turso native) — capability nâng cấp per engine sau matrix; baseline brute-force cosine + text score đã portable và pin trên engine thật, sau cùng một `search()` contract.
-3. **PEN graph gate** (cổng 3 của sync) + **ZEN graph/relay transport** — `onemit` là seam; cổng 4 đã re-check permission bất kể. Là tích hợp mạng, không đổi ngữ nghĩa fold.
-4. **Checkpoint/pruning + super-peer roles** (§5.1, §8 sync-design) — cần vai trò arbiter + phân phối snapshot.
-5. ✅ **ZEN keypair auth flow (challenge-sign → HMAC token) — ĐÃ HOÀN THÀNH** (`src/app/auth.js`, AUTH-05/06/07; docs/authn-design.md §5). Còn lại: WebAuthn PRF binding phía client + ZEN graph transport (tích hợp mạng/UI, không phải core).
-6. **NL→AST** (§4.6f) — tầng LLM đời sau, dựng trên Query AST + hybrid search đã có; ngoài core (N5).
-7. **Background jobs** (extension point `jobs`) + **client-side extension registries** (interfaces/displays/views/pages) — ride Threads / Studio integration.
+1. ✅ **Live multi-engine matrix — Turso ĐÃ CHẠY THẬT** (`test/data/live-engine.test.js`, LIVE-turso-01..04 gồm cả golden invariant SQL≡predicate). Turso in-process, không cần server. **Postgres/MySQL**: harness đã sẵn (`createExecutor` resolve driver), chỉ cần một server cục bộ (máy này chưa cài + không root; `embedded-postgres`/binary portable là đường đi) — là hạ tầng **cục bộ**, không phải đám mây.
+2. **Vector/FTS**: **FTS5 đã BUILT-IN** trong node:sqlite (bm25 chạy được — không cần custom build cho FTS server-side); sqlite-vec là loadable extension (node:sqlite có `loadExtension`). *Ghi chú thiết kế*: vì search rank **trong** tập candidate đã lọc permission (chặn ≤ MAX_LIMIT), brute-force text/cosine đã đủ; FTS5/ANN là nâng cấp scale, giá trị biên trong kiến trúc permission-first này. Custom sqlite-wasm cho **browser** (emscripten) là phần nặng thật sự còn lại.
+3. **ZEN graph transport + PEN gate**: test được cục bộ (ZEN chạy in-process, có `Mesh`) nhưng cần dựng mesh đầy đủ (store adapter + relay + peers + timing hội tụ) — là công tích hợp ZEN thật sự, không quick-win. `onemit` là seam; cổng 4 đã re-check permission bất kể.
+4. **Checkpoint/pruning + super-peer roles** (§5.1, §8 sync-design) — nội bộ, doable cục bộ (nhiều instance Nexus các port khác nhau); cần vai trò arbiter + phân phối snapshot.
+5. ✅ **ZEN keypair auth flow — ĐÃ HOÀN THÀNH** (`src/app/auth.js`, AUTH-05/06/07). Còn lại: WebAuthn PRF binding phía client (**cần phần cứng + người thật** — mục duy nhất thực sự vậy).
+6. ✅ **NL→AST — ĐÃ HOÀN THÀNH** (`src/nl/nl.js`, NL-01..04): translate qua schema + permission là choke point; ruleProvider xác định, LLM thật cắm cùng signature. Chất lượng NL của model thật là thứ duy nhất cần model.
+7. **Background jobs** (extension point `jobs`) + **client-side extension registries** — nội bộ, ride Threads / Studio.
 
-*Nguyên tắc của danh sách này: không mục nào là "chưa làm được", tất cả là "cắm vào seam đã có" hoặc "cần dịch vụ CI thật" — nền tảng và mọi hợp đồng versioned đã đóng.*
+*Nguyên tắc đã sửa: chỉ WebAuthn PRF cần phần cứng/người. Còn lại hoặc đã làm (Turso live, ZEN auth, NL→AST), hoặc là công tích hợp cục bộ có seam sẵn — không cái nào cần đám mây.*
 
 ---
 
