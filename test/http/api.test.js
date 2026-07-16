@@ -134,9 +134,29 @@ Test.describe("HTTP API — auto-generated from schemas (API-*)", () => {
         assert.equal(index.status, 200)
         const html = await index.text()
         assert.truthy(html.includes("API Shop"))
-        assert.truthy(html.includes("/api/v1/task"))
+        assert.truthy(html.includes("<code>task</code>"), "the entity list names each entity")
+        assert.truthy(html.includes("/api/v1/:entity/query"), "the API summary names the query endpoint")
         const config = await fetch((await ensureServer()) + "/nexus.config.json")
         assert.equal(config.status, 200)
+    })
+
+    Test.it("API-08 the index page mounts nx-query-builder and the framework modules are served", async () => {
+        const base = await ensureServer()
+        const index = await fetch(base)
+        const html = await index.text()
+        assert.truthy(html.includes("nx-query-builder"), "the index page must mount the builder")
+        assert.truthy(html.includes("/_nexus/src/studio/query-builder.js"), "and import it from /_nexus")
+        assert.truthy(html.includes('"name":"task"'), "schemas are embedded for the client")
+
+        const module = await fetch(`${base}/_nexus/src/studio/query-builder.js`)
+        assert.equal(module.status, 200)
+        assert.truthy((await module.text()).includes("NxQueryBuilder"))
+        const kernel = await fetch(`${base}/_nexus/src/kernel/UI.js`)
+        assert.equal(kernel.status, 200)
+
+        // Only src/ is exposed, and traversal cannot escape it
+        assert.equal((await fetch(`${base}/_nexus/package.json`)).status, 404)
+        assert.equal((await fetch(`${base}/_nexus/src/..%2f..%2fpackage.json`)).status, 404)
     })
 
     Test.it("API-99 cleanup: stop the server, remove scratch", () => {
