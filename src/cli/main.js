@@ -13,6 +13,10 @@ import { createOutput } from "./output.js"
 import { create } from "./commands/create.js"
 import { test } from "./commands/test.js"
 import { dev } from "./commands/dev.js"
+import { migrate } from "./commands/migrate.js"
+import { site } from "./commands/site.js"
+import { app } from "./commands/app.js"
+import { doctor } from "./commands/doctor.js"
 
 const VALUE_FLAGS = new Set(["port", "site"])
 
@@ -63,19 +67,24 @@ ${out.bold("Usage")}
   nexus <command> [arguments] [--flags]
 
 ${out.bold("Commands")}
-  create <dir>     Scaffold a new Nexus instance     ${out.dim("--site <name>")}
-  dev              Serve the current instance        ${out.dim("--port <n>")}
-  test [filter]    Validate the instance's schemas
-  version          Print the nexus version
-  help             Show this message
+  create <dir>       Scaffold a new Nexus instance     ${out.dim("--site <name>")}
+  dev                Serve the current instance        ${out.dim("--port <n>")}
+  test [filter]      Validate the instance's schemas
+  migrate            Preview schema changes            ${out.dim("--apply to execute")}
+  site backup        Dump schemas + data + ledger      ${out.dim("[file]")}
+  site restore       Additive restore — never deletes  ${out.dim("<file> --apply")}
+  app new|list       App lifecycle
+  doctor             Diagnose the instance
+  version            Print the nexus version
+  help               Show this message
 
 ${out.bold("Global flags")}
-  --json           Machine-readable output (versioned contract)
-  -v, --version    Print version
-  -h, --help       Show help`)
+  --json             Machine-readable output (versioned contract)
+  -v, --version      Print version
+  -h, --help         Show help`)
     out.emit({
         ok: true,
-        commands: ["create", "dev", "test", "version", "help"]
+        commands: ["create", "dev", "test", "migrate", "site", "app", "doctor", "version", "help"]
     })
 }
 
@@ -94,6 +103,14 @@ export async function main(argv) {
                 return await dev(args, flags, out)
             case "test":
                 return await test(args, flags, out)
+            case "migrate":
+                return await migrate(args, flags, out)
+            case "site":
+                return await site(args, flags, out)
+            case "app":
+                return await app(args, flags, out)
+            case "doctor":
+                return await doctor(args, flags, out)
             default: {
                 // App commands (§8.3 "commands"): inside an instance, unknown
                 // commands fall through to the apps' registered subcommands

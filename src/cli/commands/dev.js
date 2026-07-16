@@ -12,14 +12,12 @@
  */
 
 import { createServer } from "http"
-import { existsSync, readFileSync, statSync, mkdirSync } from "fs"
+import { existsSync, readFileSync, statSync } from "fs"
 import { join, resolve, extname } from "path"
 import { loadInstance } from "../instance.js"
 import { DataPlane } from "../../data/DataPlane.js"
 import { createApi } from "../../http/api.js"
-import { createCompiler } from "../../data/kysely.js"
-import { tableDDL } from "../../data/ddl.js"
-import { createExecutor } from "../../data/adapters.js"
+import { openInstanceData, ensureTables } from "../data.js"
 import { loadExtensions } from "../../app/Extensions.js"
 import { ACTIONS } from "../../permission/Permission.js"
 
@@ -204,21 +202,10 @@ export async function dev(args, flags, out) {
     let api = null
     let engine = "sqlite"
     if (schemas.length) {
-        const database = config.database ?? {}
-        engine = database.engine ?? "sqlite"
-        const connection = { ...database, root }
-        delete connection.engine
-        if (engine === "sqlite" && !connection.path) {
-            mkdirSync(join(root, ".nexus"), { recursive: true })
-            connection.path = join(root, ".nexus", "data.db")
-        }
-        const executor = await createExecutor(engine, connection)
-        const kysely = createCompiler(executor.dialect)
-        for (const schema of schemas)
-            for (const builder of tableDDL(kysely, schema, { dialect: executor.dialect, ifNotExists: true })) {
-                const compiled = builder.compile()
-                await executor.run(compiled.sql, [...compiled.parameters])
-            }
+        const data = await openInstanceData(root, config)
+        engine = data.engine
+        const { executor, kysely } = data
+        await ensureTables(executor, kysely, schemas, executor.dialect)
         const plane = new DataPlane({ executor, schemas, dialect: executor.dialect, hooks: extensions })
         const policies = devPolicies(schemas)
         api = createApi({
