@@ -109,18 +109,23 @@ function renderTemplateResult(templateResult, container, options = {}) {
     let currentNode
     const MARK_PREFIX = "__mark:"
 
-    // Process markers immediately (no intermediate array)
+    // Collect first, process second. Processing removes the comment node the
+    // walker is standing on, and a TreeWalker whose current node is detached
+    // stops traversing — templates with two or more sibling-position markers
+    // silently lost every marker after the first (latent akao bug, caught by
+    // KRN-UI21 in the browser conformance run).
+    const markers = []
     while ((currentNode = walker.nextNode())) {
-        const text = currentNode.textContent
-        // Fast path: direct string check instead of regex
-        if (!text.startsWith(MARK_PREFIX)) continue
+        if (currentNode.textContent.startsWith(MARK_PREFIX)) markers.push(currentNode)
+    }
 
+    for (const node of markers) {
+        const text = node.textContent
         const index = parseInt(text.slice(MARK_PREFIX.length), 10)
-        const node = currentNode
         let value = values[index]
         const parent = node.parentNode
 
-        if (!parent) return
+        if (!parent) continue // an orphaned marker must not abort the rest
 
         // Case 0: Function → call it with context parameters
         if (typeof value === "function")

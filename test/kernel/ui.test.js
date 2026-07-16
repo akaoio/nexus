@@ -100,9 +100,11 @@ Test.describe("Kernel — UI render()/css()/Component (KRN-UI, browser)", () => 
     })
 
     Test.it("KRN-UI22 attribute callbacks fire after mount with the live element", () => {
+        // Convention: the function stands BARE in attribute position —
+        // <button ${fn}> — and receives the mounted element after render.
         const div = document.createElement("div")
         let element = null
-        render(html`<button ref=${({ element: el }) => (element = el)}>go</button>`, div)
+        render(html`<button ${({ element: el }) => (element = el)}>go</button>`, div)
         assert.equal(element, div.querySelector("button"))
     })
 

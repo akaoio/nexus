@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Nexus browser conformance</title>
+    <style>
+        body { font-family: system-ui; max-width: 720px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5 }
+        pre { background: #8881; padding: 1rem; border-radius: 8px; overflow-x: auto }
+        .pass { color: #16a34a } .fail { color: #dc2626 }
+    </style>
+</head>
+<body>
+<h1>⬡ Nexus — browser conformance</h1>
+<p>Runs every <code>{ browser: true }</code> suite live. The headless runner
+(<code>npm run test:browser</code>) reads the machine block below.</p>
+<div id="human"></div>
+<pre id="nexus-results">running…</pre>
+<script type="module">
+    import Test from "/src/kernel/Test.js"
+    // Browser-marked suites (the Node runner skips these clauses)
+    import "/test/kernel/ui.test.js"
+    import "/test/kernel/storage.test.js"
+    import "/test/kernel/hmr.test.js"
+
+    const human = document.getElementById("human")
+    const sink = document.getElementById("nexus-results")
+    try {
+        // Only suites whose name carries the browser marker
+        const results = await Test.run("browser", (suite) => {
+            const line = document.createElement("p")
+            line.className = suite.failed ? "fail" : "pass"
+            line.textContent = `${suite.failed ? "✗" : "✓"} ${suite.name} — ${suite.passed}/${suite.total}`
+            human.appendChild(line)
+        })
+        const status = results.failed === 0 && results.passed > 0 ? "PASS" : "FAIL"
+        document.title = `NEXUS:${status}:${results.passed}/${results.total}`
+        sink.textContent = `NEXUS_RESULTS_START${JSON.stringify({ status, ...results })}NEXUS_RESULTS_END`
+    } catch (error) {
+        document.title = "NEXUS:CRASH"
+        sink.textContent = `NEXUS_RESULTS_START${JSON.stringify({ status: "CRASH", error: String(error?.stack || error) })}NEXUS_RESULTS_END`
+    }
+</script>
+</body>
+</html>

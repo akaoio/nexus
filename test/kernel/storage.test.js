@@ -29,13 +29,14 @@ Test.describe("Kernel — OPFS (KRN-OP, browser)", () => {
 }, { browser: true })
 
 Test.describe("Kernel — IDB (KRN-ID, browser)", () => {
-    Test.it("KRN-ID01 put/get/del/keys round-trip through IndexedDB", async () => {
+    Test.it("KRN-ID01 the chain API round-trips through IndexedDB: get(key).put/once/del + keys", async () => {
         const idb = new IDB({ name: "krn-id-test" })
         await idb.ready
-        await idb.put("user:1", { name: "alice" })
-        assert.deepEqual(await idb.get("user:1"), { name: "alice" })
-        assert.truthy((await idb.keys()).includes("user:1"))
-        await idb.del("user:1")
-        assert.equal(await idb.get("user:1"), undefined)
+        await idb.get("user:1").put({ name: "alice" })
+        assert.deepEqual(await idb.get("user:1").once(), { name: "alice" })
+        const keys = await idb.keys()
+        assert.truthy(keys.some((k) => JSON.stringify(k) === JSON.stringify(["user:1"])))
+        await idb.get("user:1").del()
+        assert.equal(await idb.get("user:1").once(), undefined)
     })
 }, { browser: true })
