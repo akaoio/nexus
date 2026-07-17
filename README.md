@@ -56,7 +56,7 @@ Nexus combines what each got right and refuses what each got wrong:
 
 ## Status
 
-**All six core phases are complete**, built spec-first throughout — every contract was written as a red conformance clause *before* its implementation, and the whole tree is green: **497 conformance clauses, 0 red** — 452 executed in Node (`npm test`) and 45 in a real headless Chromium (`npm run test:browser`; those 45 report as browser-skipped in the Node run). The status ledger of what is proven vs. what needs real infrastructure lives in [STATUS.md](STATUS.md).
+**All six core phases are complete**, built spec-first throughout — every contract was written as a red conformance clause *before* its implementation, and the whole tree is green: **502 conformance clauses, 0 red** — 457 executed in Node (`npm test`) and 45 in a real headless Chromium (`npm run test:browser`; those 45 report as browser-skipped in the Node run). The status ledger of what is proven vs. what needs real infrastructure lives in [STATUS.md](STATUS.md).
 
 Try it now:
 

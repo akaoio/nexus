@@ -217,7 +217,7 @@ extension point.
 
 ## 11. Production notes (read before deploying)
 
-Nexus is **spec-complete and conformance-green**, but it is pre-1.0 (`0.0.0`).
+Nexus is **spec-complete and conformance-green**, but it is early (`0.1.0`, alpha).
 
 Use **`nexus start`** for production, not `nexus dev`. It enforces the security
 contract by construction (proven by the START-* clauses):

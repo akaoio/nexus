@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 452/452 node clauses + 45/45 browser = 497 clauses, 0 red.**
+**Green: 457/457 node clauses + 45/45 browser = 502 clauses, 0 red.**
 (45 node "skips" are the browser-only clauses, which pass in the browser suite.)
 
 ## Implemented & proven
@@ -23,7 +23,9 @@ is backed by a passing clause on real infrastructure — no stubs, no fakes.
 | NL → AST | rule + embedding-retrieval providers; validated against schema (injection-safe) | NL-* |
 | **Saved views (§7)** | **persisted through the Data Plane (permissioned, ownable); applyView reconstructs the list** | **VIEW-*** |
 | AuthN | API keys; challenge-sign; HMAC tokens; role mapping; **WebAuthn PRF → deterministic ZEN identity** | AUTH-*, **AUTH-PRF-*** |
-| Kernel / CLI / HTTP / Studio | extracted from akao; real-process CLI; auto HTTP API; web components | KRN-*, CLI-*, API-*, NX*-* |
+| Kernel / CLI / Studio | extracted from akao; real-process CLI; full tabbed Studio (Data+Ask/Form/Search/Schema/Permissions) in `nexus dev` | KRN-*, CLI-*, NX*-* |
+| HTTP + serving | auto API (`/query`, `/search`, `/ask`); `/_health`; request logging | API-* |
+| **Production server** | **`nexus start` — refuses god-mode (E_NO_AUTH), TLS-required (E_NO_TLS/--insecure), auth-enforced, no Studio/framework exposure, self-served HTTPS** | **START-*** |
 | Security | pentest findings pinned as clauses (info-disclosure, oracle, static-serve) | SEC-* |
 
 ## The two honest boundaries (need real infra/hardware, not code)

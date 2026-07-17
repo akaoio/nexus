@@ -1,6 +1,6 @@
 {
   "name": "nexus",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "A pure-web meta-framework: models as data; forms, queries, permissions and APIs generated from metadata.",
   "license": "MIT",
   "author": "akaoio",
