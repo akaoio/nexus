@@ -44,12 +44,15 @@ Filter language (recursive):
 Operators: eq ne gt gte lt lte like nlike in nin between isnull notnull.
 "like" values use % wildcards. Dates may use "$NOW", "$NOW(+1 day)", "$NOW(-1 day)".
 Answer with JSON ONLY — one object, no prose. Use null for "everything".
+Include EVERY condition the user states — "mà"/"và"/and = and-group, "hoặc"/or between different conditions = or-group.
 
 Examples:
 Q: high priority not finished
 A: {"op":"and","children":[{"field":"priority","operator":"eq","value":"high"},{"field":"done","operator":"eq","value":false}]}
 Q: việc ưu tiên cao hoặc thấp mà chưa xong
 A: {"op":"and","children":[{"field":"priority","operator":"in","value":["high","low"]},{"field":"done","operator":"eq","value":false}]}
+Q: quá hạn hoặc chưa hoàn thành
+A: {"op":"or","children":[{"field":"due","operator":"lt","value":"$NOW"},{"field":"done","operator":"eq","value":false}]}
 Q: everything
 A: null`
 }
@@ -131,7 +134,10 @@ export async function transformersGenerator({ model = DEFAULT_NL_MODEL, root, on
             { role: "user", content: user }
         ]
         const out = await generator(messages, { max_new_tokens: 160, do_sample: false, return_full_text: false })
-        return out[0].generated_text
+        // chat inputs may come back as the full message list — the reply is
+        // the LAST assistant message's content; plain string passes through
+        const generated = out[0].generated_text
+        return typeof generated === "string" ? generated : generated.at(-1)?.content ?? ""
     }
 }
 
