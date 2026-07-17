@@ -94,7 +94,9 @@ export function embeddingNLProvider({ examples, embedder, threshold = 0.3 }) {
     let indexed = null
     return async (query) => {
         if (!indexed) indexed = await embedder.embed(examples.map((e) => e.phrase))
-        const [q] = await embedder.embed([String(query)])
+        // The ask is a retrieval query; intents were embedded as documents.
+        const encodeQuery = embedder.embedQuery ?? embedder.embed
+        const [q] = await encodeQuery.call(embedder, [String(query)])
         let best = -1
         let bestIndex = -1
         for (let i = 0; i < indexed.length; i++) {

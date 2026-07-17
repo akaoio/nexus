@@ -4,10 +4,14 @@
     "source": "github:akaoio/zen (first-party — N2: not an external dependency)",
     "files": [
         "zen.js",
+        "index.js",
+        "relay.js",
+        "lib/",
+        "src/",
         "crypto.wasm",
         "pen.wasm",
         "LICENSE.md"
     ],
-    "vendoredAt": "2026-07-16",
-    "note": "Bundled browser/Node artifact. Used for sync event signing (pair/sign/verify/recover, secp256k1) — pen.wasm ships as part of the bundle (the PEN policy gate itself is a deferred integration). Graph/relay transport is a later phase."
+    "vendoredAt": "2026-07-17",
+    "note": "Two entry points from one first-party package. zen.js is the browser/isomorphic build used for event signing (pair/sign/verify/recover, secp256k1) in both Node and browser. index.js is the Node mesh entry (pulls lib/server.js: yson/store/rfs/wire/axe/dht/serve) that powers the real ZEN graph transport (src/sync/ZenTransport.js) and relay.js. lib/ is the Node runtime (non-minified); src/ holds the runtime .js modules those re-export (bootstrap.js is required by relay.js). The multi-GB *.wasm.o/*.zig build artifacts under the upstream src/ are intentionally excluded — they are compiler inputs, not runtime. pen.wasm ships for the PEN policy gate (deferred integration)."
 }

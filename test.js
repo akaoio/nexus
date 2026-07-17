@@ -51,6 +51,7 @@ import "./test/data/dataplane.test.js"
 // Data Plane — engine adapters behind the executor contract (clauses ADP-*)
 import "./test/data/adapters.test.js"
 import "./test/data/live-engine.test.js"
+import "./test/data/live-postgres.test.js"
 import "./test/data/vec.test.js"
 
 // Kernel — extracted from akao (clauses KRN-EN/UT/EV/ST/RT/TH/UI)
@@ -77,12 +78,25 @@ import "./test/http/api.test.js"
 // Sync — event log → SQL projection (clauses SYNC-*)
 import "./test/sync/sync.test.js"
 
+// Sync — checkpoint & compaction, arbiter role (clauses SYNC-C)
+import "./test/sync/checkpoint.test.js"
+
+// Sync — gate 3 PEN policy via ZEN's real policy VM (clauses SYNC-P3)
+import "./test/sync/pen.test.js"
+
+// Sync — real ZEN mesh transport, two peers converging (clauses ZSYNC-*)
+import "./test/sync/zen-transport.test.js"
+
 // Semantic — serialize/embed/search/RRF (clauses SEM-*)
 import "./test/semantic/semantic.test.js"
 import "./test/semantic/real-embedding.test.js"
+import "./test/semantic/embeddinggemma.test.js"
 
 // AuthN — API keys + role assignment (clauses AUTH-*)
 import "./test/http/auth.test.js"
+
+// AuthN — WebAuthn PRF → deterministic ZEN identity (clauses AUTH-PRF-*)
+import "./test/http/webauthn.test.js"
 
 // Security — pentest findings pinned as clauses (clauses SEC-*)
 import "./test/security/security.test.js"
@@ -104,6 +118,9 @@ import "./test/studio/schema-designer.test.js"
 
 // Studio — nx-list-view (clauses NXL-*)
 import "./test/studio/list-view.test.js"
+
+// Studio — saved views persisted through the Data Plane (clauses VIEW-*)
+import "./test/studio/views.test.js"
 
 // App system — manifest format (clauses MF-*)
 import "./test/app/manifest.test.js"

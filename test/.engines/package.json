@@ -1,1 +1,1 @@
-{"name":"nexus-test-engines","private":true,"dependencies":{"@huggingface/transformers":"^4.2.0","@tursodatabase/database":"^0.7.0","sqlite-vec":"^0.1.9"}}
+{"name":"nexus-test-engines","private":true,"dependencies":{"@electric-sql/pglite":"^0.5.4","@huggingface/transformers":"^4.2.0","@tursodatabase/database":"^0.7.0","sqlite-vec":"^0.1.9"}}

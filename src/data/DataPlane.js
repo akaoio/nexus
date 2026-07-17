@@ -391,7 +391,11 @@ export class DataPlane {
 
         let vectorRanked = []
         if (wantVector && this.embedder) {
-            const [queryVector] = await this.embedder.embed([String(query)])
+            // Query side: use the provider's asymmetric query encoder when it
+            // has one (EmbeddingGemma's task prompt), else the plain embed —
+            // documents were indexed with embed() at write time.
+            const encodeQuery = this.embedder.embedQuery ?? this.embedder.embed
+            const [queryVector] = await encodeQuery.call(this.embedder, [String(query)])
             const candIds = new Set(candidates.map((r) => r.id))
             if (this.executor.vec && this.#vecReady.has(entity)) {
                 // Real sqlite-vec ANN: KNN over-fetches, then we keep only the

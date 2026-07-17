@@ -10,19 +10,22 @@
  * row-level REFOLD (§4.2) that makes confluence a structural property:
  * the SQL state depends on the event SET, never the arrival order.
  *
- * Scope, honestly: gate 3 (PEN at the graph layer) and checkpoints/pruning
- * (§8, needs the arbiter role) are deferred integrations — gate 4 re-checks
- * permission here regardless. The default trust model is trust-all
- * (one user's devices syncing their own data); multi-party sites supply a
- * policiesFor(author) resolver and the deny-by-default engine takes over.
- * Transport is a callback (onemit) — the in-memory bus in tests, the ZEN
- * graph adapter when the network layer lands.
+ * Scope: gate 3 (PEN) compiles the entity set to a REAL ZEN PEN policy and
+ * rejects structurally-invalid writes at ingest via ZEN's policy VM (opt-in,
+ * see PenPolicy.js); gate 4 re-checks full permission regardless. Checkpoints
+ * & compaction (§8) and snapshot bootstrap (§9) are implemented with the
+ * arbiter role. The default trust model is trust-all (one user's devices
+ * syncing their own data); multi-party sites supply a policiesFor(author)
+ * resolver and the deny-by-default engine takes over. Transport is a callback
+ * (onemit) — the in-memory bus in tests, the real ZEN graph mesh in
+ * ZenTransport.js.
  */
 
 import { sha256 } from "../kernel/Utils.js"
 import { tableDDL } from "../data/ddl.js"
 import { createCompiler } from "../data/kysely.js"
 import * as Permission from "../permission/Permission.js"
+import { logSoul, authorizeWrite } from "./PenPolicy.js"
 
 const ZEN = (await import("../../vendor/zen/zen.js")).default
 
@@ -129,6 +132,40 @@ export function compareEvents(a, b) {
     return 0
 }
 
+/** HLC "≤": is timestamp a at or before b in the §4.1 order? */
+export function hlcLeq(a, b) {
+    if (a.millis !== b.millis) return a.millis < b.millis
+    return a.counter <= b.counter
+}
+
+// ─── checkpoint merkle root (§8) ──────────────────────────────────────────────
+
+/** A binary Merkle root over already-hashed leaves (hex). "EMPTY" when none. */
+export function merkleRoot(leafHashes) {
+    let level = [...leafHashes]
+    if (!level.length) return "EMPTY"
+    while (level.length > 1) {
+        const next = []
+        for (let i = 0; i < level.length; i += 2)
+            next.push(i + 1 < level.length ? sha256(level[i] + level[i + 1]) : level[i])
+        level = next
+    }
+    return level[0]
+}
+
+/**
+ * The deterministic state root over a set of folded row states: each
+ * { entity, rowId, state } hashed canonically, the leaves sorted (order-free),
+ * combined into a Merkle root. Two peers with the same rows produce the same
+ * root byte-for-byte; any divergence changes it.
+ */
+export function stateRootOf(states) {
+    const leaves = states
+        .map((s) => sha256(stableStringify({ entity: s.entity, rowId: s.rowId, state: s.state })))
+        .sort()
+    return merkleRoot(leaves)
+}
+
 // ─── the engine ───────────────────────────────────────────────────────────────
 
 export class SyncEngine {
@@ -142,7 +179,7 @@ export class SyncEngine {
      * @param {Object} [config.versions] - entity → current schema revision
      * @param {Object} [config.upgraders] - entity → { fromVersion: (data)=>data }
      */
-    constructor({ executor, dialect = "sqlite", schemas = [], site, policiesFor, versions = {}, upgraders = {} } = {}) {
+    constructor({ executor, dialect = "sqlite", schemas = [], site, policiesFor, versions = {}, upgraders = {}, arbiter = null, penGate = false } = {}) {
         this.executor = executor
         this.dialect = dialect
         this.kysely = createCompiler(dialect)
@@ -151,6 +188,19 @@ export class SyncEngine {
         this.policiesFor = policiesFor ?? null
         this.versions = { ...versions }
         this.upgraders = upgraders
+        // The arbiter/archive pubkey declared in site config (§8). Absent =
+        // no authority to prune: disk is cheaper than data, so a peer without a
+        // configured arbiter never compacts. When set, only checkpoints signed
+        // by THIS key are honored.
+        this.arbiter = arbiter
+        // The HLC key of the latest applied checkpoint (§8) — the fold horizon:
+        // events at or before it live in the checkpoint base, not the log.
+        this.checkpointUpto = null
+        // Gate 3 (§3/§5): when enabled, a real ZEN PEN policy compiled from the
+        // known entities rejects structurally-invalid writes at ingest, using
+        // ZEN's policy VM — the same bytecode a plain relay would enforce.
+        this.penGate = penGate
+        this.penBytecode = null
         this.clock = new HLC()
         this.onemit = null
         this.ready = this.#init(schemas)
@@ -161,11 +211,24 @@ export class SyncEngine {
             `CREATE TABLE IF NOT EXISTS _nexus_events (id TEXT PRIMARY KEY, entity TEXT, row_id TEXT, millis INTEGER, counter INTEGER, author TEXT, payload TEXT)`
         )
         await this.executor.run(`CREATE TABLE IF NOT EXISTS _nexus_quarantine (id TEXT PRIMARY KEY, reason TEXT, payload TEXT)`)
+        // Checkpoint state (§8): the signed checkpoint ledger, the per-row
+        // folded base at the horizon (the snapshot's contents), and the set of
+        // event ids the snapshot covers (to tell a re-delivered pruned event
+        // from a genuinely new historical one).
+        await this.executor.run(`CREATE TABLE IF NOT EXISTS _nexus_checkpoints (upto_millis INTEGER, upto_counter INTEGER, state_root TEXT, snapshot_ref TEXT, payload TEXT, status TEXT)`)
+        await this.executor.run(`CREATE TABLE IF NOT EXISTS _nexus_checkpoint_base (entity TEXT, row_id TEXT, state TEXT, PRIMARY KEY (entity, row_id))`)
+        await this.executor.run(`CREATE TABLE IF NOT EXISTS _nexus_checkpoint_covered (event_id TEXT PRIMARY KEY)`)
         for (const schema of schemas)
             for (const builder of tableDDL(this.kysely, schema, { dialect: this.dialect, ifNotExists: true })) {
                 const compiled = builder.compile()
                 await this.executor.run(compiled.sql, [...compiled.parameters])
             }
+        const applied = await this.executor.all(`SELECT upto_millis, upto_counter FROM _nexus_checkpoints WHERE status = 'applied' ORDER BY upto_millis DESC, upto_counter DESC LIMIT 1`)
+        if (applied.length) this.checkpointUpto = { millis: applied[0].upto_millis, counter: applied[0].upto_counter }
+        if (this.penGate && this.schemas.size) {
+            const { compileEntityPolicy } = await import("./PenPolicy.js")
+            this.penBytecode = (await compileEntityPolicy({ site: this.site, entities: [...this.schemas.keys()] })).bytecode
+        }
     }
 
     /** The local write path: build, sign, apply optimistically, emit. */
@@ -187,8 +250,31 @@ export class SyncEngine {
             return { status: "rejected", reason: `E_VERSION_UNKNOWN: eventVersion ${event?.eventVersion}` }
         if (!(await verifyEvent(event))) return { status: "rejected", reason: "E_VERIFY: signature or content address failed" }
 
+        // Gate 3 (§5): ZEN's PEN VM rejects a structurally-invalid write at the
+        // graph layer — a malformed soul or an unknown entity never enters the
+        // log. Rejected (not quarantined): a plain relay would drop it too.
+        if (this.penBytecode) {
+            const soul = logSoul(event.site, event.entity, event.id)
+            if (!(await authorizeWrite(this.penBytecode, soul)))
+                return { status: "rejected", reason: `E_PEN: soul "${soul}" fails the graph write policy` }
+        }
+
         const seen = await this.executor.all(`SELECT id FROM _nexus_events WHERE id = ?`, [event.id])
         if (seen.length) return { status: "duplicate" }
+
+        // Below the checkpoint horizon (§8): the event's HLC is ≤ a pruned
+        // upto. If the snapshot already covers it, it is a re-delivered event
+        // whose effect is in the base — a harmless duplicate. Otherwise it is
+        // genuinely new history arriving after we compacted: a conflict we
+        // surface (quarantine), never silently swallow.
+        if (this.checkpointUpto && hlcLeq(event.ts, this.checkpointUpto)) {
+            const covered = await this.executor.all(`SELECT 1 FROM _nexus_checkpoint_covered WHERE event_id = ?`, [event.id])
+            if (covered.length) return { status: "duplicate" }
+            await this.executor.run(`INSERT OR REPLACE INTO _nexus_quarantine (id, reason, payload) VALUES (?, ?, ?)`, [
+                event.id, "E_HISTORICAL", JSON.stringify(event)
+            ])
+            return { status: "quarantined", reason: "E_HISTORICAL: event predates a pruned checkpoint" }
+        }
 
         const gate = await this.#gate4(event)
         if (gate) {
@@ -249,17 +335,18 @@ export class SyncEngine {
         return data
     }
 
-    /** §4.2 — gather, sort, fold from scratch: confluence by construction. */
-    async #refold(entity, rowId) {
-        const schema = this.schemas.get(entity)
-        const rows = await this.executor.all(`SELECT payload FROM _nexus_events WHERE entity = ? AND row_id = ?`, [entity, rowId])
-        const events = rows.map((r) => JSON.parse(r.payload)).sort(compareEvents)
-
-        let state = null
+    /**
+     * Fold a row's events (sorted) onto a base image — pure and total. The
+     * base is the checkpoint's folded state at the horizon (§8) or null; either
+     * way the result depends only on the event SET plus that base, never on
+     * arrival order (confluence by construction, §4.2).
+     */
+    #foldEvents(schema, events, base = null) {
+        let state = base ? { ...base } : null
         for (const event of events) {
             const data = this.#upgrade(event)
             if (event.op === "create") {
-                state = { id: rowId, owner: event.author, created_at: iso(event.ts), updated_at: iso(event.ts) }
+                state = { id: event.rowId, owner: event.author, created_at: iso(event.ts), updated_at: iso(event.ts) }
                 for (const field of schema.fields) {
                     if (field.type === "table") continue
                     state[field.name] = data[field.name] !== undefined ? data[field.name] : "default" in field ? field.default : null
@@ -270,6 +357,22 @@ export class SyncEngine {
                 state.updated_at = iso(event.ts)
             } else if (event.op === "delete") state = null
         }
+        return state
+    }
+
+    /** The folded base a checkpoint left for this row, or null (§8). */
+    async #baseState(entity, rowId) {
+        if (!this.checkpointUpto) return null
+        const rows = await this.executor.all(`SELECT state FROM _nexus_checkpoint_base WHERE entity = ? AND row_id = ?`, [entity, rowId])
+        return rows.length ? JSON.parse(rows[0].state) : null
+    }
+
+    /** §4.2 — gather, sort, fold from the checkpoint base: confluence by construction. */
+    async #refold(entity, rowId) {
+        const schema = this.schemas.get(entity)
+        const rows = await this.executor.all(`SELECT payload FROM _nexus_events WHERE entity = ? AND row_id = ?`, [entity, rowId])
+        const events = rows.map((r) => JSON.parse(r.payload)).sort(compareEvents)
+        const state = this.#foldEvents(schema, events, await this.#baseState(entity, rowId))
 
         await this.executor.run(`DELETE FROM "${entity}" WHERE id = ?`, [rowId])
         if (state !== null) {
@@ -294,8 +397,148 @@ export class SyncEngine {
         }
         return { applied, remaining: (await this.quarantined()).length }
     }
+
+    // ─── checkpoint & compaction (§8) ─────────────────────────────────────────
+
+    /**
+     * The folded state of every row at an HLC horizon, and the set of event
+     * ids that horizon covers — the raw material of a checkpoint/snapshot.
+     * Folds the current checkpoint base plus every event ≤ upto, so it is
+     * correct even after earlier compaction. Deterministically ordered.
+     */
+    async stateAt(upto) {
+        const states = []
+        const coveredIds = []
+        for (const [entity, schema] of this.schemas) {
+            const baseRows = await this.executor.all(`SELECT row_id, state FROM _nexus_checkpoint_base WHERE entity = ?`, [entity])
+            const baseMap = new Map(baseRows.map((r) => [r.row_id, JSON.parse(r.state)]))
+            const eventRows = await this.executor.all(
+                `SELECT id, row_id, payload FROM _nexus_events WHERE entity = ? AND (millis < ? OR (millis = ? AND counter <= ?))`,
+                [entity, upto.millis, upto.millis, upto.counter]
+            )
+            const byRow = new Map()
+            for (const r of eventRows) {
+                if (!byRow.has(r.row_id)) byRow.set(r.row_id, [])
+                byRow.get(r.row_id).push(JSON.parse(r.payload))
+                coveredIds.push(r.id)
+            }
+            for (const rowId of new Set([...baseMap.keys(), ...byRow.keys()])) {
+                const events = (byRow.get(rowId) ?? []).sort(compareEvents)
+                const state = this.#foldEvents(schema, events, baseMap.get(rowId) ?? null)
+                if (state !== null) states.push({ entity, rowId, state })
+            }
+        }
+        for (const r of await this.executor.all(`SELECT event_id FROM _nexus_checkpoint_covered`)) coveredIds.push(r.event_id)
+        states.sort((a, b) => (a.entity < b.entity ? -1 : a.entity > b.entity ? 1 : a.rowId < b.rowId ? -1 : a.rowId > b.rowId ? 1 : 0))
+        return { states, coveredIds: [...new Set(coveredIds)].sort() }
+    }
+
+    /** The state root at a horizon — what a checkpoint commits to (§8). */
+    async stateRoot(upto) {
+        return stateRootOf((await this.stateAt(upto)).states)
+    }
+
+    /** Content address of a snapshot blob (the checkpoint's snapshotRef). */
+    static snapshotRef(snapshot) {
+        return contentId(stableStringify({
+            snapshotVersion: snapshot.snapshotVersion,
+            site: snapshot.site,
+            upto: snapshot.upto,
+            states: snapshot.states,
+            coveredIds: snapshot.coveredIds
+        }))
+    }
+
+    /**
+     * ARBITER ROLE: build and sign a checkpoint at `upto`, plus its snapshot
+     * blob. Only the arbiter/archive key does this (§8). The snapshot blob is
+     * distributed over the file P2P layer (Torrent/RTC) out of band; here it is
+     * returned so a caller can store/ship it.
+     */
+    async createCheckpoint(upto, arbiterPair) {
+        const { states, coveredIds } = await this.stateAt(upto)
+        const snapshot = { snapshotVersion: 1, site: this.site, upto, states, coveredIds }
+        const snapshotRef = SyncEngine.snapshotRef(snapshot)
+        const checkpoint = { checkpointVersion: 1, site: this.site, upto, stateRoot: stateRootOf(states), snapshotRef }
+        checkpoint.sig = await ZEN.sign(stableStringify(checkpoint), arbiterPair)
+        return { checkpoint, snapshot }
+    }
+
+    /** Gate: the checkpoint is signed by THIS site's configured arbiter (§8). */
+    async verifyCheckpoint(checkpoint) {
+        if (checkpoint?.checkpointVersion !== 1) return false
+        if (!this.arbiter) return false // no configured arbiter → trust nothing
+        const { sig, ...rest } = checkpoint
+        try {
+            const message = await ZEN.verify(sig, this.arbiter)
+            if (message === false || message === null || message === undefined) return false
+            const restored = typeof message === "string" ? message : stableStringify(message)
+            return restored === stableStringify(rest)
+        } catch {
+            return false
+        }
+    }
+
+    /**
+     * Receive a checkpoint (§8): refold locally to `upto`, compare state roots.
+     * Match → prune events ≤ upto (their effect lives on in the base). Mismatch
+     * → red alert, NEVER prune (the logs disagree; doctor surfaces it). No
+     * configured arbiter → never prune. Returns what happened.
+     */
+    async applyCheckpoint(checkpoint) {
+        if (!this.arbiter) return { status: "no-arbiter" }
+        if (!(await this.verifyCheckpoint(checkpoint))) return { status: "rejected", reason: "E_CHECKPOINT_SIG" }
+        const { states, coveredIds } = await this.stateAt(checkpoint.upto)
+        const localRoot = stateRootOf(states)
+        if (localRoot !== checkpoint.stateRoot) {
+            await this.#recordCheckpoint(checkpoint, "divergent")
+            return { status: "divergent", localRoot, checkpointRoot: checkpoint.stateRoot }
+        }
+        const pruned = await this.#prune(checkpoint, states, coveredIds)
+        return { status: "pruned", pruned }
+    }
+
+    /**
+     * Bootstrap a fresh peer from a checkpoint + snapshot (§9): verify the
+     * arbiter's signature, the snapshot's content address, and its state root,
+     * then load the rows straight into SQL. No log replay needed.
+     */
+    async bootstrapFromCheckpoint(checkpoint, snapshot) {
+        if (!(await this.verifyCheckpoint(checkpoint))) return { status: "rejected", reason: "E_CHECKPOINT_SIG" }
+        if (SyncEngine.snapshotRef(snapshot) !== checkpoint.snapshotRef) return { status: "rejected", reason: "E_SNAPSHOT_REF" }
+        if (stateRootOf(snapshot.states) !== checkpoint.stateRoot) return { status: "rejected", reason: "E_STATE_ROOT" }
+        for (const s of snapshot.states) {
+            await this.executor.run(`INSERT OR REPLACE INTO _nexus_checkpoint_base (entity, row_id, state) VALUES (?, ?, ?)`, [s.entity, s.rowId, JSON.stringify(s.state)])
+            await this.executor.run(`DELETE FROM "${s.entity}" WHERE id = ?`, [s.rowId])
+            const values = Object.fromEntries(Object.entries(s.state).map(([k, v]) => [k, v === true ? 1 : v === false ? 0 : v ?? null]))
+            const compiled = this.kysely.insertInto(s.entity).values(values).compile()
+            await this.executor.run(compiled.sql, [...compiled.parameters])
+        }
+        for (const id of snapshot.coveredIds) await this.executor.run(`INSERT OR IGNORE INTO _nexus_checkpoint_covered (event_id) VALUES (?)`, [id])
+        this.checkpointUpto = checkpoint.upto
+        await this.#recordCheckpoint(checkpoint, "applied")
+        return { status: "bootstrapped", rows: snapshot.states.length }
+    }
+
+    async #prune(checkpoint, states, coveredIds) {
+        for (const s of states) await this.executor.run(`INSERT OR REPLACE INTO _nexus_checkpoint_base (entity, row_id, state) VALUES (?, ?, ?)`, [s.entity, s.rowId, JSON.stringify(s.state)])
+        for (const id of coveredIds) await this.executor.run(`INSERT OR IGNORE INTO _nexus_checkpoint_covered (event_id) VALUES (?)`, [id])
+        const before = (await this.executor.all(`SELECT COUNT(*) AS n FROM _nexus_events`))[0].n
+        await this.executor.run(`DELETE FROM _nexus_events WHERE millis < ? OR (millis = ? AND counter <= ?)`, [checkpoint.upto.millis, checkpoint.upto.millis, checkpoint.upto.counter])
+        const after = (await this.executor.all(`SELECT COUNT(*) AS n FROM _nexus_events`))[0].n
+        this.checkpointUpto = checkpoint.upto
+        await this.#recordCheckpoint(checkpoint, "applied")
+        return before - after
+    }
+
+    async #recordCheckpoint(checkpoint, status) {
+        await this.executor.run(
+            `INSERT INTO _nexus_checkpoints (upto_millis, upto_counter, state_root, snapshot_ref, payload, status) VALUES (?, ?, ?, ?, ?, ?)`,
+            [checkpoint.upto.millis, checkpoint.upto.counter, checkpoint.stateRoot, checkpoint.snapshotRef, JSON.stringify(checkpoint), status]
+        )
+    }
 }
 
 const iso = (ts) => new Date(ts.millis).toISOString()
 
-export default { EVENT_VERSION, canonical, contentId, createEvent, verifyEvent, HLC, compareEvents, SyncEngine }
+export default { EVENT_VERSION, canonical, contentId, createEvent, verifyEvent, HLC, compareEvents, hlcLeq, merkleRoot, stateRootOf, SyncEngine }

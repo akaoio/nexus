@@ -99,6 +99,33 @@ export async function createExecutor(engine = "sqlite", config = {}) {
     }
 
     if (engine === "postgres") {
+        // Two real drivers behind ONE dialect. PGlite (@electric-sql/pglite) is
+        // real Postgres compiled to WASM, in-process, no server — so the
+        // postgres path is provable on any machine, exactly like Turso is for
+        // sqlite. pg drives a live cluster in the CI matrix. Same SQL, same
+        // $1 placeholders, same executor contract — the app never knows which.
+        if (config.pglite || config.driver === "pglite") {
+            let mod
+            try {
+                mod = await import("@electric-sql/pglite")
+            } catch {
+                try {
+                    const require = createRequire(join(config.root ?? process.cwd(), "package.json"))
+                    mod = await import(pathToFileURL(require.resolve("@electric-sql/pglite")).href)
+                } catch {
+                    throw err("E_DRIVER", `the in-process postgres driver is missing — run: npm install @electric-sql/pglite`)
+                }
+            }
+            const PGlite = mod.PGlite ?? mod.default?.PGlite ?? mod.default
+            const db = new PGlite(config.path)
+            return {
+                engine,
+                dialect: "postgres",
+                run: async (sql, params = []) => void (await db.query(sql, params)),
+                all: async (sql, params = []) => (await db.query(sql, params)).rows,
+                close: () => db.close()
+            }
+        }
         const mod = await importDriver("pg", engine, config.root)
         const Pool = mod.default?.Pool ?? mod.Pool
         const pool = new Pool(config)

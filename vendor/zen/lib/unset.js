@@ -1,0 +1,18 @@
+import ZEN from "../zen.js";
+var Zen = ZEN;
+const rel_ = "#";
+const node_ = "_";
+
+Zen.chain.unset = function (node) {
+  if (
+    this &&
+    node &&
+    node[node_] &&
+    node[node_].put &&
+    node[node_].put[node_] &&
+    node[node_].put[node_][rel_]
+  ) {
+    this.put({ [node[node_].put[node_][rel_]]: null });
+  }
+  return this;
+};

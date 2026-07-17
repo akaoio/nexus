@@ -33,26 +33,49 @@ async function importFrom(name, root) {
 }
 
 /**
+ * EmbeddingGemma is trained with task-specific prompts: retrieval queries and
+ * documents are embedded through DIFFERENT prefixes, and skipping them costs
+ * real accuracy. These are Google's published retrieval prompts. Symmetric
+ * models (all-MiniLM, …) use empty prefixes, so embed() and embedQuery()
+ * coincide and every existing caller is unaffected.
+ */
+const GEMMA_PROMPTS = { query: "task: search result | query: ", document: "title: none | text: " }
+
+function promptsFor(model, override) {
+    if (override) return override
+    if (/gemma/i.test(model)) return GEMMA_PROMPTS
+    return { query: "", document: "" }
+}
+
+/**
  * @param {Object} config
- * @param {string} [config.model] - HF model id (ONNX). Default all-MiniLM-L6-v2.
+ * @param {string} [config.model] - HF model id (ONNX). Default EmbeddingGemma-300m.
  * @param {string} [config.root] - Instance dir for resolving the library.
  * @param {boolean} [config.quantized=true]
- * @returns {Promise<{name, version, dims, embed(texts): Promise<number[][]>}>}
+ * @param {{query: string, document: string}} [config.prompts] - override task prefixes.
+ * @returns {Promise<{name, version, dims, prompts, embed(texts), embedQuery(texts)}>}
  */
-export async function transformersProvider({ model = "Xenova/all-MiniLM-L6-v2", root, quantized = true } = {}) {
+export async function transformersProvider({ model = "onnx-community/embeddinggemma-300m-ONNX", root, quantized = true, prompts } = {}) {
     const { pipeline } = await importFrom("@huggingface/transformers", root)
     const extract = await pipeline("feature-extraction", model, { quantized })
-    const one = async (text) => Array.from((await extract(String(text), { pooling: "mean", normalize: true })).data)
-    const probe = await one("dimension probe")
+    const P = promptsFor(model, prompts)
+    const one = async (text, prefix = "") =>
+        Array.from((await extract(prefix + String(text), { pooling: "mean", normalize: true })).data)
+    const probe = await one("dimension probe", P.document)
+    const many = async (texts, prefix) => {
+        const out = []
+        for (const text of texts) out.push(await one(text, prefix))
+        return out
+    }
     return {
         name: model,
         version: 1,
         dims: probe.length,
-        async embed(texts) {
-            const out = []
-            for (const text of texts) out.push(await one(text))
-            return out
-        }
+        prompts: P,
+        /** Embed documents (the indexing side). */
+        embed: (texts) => many(texts, P.document),
+        /** Embed search queries (the retrieval side) — asymmetric for Gemma. */
+        embedQuery: (texts) => many(texts, P.query)
     }
 }
 
