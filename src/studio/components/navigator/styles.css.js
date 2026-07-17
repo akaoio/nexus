@@ -76,6 +76,9 @@ export const STYLE = () => css`
                     &:not([name]) {
                         display: none;
                     }
+                    /* the glyph sits inside the toggle with breathing room —
+                       not filling the whole circle (that looked blown up) */
+                    --icon: calc(var(--size) * 0.44);
                     color: var(--muted);
                     position: absolute;
                     display: flex;
