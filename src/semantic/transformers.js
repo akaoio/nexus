@@ -55,9 +55,11 @@ function promptsFor(model, override) {
  * @param {{query: string, document: string}} [config.prompts] - override task prefixes.
  * @returns {Promise<{name, version, dims, prompts, embed(texts), embedQuery(texts)}>}
  */
-export async function transformersProvider({ model = "onnx-community/embeddinggemma-300m-ONNX", root, quantized = true, prompts } = {}) {
+export async function transformersProvider({ model = "onnx-community/embeddinggemma-300m-ONNX", root, quantized = true, prompts, onProgress } = {}) {
     const { pipeline } = await importFrom("@huggingface/transformers", root)
-    const extract = await pipeline("feature-extraction", model, { quantized })
+    // progress_callback streams { status, file, loaded, total, progress } while
+    // the weights download — the CLI/Studio turn it into % and MB.
+    const extract = await pipeline("feature-extraction", model, { quantized, progress_callback: onProgress })
     const P = promptsFor(model, prompts)
     const one = async (text, prefix = "") =>
         Array.from((await extract(prefix + String(text), { pooling: "mean", normalize: true })).data)

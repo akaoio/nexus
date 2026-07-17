@@ -48,7 +48,11 @@ const STARTER_MODEL = {
         { name: "done", type: "boolean", default: false },
         { name: "due", type: "date" },
         { name: "priority", type: "select", options: ["low", "medium", "high"], default: "medium" }
-    ]
+    ],
+    // A semantic block so search works the moment an AI model is configured
+    // (§4.6c). Without this an Entity has nothing to embed — the reason search
+    // "didn't work" out of the box.
+    semantic: { embed: [{ field: "title", weight: 2 }], template: { en: "{title}", vi: "{title}" } }
 }
 
 export async function create(args, flags, out) {

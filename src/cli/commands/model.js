@@ -12,7 +12,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "fs"
 import { join } from "path"
-import { MODELS, DEFAULT_MODEL, withModel, status, pull } from "../../app/models.js"
+import { MODELS, DEFAULT_MODEL, withModel, status, pull, progressLine } from "../../app/models.js"
 
 export async function model(args, flags, out) {
     const root = process.cwd()
@@ -59,9 +59,16 @@ export async function model(args, flags, out) {
     }
     if (sub === "pull") {
         const id = args[1] || st.model || DEFAULT_MODEL
-        out.print(`${out.dim("↓")} installing @huggingface/transformers + downloading ${out.cyan(id)} — this can take a while…`)
+        out.print(`${out.dim("↓")} installing @huggingface/transformers + downloading ${out.cyan(id)}…`)
+        const seen = new Set()
+        const onProgress = (event) => {
+            const line = progressLine(event)
+            // one line per file, overwriting as it advances (TTY); plain when piped
+            if (line && !flags.json) { if (process.stdout.isTTY) process.stdout.write("\r  " + line.padEnd(60)); else if (!seen.has(event.file + Math.round((event.loaded / event.total) * 10))) { seen.add(event.file + Math.round((event.loaded / event.total) * 10)); process.stdout.write("  " + line + "\n") } }
+        }
         try {
-            const result = await pull(root, id)
+            const result = await pull(root, id, onProgress)
+            if (process.stdout.isTTY && !flags.json) process.stdout.write("\r" + " ".repeat(66) + "\r")
             if (!st.model) writeFileSync(configPath, JSON.stringify(withModel(config, id), null, 4) + "\n")
             out.print(`${out.green("✓")} ready — ${id} (${result.dims}d)`)
             out.emit({ ok: true, ...result })

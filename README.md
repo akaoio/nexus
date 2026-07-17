@@ -56,7 +56,16 @@ Nexus combines what each got right and refuses what each got wrong:
 
 ## Status
 
-**All six core phases are complete**, built spec-first throughout — every contract was written as a red conformance clause *before* its implementation, and the whole tree is green: **502 conformance clauses, 0 red** — 457 executed in Node (`npm test`) and 45 in a real headless Chromium (`npm run test:browser`; those 45 report as browser-skipped in the Node run). The status ledger of what is proven vs. what needs real infrastructure lives in [STATUS.md](STATUS.md).
+**Version 0.0.0 — pre-alpha, honestly.** The data/logic core (Query AST, Model,
+Permission, Data Plane, Sync, engine adapters, kernel) is built spec-first and
+green — every contract written as a red conformance clause *before* its code, 0
+red across Node + a real headless Chromium. But the **Studio/UI layer is being
+refactored** from a monolith into the systematic architecture in
+[ARCHITECTURE.md §7.1](ARCHITECTURE.md) (interfaces/displays generated from the
+schema, one module per concern). The CLI and UX must still beat Frappe bench and
+match Strapi/Directus polish before this earns a 0.1. The meta-model data type is
+called an **Entity** everywhere (not DocType / Content-Type). See
+[STATUS.md](STATUS.md).
 
 Try it now:
 

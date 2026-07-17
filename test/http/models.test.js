@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import Test, { assert } from "../../src/kernel/Test.js"
-import { MODELS, DEFAULT_MODEL, currentModel, withModel, status } from "../../src/app/models.js"
+import { MODELS, DEFAULT_MODEL, currentModel, withModel, status, progressLine } from "../../src/app/models.js"
 
 const BIN = new URL("../../bin/nexus.js", import.meta.url).pathname
 
@@ -58,6 +58,13 @@ Test.describe("AI models (MODEL)", () => {
         run(["b", "--model", "none"])
         assert.equal(JSON.parse(readFileSync(join(scratch, "b", "nexus.config.json"), "utf8")).semantic, undefined)
         rmSync(scratch, { recursive: true, force: true })
+    })
+
+    Test.it("MODEL-06 progressLine formats a download event into % + MB, skips non-progress", () => {
+        assert.equal(progressLine({ status: "progress", file: "model.onnx", loaded: 52428800, total: 209715200 }).includes("25%"), true)
+        assert.equal(progressLine({ status: "progress", file: "m", loaded: 52428800, total: 209715200 }).includes("50.0/200.0 MB"), true)
+        assert.equal(progressLine({ status: "done" }), null)
+        assert.equal(progressLine({ status: "progress", total: 0 }), null)
     })
 
     Test.it("MODEL-05 /_studio/ai reports status + models and switches the model", async () => {

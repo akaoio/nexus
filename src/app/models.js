@@ -75,13 +75,21 @@ export function installLib(root) {
  * fetched into the transformers.js cache (~/.cache/huggingface). Returns the
  * model's real dimensions. Heavy (network + disk) — the CLI drives it, not tests.
  */
-export async function pull(root, id = DEFAULT_MODEL) {
+export async function pull(root, id = DEFAULT_MODEL, onProgress) {
     if (!libInstalled(root)) installLib(root)
     const { transformersProvider } = await import("../semantic/transformers.js")
-    const embedder = await transformersProvider({ model: id, root })
+    const embedder = await transformersProvider({ model: id, root, onProgress })
     // one embed forces the model to fully materialize
     await embedder.embed(["warm up"])
     return { model: id, dims: embedder.dims }
+}
+
+/** Format a transformers.js progress event into a human line, or null to skip. */
+export function progressLine(event) {
+    if (!event || event.status !== "progress" || !event.total) return null
+    const mb = (n) => (n / 1048576).toFixed(1)
+    const pct = Math.round((event.loaded / event.total) * 100)
+    return `${String(pct).padStart(3)}%  ${mb(event.loaded)}/${mb(event.total)} MB  ${event.file || ""}`.trimEnd()
 }
 
 export default { MODELS, DEFAULT_MODEL, currentModel, withModel, libInstalled, status, installLib, pull }

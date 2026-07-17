@@ -3,7 +3,7 @@
  * themeable app shell (not the earlier dogfood): a design system in CSS custom
  * properties, light/dark/auto theming with a header toggle, a collapsible
  * sidebar that becomes a drawer on phones, and every Studio web component wired
- * to the real API. Content types and permissions SAVE to the instance's files.
+ * to the real API. Entities and permissions SAVE to the instance's files.
  *
  * This is a pure string generator (Node only, no DOM/engine imports); dev.js
  * serves the result and exposes /_studio/* write endpoints.
@@ -401,7 +401,7 @@ function mountModel(name, body) {
   body.replaceChildren()
   $("model-msg").textContent = ""
   if (name === "__new") {
-    const nameInput = el("input", { className: "text", placeholder: "collection name (e.g. customer)" })
+    const nameInput = el("input", { className: "text", placeholder: "Entity name (e.g. customer)" })
     const builder = el("nx-form-builder")
     const save = el("button", { className: "btn primary", textContent: t("createCollection") })
     save.addEventListener("click", () => saveModel({ ...(builder.value || { fields: [] }), name: nameInput.value.trim(), schemaVersion: 1 }))

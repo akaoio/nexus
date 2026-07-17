@@ -360,6 +360,32 @@ Toàn bộ là Web Components trên UI engine của akao (`html`/`render`, Shado
 - **`<nx-search>`** — ô tìm kiếm toàn cục: hybrid search (§4.6) trên mọi Entity user có quyền đọc, kết quả nhóm theo Entity, filter thêm bằng `<nx-query-builder>`.
 - Studio cũng chỉ là **một app đặc quyền** chạy trên App API — nếu Studio làm được thì app bên thứ ba cũng làm được (dogfooding, N5).
 
+### 7.1. Kiến trúc file của Studio (đóng băng — học akao/Directus/Frappe)
+
+Studio **KHÔNG** được là một khối string. Tách theo **mối quan tâm**, mỗi thứ một chỗ, và **sinh UI từ schema** như API tự sinh (Directus interfaces/displays, Frappe controls, component-split của akao):
+
+```
+src/studio/app/
+  lib.js            # kit dùng chung: DOM (el), toast, API client (authed), i18n t(), theme
+  fields.js         # REGISTRY theo field.type:
+                    #   interfaces = editor (text/boolean/select/date/link/…)
+                    #   displays   = renderer (read-only)
+                    #   buildForm(schema) / buildList(schema,rows) — SINH từ schema, hết hardcode per-field
+  modules/          # mỗi mảng app một file (content · entity · permissions · users · ai · settings · search · login)
+  app.js            # shell: header + nav + router, ghép modules qua registry
+  index.html        # trang vỏ
+```
+
+Nguyên tắc:
+- **Sinh từ schema**: field.type → interface + display. Thêm kiểu field = thêm một entry trong `fields.js`, không viết UI riêng cho từng field/Entity.
+- **Tái dùng tối đa**: các widget phức tạp (`<nx-query-builder>`, `<nx-schema-designer>`, `<nx-permission-manager>`, `<nx-form-builder>`, `<nx-search>`) là Web Component riêng, module chỉ ghép.
+- **Một kit** (lib.js) cho DOM/toast/api/i18n/theme — không fetch/dựng DOM rải rác.
+- Quy ước tên: module = danh từ mảng (`content`, `users`), widget = `nx-*`, hàm sinh = `build*`.
+
+### 7.2. Thuật ngữ chuẩn (N4 — một cách gọi duy nhất)
+
+Kiểu dữ liệu meta-model gọi là **Entity** — KHÔNG dùng "DocType" (Frappe) hay "Content-Type"/"Collection" (Strapi/Directus). Mọi doc, code, UI, i18n dùng nhất quán **Entity**. (Bảng §10 vẫn nêu tên gốc của từng hệ để đối chiếu học hỏi.)
+
 ---
 
 ## 8. App system & multi-tenant
@@ -458,7 +484,9 @@ Mỗi milestone bắt đầu bằng viết **spec test đỏ** cho hợp đồng
 
 ## 12. Lộ trình — trạng thái
 
-Toàn bộ 6 phase lõi đã hoàn thành, giữ đúng kỷ luật spec-first (test đỏ trước, code sau) từ đầu đến cuối. Tổng: **430 điều khoản conformance, 0 đỏ** — 385 chạy trong Node, 45 chạy trong Chromium thật (45 điều khoản browser này hiển thị "browser-skipped" khi chạy Node, nên tổng riêng biệt là 430, không cộng dồn).
+**Version: 0.0.0** (pre-alpha, thành thật). Lõi data/logic (Query AST, Model, Permission, Data Plane, Sync, adapters, kernel) đã đúng và có test; nhưng **tầng UI/Studio đang được refactor từ khối monolith sang kiến trúc §7.1** (đây là điều chưa xong — không tự nhận là "hoàn thành"). CLI và trải nghiệm còn phải mạnh hơn Frappe bench + đẹp/mượt hơn Strapi/Directus trước khi có thể gọi là 0.1.
+
+Kỷ luật spec-first (test đỏ trước, code sau) giữ xuyên suốt. Số điều khoản conformance tăng liên tục (0 đỏ). Các mảng lõi:
 
 - ✅ **Phase 0 — Spec**: conformance suite Query AST v1 (83) + Model Schema v1 (54) + Permission v1 (31), tất cả viết đỏ trước. docs/sync-design.md + docs/authn-design.md.
 - ✅ **Phase 1 — Kernel**: tách từ akao vào `src/kernel/` — UI engine (html/render/css/Component), States/Context, Threads (isomorphic, worker thật), Router, Events, FS (format registry)/OPFS/IDB, SQL worker, HMR, Test. Một hệ phản ứng duy nhất (§3). Browser runner qua CDP. CLI skeleton `create/dev/test`.
