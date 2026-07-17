@@ -78,6 +78,9 @@ import "./test/http/api.test.js"
 // Production server — nexus start, security contract (clauses START-*)
 import "./test/http/start.test.js"
 
+// Studio — dev-only content-type / permission write endpoints (clauses STUDIO-*)
+import "./test/http/studio.test.js"
+
 // Sync — event log → SQL projection (clauses SYNC-*)
 import "./test/sync/sync.test.js"
 

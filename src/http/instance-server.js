@@ -20,6 +20,7 @@ import { verifyToken } from "../app/auth.js"
 import { timingSafeStringEqual } from "../cli/output.js"
 import { ACTIONS } from "../permission/Permission.js"
 import { randomBytes } from "crypto"
+import { join } from "path"
 
 /** The wide-open DEV policy set — every action, every permlevel (dev only). */
 function devPolicies(schemas) {
@@ -48,6 +49,7 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
     let api = null
     let engine = "sqlite"
     let authMode = "no entities"
+    let embedderInfo = { mode: "none", semanticAvailable: false }
 
     if (schemas.length) {
         const data = await openInstanceData(root, config)
@@ -57,6 +59,18 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
 
         const { hashProvider } = await import("../semantic/semantic.js")
         const embedder = schemas.some((s) => s.semantic) ? hashProvider() : null
+        // Honest embedder status for the UI (issue: "don't know if an embedder
+        // is installed"). Default is the deterministic LEXICAL provider; a real
+        // ML model (transformers.js) is used only if the instance installs it.
+        let semanticAvailable = false
+        try {
+            const { createRequire } = await import("module")
+            createRequire(join(root, "package.json")).resolve("@huggingface/transformers")
+            semanticAvailable = true
+        } catch {}
+        embedderInfo = embedder
+            ? { mode: "lexical", name: embedder.name, semanticAvailable }
+            : { mode: "none", semanticAvailable }
         const plane = new DataPlane({ executor, schemas, dialect: executor.dialect, hooks: extensions, embedder })
 
         const keys = Array.isArray(config.api_keys) ? config.api_keys : []
@@ -103,7 +117,7 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             : "DEV identity — wide-open policies, user via x-nexus-user header"
     }
 
-    return { api, authState, challenges, engine, authMode, extensions }
+    return { api, authState, challenges, engine, authMode, extensions, embedderInfo }
 }
 
 export default { buildInstanceApi }
