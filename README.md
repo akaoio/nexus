@@ -64,9 +64,11 @@ Try it now:
 npx nexus create my-app --site "My App"   # scaffold (the starter schema is validated by the public Model API)
 cd my-app
 nexus dev                                 # serve it — one self-contained process, no NGINX/Redis/Supervisor
-# open http://localhost:8080 — a live mini-Studio: pick an entity, build a filter in the
-# recursive <nx-query-builder>, watch it hit POST /api/v1/:entity/query and render the rows
+# open http://localhost:8080 — a live Studio: Data (query builder + NL→AST Ask),
+# Form, Search, Schema designer, and Permissions — each wired to the real API
 ```
+
+📖 **New here? Read the [User Guide](docs/GUIDE.md)** — a practical walkthrough of every feature that works today.
 
 What is real and pinned end-to-end:
 
