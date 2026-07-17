@@ -100,10 +100,6 @@ embadge.title = embTitle(boot.embedder)
 const layout = buildLayout({ site: boot.site, badge: embadge })
 const { app, main, nav, entNav, drawer, openDrawer, closeDrawer } = layout
 
-// populate the orbit planets (plain nx-navigators — same tag for the ancestor walk)
-mountLocales(layout.localesNav, { current: i18n.locale, onSelect: (code) => { i18n.set(code); navigate(state.view, state.entity) } })
-mountThemes(layout.themesNav, { current: theme.value, onSelect: (mode) => theme.set(mode) })
-
 const { login, passkeyRow } = buildLogin({ site: boot.site, onSubmit: doLogin, onPasskey: passkeyLogin })
 NxUser.onSignout = () => {
     api.setToken(null)
@@ -261,4 +257,8 @@ async function passkeyLogin(err) {
 
 if (location.hash.startsWith("#/")) history.replaceState({}, "", location.hash.slice(1)) // legacy hash links
 applyRoute() // route from the URL (deep links work); falls back to the default state
+// populate the orbit AFTER routing so the active locale/theme marker is
+// correct on load (the URL's locale prefix may differ from the stored one)
+mountLocales(layout.localesNav, { current: i18n.locale, onSelect: (code) => { i18n.set(code); navigate(state.view, state.entity) } })
+mountThemes(layout.themesNav, { current: theme.value, onSelect: (mode) => theme.set(mode) })
 checkSession()
