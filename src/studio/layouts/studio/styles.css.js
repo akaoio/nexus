@@ -1,6 +1,6 @@
 /**
  * The Studio shell layout — topbar spanning, sidebar left, main right; the
- * sidebar collapses to an off-canvas drawer under 860px (akao layouts pattern:
+ * sidebar collapses to an off-canvas drawer under 53.75rem (akao layouts pattern:
  * the layout's css lives with the layout).
  */
 
@@ -11,8 +11,8 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
 
 .nx-top {
     position: sticky; top: 0; z-index: 30; display: flex; gap: var(--sp-3); align-items: center;
-    padding: 10px 14px; background: color-mix(in srgb, var(--surface) 92%, transparent);
-    backdrop-filter: saturate(1.4) blur(8px); border-bottom: 1px solid var(--border);
+    padding: 0.625rem 0.875rem; background: color-mix(in srgb, var(--surface) 92%, transparent);
+    backdrop-filter: saturate(1.4) blur(0.5rem); border-bottom: 1px solid var(--border);
 }
 .nx-brand { font-weight: 700; letter-spacing: -0.01em }
 .nx-brand .hex { color: var(--accent) }
@@ -20,63 +20,63 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
 
 .nx-app { display: block }
 .nx-side {
-    position: fixed; top: 0; left: 0; bottom: 0; width: min(84vw, 300px); z-index: 50;
+    position: fixed; top: 0; left: 0; bottom: 0; width: min(84vw, 18.75rem); z-index: 50;
     background: var(--surface); border-right: 1px solid var(--border);
-    transform: translateX(-100%); transition: transform var(--ease); overflow-y: auto; padding: 14px;
+    transform: translateX(-100%); transition: transform var(--ease); overflow-y: auto; padding: 0.875rem;
 }
 .nx-app.open .nx-side { transform: none }
 .nx-scrim {
-    position: fixed; inset: 0; background: rgba(2, 6, 23, .45); z-index: 40;
+    position: fixed; inset: 0; background: hsl(var(--h1) 84% 5% / 0.45); z-index: 40;
     opacity: 0; pointer-events: none; transition: opacity var(--ease);
 }
 .nx-app.open .nx-scrim { opacity: 1; pointer-events: auto }
-.nx-main { padding: 16px 14px 60px; min-width: 0 }
+.nx-main { padding: 1rem 0.875rem 3.75rem; min-width: 0 }
 
-.nx-grouplabel { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 14px 6px 6px }
+.nx-grouplabel { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0.875rem 0.375rem 0.375rem }
 .nx-nav a {
-    display: flex; gap: 9px; align-items: center; padding: 8px 10px; border-radius: var(--radius-sm);
-    color: inherit; text-decoration: none; cursor: pointer; border-left: 2px solid transparent;
+    display: flex; gap: 0.5625rem; align-items: center; padding: 0.5rem 0.625rem; border-radius: var(--radius-sm);
+    color: inherit; text-decoration: none; cursor: pointer; border-left: 0.125rem solid transparent;
 }
 .nx-nav a:hover { background: var(--surface-2) }
 .nx-nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; border-left-color: var(--accent) }
-.nx-nav a .ico { width: 18px; text-align: center }
+.nx-nav a .ico { width: 1.125rem; text-align: center }
 
-@media (min-width: 860px) {
+@media (min-width: 53.75rem) {
     .nx-hamb { display: none }
-    .nx-app { display: grid; grid-template-columns: 248px 1fr }
+    .nx-app { display: grid; grid-template-columns: 15.5rem 1fr }
     .nx-top { grid-column: 1 / -1 }
-    .nx-side { grid-column: 1; position: sticky; top: 57px; height: calc(100vh - 57px); transform: none; width: auto; z-index: 1 }
+    .nx-side { grid-column: 1; position: sticky; top: 3.5625rem; height: calc(100vh - 3.5625rem); transform: none; width: auto; z-index: 1 }
     .nx-scrim { display: none }
-    .nx-main { grid-column: 2; padding: 22px 26px 80px }
+    .nx-main { grid-column: 2; padding: 1.375rem 1.625rem 5rem }
 }
 
 /* drawer (right panel) */
 .nx-drawer { position: fixed; inset: 0; z-index: 60; display: none }
 .nx-drawer.show { display: block }
-.nx-drawer-back { position: absolute; inset: 0; background: rgba(2, 6, 23, .45) }
+.nx-drawer-back { position: absolute; inset: 0; background: hsl(var(--h1) 84% 5% / 0.45) }
 .nx-drawer-panel {
-    position: absolute; top: 0; right: 0; bottom: 0; width: min(94vw, 460px);
+    position: absolute; top: 0; right: 0; bottom: 0; width: min(94vw, 28.75rem);
     background: var(--surface); border-left: 1px solid var(--border); box-shadow: var(--shadow);
-    padding: 18px; overflow-y: auto;
+    padding: 1.125rem; overflow-y: auto;
 }
-.nx-drawer-panel h2 { margin: 0 0 12px; font-size: var(--text-lg) }
+.nx-drawer-panel h2 { margin: 0 0 0.75rem; font-size: var(--text-lg) }
 
 /* login + toasts */
-.nx-login { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; background: var(--bg); padding: 20px }
+.nx-login { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; background: var(--bg); padding: 1.25rem }
 .nx-login[hidden] { display: none }
-.nx-toasts { position: fixed; bottom: 16px; right: 16px; z-index: 90; display: flex; flex-direction: column; gap: 8px; max-width: min(92vw, 380px) }
+.nx-toasts { position: fixed; bottom: 1rem; right: 1rem; z-index: 90; display: flex; flex-direction: column; gap: 0.5rem; max-width: min(92vw, 23.75rem) }
 .nx-toast {
-    background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
-    border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 10px 14px; font-size: var(--text-md);
+    background: var(--surface); border: 1px solid var(--border); border-left: 0.1875rem solid var(--accent);
+    border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 0.625rem 0.875rem; font-size: var(--text-md);
     transition: opacity var(--ease);
 }
 .nx-toast.ok { border-left-color: var(--ok) }
 .nx-toast.err { border-left-color: var(--danger) }
 
-.nx-form .nx-field { max-width: 420px }
-footer.nx-foot { color: var(--muted); font-size: var(--text-sm); border-top: 1px solid var(--border); margin: 24px 14px; padding-top: 14px }
-footer.nx-foot code { font-family: var(--mono); background: var(--surface-2); padding: .1em .4em; border-radius: 5px }
-@media (min-width: 860px) { footer.nx-foot { margin-left: 274px } }
+.nx-form .nx-field { max-width: 26.25rem }
+footer.nx-foot { color: var(--muted); font-size: var(--text-sm); border-top: 1px solid var(--border); margin: 1.5rem 0.875rem; padding-top: 0.875rem }
+footer.nx-foot code { font-family: var(--mono); background: var(--surface-2); padding: .1em .4em; border-radius: 0.3125rem }
+@media (min-width: 53.75rem) { footer.nx-foot { margin-left: 17.125rem } }
 `
 
 export default shell

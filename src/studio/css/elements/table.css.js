@@ -3,8 +3,8 @@
 export const table = /* css */ `
 .nx-table { border-collapse: collapse; width: 100%; font-size: var(--text-md) }
 .nx-table th, .nx-table td {
-    border-bottom: 1px solid var(--border); padding: 8px 10px; text-align: left;
-    max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    border-bottom: 1px solid var(--border); padding: 0.5rem 0.625rem; text-align: left;
+    max-width: 16.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .nx-table th {
     background: var(--surface-2); font-size: var(--text-xs); text-transform: uppercase;

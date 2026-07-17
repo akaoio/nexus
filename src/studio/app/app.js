@@ -30,7 +30,29 @@ const theme = createTheme()
 const state = { view: schemas[0] ? "content" : "entity", entity: schemas[0] ? schemas[0].name : null }
 const api = createApi({ onUnauthorized: () => showLogin() })
 
-const deriveKeypair = async (passphrase) => { const ZEN = (await import("/_nexus/vendor/zen/zen.js")).default; return { ZEN, pair: await ZEN.pair(null, { seed: passphrase }) } }
+// ── threads (the akao Launcher discipline) ─────────────────────────────────────
+// This module IS the main thread; heavy work registers as workers so the UI
+// never freezes. Keypair derivation (KDF) is the first real occupant.
+import { Threads } from "/_nexus/src/kernel/Threads.js"
+const threads = new Threads()
+threads.register("crypto", { worker: true, type: "module", url: new URL("./threads/crypto.js", import.meta.url) })
+
+const deriveKeypair = async (passphrase) => {
+    const ZEN = (await import("/_nexus/vendor/zen/zen.js")).default // sign() stays cheap, on main
+    try {
+        const pair = await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error("crypto thread timeout")), 15000)
+            threads.queue({
+                thread: "crypto", method: "derive", params: { seed: passphrase },
+                callback: (result) => { clearTimeout(timer); result?.message ? reject(new Error(result.message)) : resolve(result) }
+            })
+        })
+        return { ZEN, pair }
+    } catch {
+        // resilience: a worker failure falls back to deriving on main
+        return { ZEN, pair: await ZEN.pair(null, { seed: passphrase }) }
+    }
+}
 
 // the module registry (order = sidebar "Build" order)
 const MODULES = {
