@@ -74,6 +74,19 @@ Test.describe("CLI — nexus (CLI-*)", () => {
         assert.equal(validate(model).valid, true)
     })
 
+    Test.it("CLI-05b --engine records the DB choice; the default is sqlite; a bogus engine exits 2", () => {
+        const withEngine = runJson(["create", "shop-pg", "--engine", "postgres"], { cwd: scratch })
+        assert.equal(withEngine.code, 0)
+        assert.equal(withEngine.data.engine, "postgres")
+        assert.equal(JSON.parse(readFileSync(join(scratch, "shop-pg", "nexus.config.json"), "utf8")).database.engine, "postgres")
+        // default (no flag, non-interactive) is the zero-install sqlite
+        assert.equal(JSON.parse(readFileSync(join(INSTANCE, "nexus.config.json"), "utf8")).database.engine, "sqlite")
+        // a bogus engine is a usage error, nothing scaffolded
+        const bogus = runJson(["create", "shop-bad", "--engine", "oracle"], { cwd: scratch })
+        assert.equal(bogus.code, 2)
+        assert.equal(bogus.data.code, "E_USAGE")
+    })
+
     Test.it("CLI-06 create refuses a non-empty directory — never overwrites (exit 1, E_NOT_EMPTY)", () => {
         const { code, data } = runJson(["create", "shop"], { cwd: scratch })
         assert.equal(code, 1)

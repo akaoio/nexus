@@ -19,7 +19,7 @@ import { site } from "./commands/site.js"
 import { app } from "./commands/app.js"
 import { doctor } from "./commands/doctor.js"
 
-const VALUE_FLAGS = new Set(["port", "site"])
+const VALUE_FLAGS = new Set(["port", "site", "engine"])
 
 export function parseArgs(argv) {
     const flags = {}
@@ -68,7 +68,7 @@ ${out.bold("Usage")}
   nexus <command> [arguments] [--flags]
 
 ${out.bold("Commands")}
-  create <dir>       Scaffold a new Nexus instance     ${out.dim("--site <name>")}
+  create <dir>       Scaffold a new Nexus instance     ${out.dim("--site <name> --engine <e> · interactive in a TTY")}
   dev                Serve the current instance        ${out.dim("--port <n>")}
   start              Production server, self-served TLS ${out.dim("--port <n> [--insecure]")}
   test [filter]      Validate the instance's schemas
