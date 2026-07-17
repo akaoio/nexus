@@ -13,14 +13,14 @@ export const navigatorTemplate = (c) => html`
         <div id="orbit" ${({ element }) => (c.$orbit = element)}></div>
         <input type="checkbox" id="state" ${({ element }) => (c.$state = element)}>
         <section><slot ${({ element }) => (c.$slot = element)}></slot></section>
-        <label for="state" id="toggle" ${({ element }) => (c.$toggle = element)}>
+        <div id="toggle" ${({ element }) => (c.$toggle = element)}>
             <div>
                 <span></span>
                 <span></span>
                 <span></span>
             </div>
             <nx-icon ${({ element }) => (c.$icon = element)}></nx-icon>
-        </label>
+        </div>
     </nav>
 `
 

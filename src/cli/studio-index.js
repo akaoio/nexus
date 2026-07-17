@@ -22,7 +22,7 @@ export function studioIndex(config, schemas, meta = {}) {
 </head><body>
 <script type="application/json" id="nx-boot">${JSON.stringify(boot)}</script>
 <script type="module" src="/_nexus/src/studio/app/app.js"></script>
-<footer class="nx-foot">Entities: ${schemas.map((s) => `<code>${s.name}</code>`).join(" · ") || "—"} — API: <code>GET/POST /api/v1/:entity</code> · <code>POST /api/v1/:entity/query</code> · <code>/search</code> · <code>/ask</code></footer>
+<!-- API map (discoverable via view-source; not shown in the UI). Entities: ${schemas.map((s) => `<code>${s.name}</code>`).join(" ") || "—"} — endpoints: <code>GET/POST /api/v1/:entity</code> <code>POST /api/v1/:entity/query</code> <code>/api/v1/:entity/search</code> <code>/api/v1/:entity/ask</code> -->
 </body></html>`
 }
 
