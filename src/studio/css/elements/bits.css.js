@@ -52,14 +52,14 @@ export const bits = /* css */ `
     padding: var(--sp-2) 0; z-index: 75; pointer-events: none;
 }
 .nx-orbit > * { pointer-events: auto }
-nx-navigator > button {
+nx-navigator .nx-planet {
     font: inherit; color: var(--text); background: none; border: none; cursor: pointer;
     width: 100%; height: 100%; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     font-family: var(--mono); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .04em;
 }
-nx-navigator > button:hover { color: var(--accent) }
-nx-navigator > button.on { color: var(--accent); font-weight: 700 }
+nx-navigator .nx-planet:hover { color: var(--accent) }
+nx-navigator .nx-planet.on { color: var(--accent); font-weight: 700 }
 
 .nx-setsec { margin-bottom: var(--sp-5) }
 .nx-setsec h3 {

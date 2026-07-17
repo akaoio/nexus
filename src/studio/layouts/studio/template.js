@@ -11,8 +11,6 @@ import "../../components/icon/index.js"
 import "../../components/context/index.js"
 import "../../components/button/index.js"
 import "../../components/navigator/index.js"
-import "../../components/locales/index.js"
-import "../../components/themes/index.js"
 import "../../components/user/index.js"
 
 export const layoutTemplate = (c, { site, badge }) => html`
@@ -39,8 +37,8 @@ export const layoutTemplate = (c, { site, badge }) => html`
         <main class="nx-main" id="nx-main" ${({ element }) => (c.main = element)}></main>
         <span class="nx-orbit">
             <nx-navigator>
-                <nx-locales></nx-locales>
-                <nx-themes></nx-themes>
+                <nx-navigator data-icon="translate" ${({ element }) => (c.localesNav = element)}></nx-navigator>
+                <nx-navigator data-icon="circle-half" ${({ element }) => (c.themesNav = element)}></nx-navigator>
             </nx-navigator>
         </span>
     </div>

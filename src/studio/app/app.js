@@ -77,15 +77,7 @@ const MODULES = {
 }
 const BUILD = ["entity", "permissions", "users", "ai", "settings", "search"]
 
-// ── the orbit (akao footer navigator): locales + themes live there ─────────────
-import { NxLocales } from "/_nexus/src/studio/components/locales/index.js"
-import { NxThemes } from "/_nexus/src/studio/components/themes/index.js"
-NxLocales.onSelect = (code) => {
-    i18n.set(code)
-    navigate(state.view, state.entity) // the URL's locale prefix follows
-}
-NxThemes.current = theme.value
-NxThemes.onSelect = (mode) => theme.set(mode)
+import { mountLocales, mountThemes } from "./navigators.js"
 
 const shortModel = (id) => (id ? id.split("/").pop().replace(/-ONNX$/i, "") : "model")
 function embLabel(e) {
@@ -107,6 +99,10 @@ embadge.title = embTitle(boot.embedder)
 // ── layout ─────────────────────────────────────────────────────────────────────
 const layout = buildLayout({ site: boot.site, badge: embadge })
 const { app, main, nav, entNav, drawer, openDrawer, closeDrawer } = layout
+
+// populate the orbit planets (plain nx-navigators — same tag for the ancestor walk)
+mountLocales(layout.localesNav, { current: i18n.locale, onSelect: (code) => { i18n.set(code); navigate(state.view, state.entity) } })
+mountThemes(layout.themesNav, { current: theme.value, onSelect: (mode) => theme.set(mode) })
 
 const { login, passkeyRow } = buildLogin({ site: boot.site, onSubmit: doLogin, onPasskey: passkeyLogin })
 NxUser.onSignout = () => {

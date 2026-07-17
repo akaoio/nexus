@@ -32,7 +32,7 @@ export function buildLayout({ site, badge }) {
         c.drawerSlot.querySelector("input, select, textarea, button, nx-button")?.focus?.()
     }
 
-    return { app: c.app, main: c.main, nav: c.nav, entNav: c.entNav, drawer: c.drawer, user: c.user, openDrawer, closeDrawer: c.closeDrawer }
+    return { app: c.app, main: c.main, nav: c.nav, entNav: c.entNav, drawer: c.drawer, user: c.user, localesNav: c.localesNav, themesNav: c.themesNav, openDrawer, closeDrawer: c.closeDrawer }
 }
 
 /** The sign-in panel (ZEN passphrase → keypair; no password ever sent). */
