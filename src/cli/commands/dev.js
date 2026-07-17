@@ -276,6 +276,15 @@ export async function dev(args, flags, out) {
             res.writeHead(200, { "content-type": MIME[".html"], "cache-control": "no-cache" })
             return res.end(studioIndex(config, schemas, { embedder: embedderInfo, appName, i18n }))
         }
+        // Statics (the akao statics discipline): YAML in src is the human+machine
+        // source; what ships is JSON — composed at request time, no build step,
+        // no duplication. Components LOAD these; they never hardcode.
+        if (url.pathname === "/_nexus/statics/locales.json") {
+            const registry = i18n.names // src/i18n/dict/locales.yaml, already parsed
+            const list = i18n.locales.map((code) => ({ code, name: registry[code] ?? code }))
+            res.writeHead(200, { "content-type": MIME[".json"], "cache-control": "no-cache" })
+            return res.end(JSON.stringify(list))
+        }
         // The Studio stylesheet is COMPOSED from the css modules (akao triad
         // layout) at request time — single source of truth, no build step.
         if (url.pathname === "/_nexus/src/studio/app/studio.css") {

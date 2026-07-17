@@ -5,7 +5,7 @@
  * in worker threads; the URL in the kernel Router. This file only composes.
  */
 
-import { icon, text, button, toast, createApi, createI18n, createTheme } from "./lib.js"
+import { icon, text, toast, createApi, createI18n, createTheme } from "./lib.js"
 import { buildLayout, buildLogin } from "../layouts/studio/index.js"
 // routes — one FOLDER per route, nested like the URL (the akao routes shape)
 import * as content from "./routes/entity/[entity]/index.js"
@@ -75,22 +75,15 @@ const MODULES = {
 }
 const BUILD = ["entity", "permissions", "users", "ai", "settings", "search"]
 
-// ── topbar widgets (native primitives + components — no ad-hoc helpers) ────────
-const localeSel = document.createElement("select")
-localeSel.className = "nx-btn"
-for (const code of i18n.locales) {
-    const option = document.createElement("option")
-    option.value = code
-    option.textContent = i18n.names[code] || code
-    option.selected = code === i18n.locale
-    localeSel.append(option)
-}
-localeSel.addEventListener("change", () => {
-    i18n.set(localeSel.value)
+// ── the orbit (akao footer navigator): locales + themes live there ─────────────
+import { NxLocales } from "/_nexus/src/studio/components/locales/index.js"
+import { NxThemes } from "/_nexus/src/studio/components/themes/index.js"
+NxLocales.onSelect = (code) => {
+    i18n.set(code)
     navigate(state.view, state.entity) // the URL's locale prefix follows
-})
-
-const themeBtn = button({ variant: "icon", iconName: theme.icon(), title: "Theme", onclick: () => { theme.cycle(); themeBtn.dataset.icon = theme.icon() } })
+}
+NxThemes.current = theme.value
+NxThemes.onSelect = (mode) => theme.set(mode)
 
 const shortModel = (id) => (id ? id.split("/").pop().replace(/-ONNX$/i, "") : "model")
 function embLabel(e) {
@@ -110,7 +103,7 @@ embadge.textContent = embLabel(boot.embedder)
 embadge.title = embTitle(boot.embedder)
 
 // ── layout ─────────────────────────────────────────────────────────────────────
-const layout = buildLayout({ site: boot.site, badge: embadge, localeSel, themeBtn })
+const layout = buildLayout({ site: boot.site, badge: embadge })
 const { app, main, nav, entNav, drawer, openDrawer, closeDrawer } = layout
 
 const login = buildLogin({ site: boot.site, onSubmit: doLogin })
@@ -160,7 +153,6 @@ function renderNav() {
 
 function render() {
     document.documentElement.lang = i18n.locale
-    localeSel.value = i18n.locale
     renderNav()
     main.replaceChildren(MODULES[state.view].render(ctx))
 }

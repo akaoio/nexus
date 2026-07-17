@@ -19,10 +19,10 @@ function mount(template) {
  * caller through the returned refs.
  * @returns {{ app, main, nav, entNav, drawer, openDrawer, closeDrawer }}
  */
-export function buildLayout({ site, badge, localeSel, themeBtn }) {
+export function buildLayout({ site, badge }) {
     const c = {}
     c.closeDrawer = () => c.drawer.classList.remove("show")
-    mount(layoutTemplate(c, { site, badge, localeSel, themeBtn }))
+    mount(layoutTemplate(c, { site, badge }))
     mount(drawerTemplate(c))
 
     function openDrawer(title, node) {

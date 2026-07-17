@@ -154,6 +154,7 @@ export function createTheme() {
     return {
         get value() { return theme },
         icon: () => (theme === "dark" ? "moon" : theme === "light" ? "sun" : "circle-half"),
-        cycle() { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]; localStorage.setItem("nexus-theme", theme); apply(); return theme }
+        set(mode) { theme = THEMES.includes(mode) ? mode : "auto"; localStorage.setItem("nexus-theme", theme); apply(); return theme },
+        cycle() { return this.set(THEMES[(THEMES.indexOf(theme) + 1) % 3]) }
     }
 }
