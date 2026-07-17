@@ -45,9 +45,9 @@ const STARTER_MODEL = {
     label: { en: "Task", vi: "Công việc" },
     fields: [
         { name: "title", type: "text", required: true, label: { en: "Title", vi: "Tiêu đề" } },
-        { name: "done", type: "boolean", default: false },
-        { name: "due", type: "date" },
-        { name: "priority", type: "select", options: ["low", "medium", "high"], default: "medium" }
+        { name: "done", type: "boolean", default: false, label: { en: "Done", vi: "Xong" } },
+        { name: "due", type: "date", label: { en: "Due", vi: "Hạn chót" } },
+        { name: "priority", type: "select", options: ["low", "medium", "high"], default: "medium", label: { en: "Priority", vi: "Ưu tiên" } }
     ],
     // A semantic block so search works the moment an AI model is configured
     // (§4.6c). Without this an Entity has nothing to embed — the reason search

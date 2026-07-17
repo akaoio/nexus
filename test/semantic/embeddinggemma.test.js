@@ -13,6 +13,7 @@
  *   npm --prefix test/.engines install @huggingface/transformers
  */
 
+import { fileURLToPath } from "url"
 import Test, { assert } from "../../src/kernel/Test.js"
 import { transformersProvider } from "../../src/semantic/transformers.js"
 import { DataPlane } from "../../src/data/DataPlane.js"
@@ -20,7 +21,7 @@ import { tableDDL } from "../../src/data/ddl.js"
 import { createCompiler } from "../../src/data/kysely.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 
-const ENGINES_ROOT = new URL("../.engines", import.meta.url).pathname
+const ENGINES_ROOT = fileURLToPath(new URL("../.engines", import.meta.url))
 
 // Probe once: does the real EmbeddingGemma load here? (Downloads on first run,
 // cached under ~/.cache/huggingface thereafter.) The default model IS Gemma.

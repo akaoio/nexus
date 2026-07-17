@@ -12,6 +12,7 @@
  */
 
 import { DataPlane } from "../data/DataPlane.js"
+import { modelFloor, modelNLThreshold } from "../semantic/transformers.js"
 import { createApi } from "./api.js"
 import { openInstanceData, ensureTables } from "../cli/data.js"
 import { loadExtensions } from "../app/Extensions.js"
@@ -39,6 +40,8 @@ function lazyTransformers(model, root) {
     return {
         name: model,
         version: 1,
+        floor: modelFloor(model),
+        nlThreshold: modelNLThreshold(model),
         get dims() {
             return inner?.dims
         },
@@ -115,13 +118,75 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         // model when configured + installed, else the lexical fallback.
         let embedder = null
         if (wantsSemantic) embedder = model && semanticAvailable ? lazyTransformers(model, root) : hashProvider()
-        const plane = new DataPlane({ executor, schemas, dialect: executor.dialect, hooks: extensions, embedder })
+
+        // NL→AST (§4.6f), REAL: the deterministic rule grammar first (it wins
+        // when the text parses), and past that the schema-derived intent
+        // library retrieved by the REAL embedding model — "việc đã hoàn thành"
+        // lands on done = true through vector similarity. Only when neither
+        // understands does E_NL_PARSE surface (the Studio then falls to search).
+        let nlProvider
+        if (embedder && model && semanticAvailable) {
+            const { ruleProvider, strictParse, embeddingNLProvider } = await import("../nl/nl.js")
+            const { intentsFor } = await import("../nl/intents.js")
+            const intentProviders = new Map()
+            // Tier 4 (opt-in via semantic.nlModel): a REAL local LLM composes
+            // ASTs the grammar and intent retrieval cannot — loaded lazily,
+            // its output still validated + permission-injected downstream.
+            const nlModel = config.semantic?.nlModel
+            let llm = null
+            const llmProvider = async (query, { schema }) => {
+                if (!llm) {
+                    const { llmNLProvider, transformersGenerator } = await import("../nl/llm.js")
+                    llm = llmNLProvider({ generate: await transformersGenerator({ model: nlModel, root }) })
+                }
+                return llm(query, { schema })
+            }
+            // A conjunction marks a COMPOUND ask — single-intent retrieval would
+            // answer a fragment and silently drop the rest, so compounds go to
+            // the LLM (which composes) and only fall back to intents after.
+            const COMPOUND = /\bvà\b|\bhoặc\b|\bmà\b|\bnhưng\b|\band\b|\bor\b|\bbut\b|,/i
+            const intentFor = (schema) => {
+                let provider = intentProviders.get(schema.name)
+                if (!provider) {
+                    provider = embeddingNLProvider({ examples: intentsFor(schema), embedder, threshold: embedder.nlThreshold ?? 0.35 })
+                    intentProviders.set(schema.name, provider)
+                }
+                return provider
+            }
+            nlProvider = async (query, { schema }) => {
+                // A compound ask must not be answered by a FRAGMENT: the strict
+                // grammar may parse it whole; failing that the LLM composes it;
+                // natural/intent readings (one clause at a time) come last.
+                if (nlModel && COMPOUND.test(query)) {
+                    const strict = strictParse(query, schema)
+                    if (strict) return strict
+                    try {
+                        return await llmProvider(query, { schema })
+                    } catch {}
+                }
+                try {
+                    return await ruleProvider(query, { schema })
+                } catch (parseError) {
+                    const stages = nlModel ? [intentFor(schema), llmProvider] : [intentFor(schema)]
+                    for (const stage of stages) {
+                        try {
+                            return await stage(query, { schema })
+                        } catch {}
+                    }
+                    throw parseError // the parser's message is the actionable one
+                }
+            }
+        }
+        const plane = new DataPlane({ executor, schemas, dialect: executor.dialect, hooks: extensions, embedder, nlProvider })
 
         const keys = Array.isArray(config.api_keys) ? config.api_keys : []
-        const identities = Array.isArray(config.identities) ? config.identities : [] // [{ pub, roles }]
-        authState.required = keys.length > 0 || identities.length > 0
+        // LIVE auth state: identities is a mutable array and `required` derives
+        // from it, so the Studio can add an identity and flip auth ON without a
+        // restart — the context below re-checks per request.
+        authState.identities = Array.isArray(config.identities) ? [...config.identities] : [] // [{ pub, roles }]
+        Object.defineProperty(authState, "required", { get: () => keys.length > 0 || authState.identities.length > 0 })
         authState.secret = config.token_secret || randomBytes(32).toString("hex") // ephemeral if unset
-        authState.rolesForPub = (pub) => identities.find((i) => i.pub === pub)?.roles ?? []
+        authState.rolesForPub = (pub) => authState.identities.find((i) => i.pub === pub)?.roles ?? []
 
         // The one hard security rule of production mode: never serve god-mode.
         if (mode === "production" && !authState.required)
@@ -130,34 +195,32 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
                 { code: "E_NO_AUTH" }
             )
 
-        let context
-        if (authState.required) {
-            context = (req) => {
-                const header = req.headers["authorization"] ?? ""
-                const bearer = header.startsWith("Bearer ") ? header.slice(7) : null
-                // 1) a ZEN session token (issued by /_auth/verify)
-                if (bearer) {
-                    const claims = verifyToken(bearer, authState.secret)
-                    if (claims) return { user: claims.user, roles: claims.roles, policies: policiesFor(appPolicies, claims.roles), shares: [] }
-                }
-                // 2) a static API key (constant-time, SEC-06)
-                const presented = bearer ?? req.headers["x-nexus-key"]
-                let entry = null
-                for (const k of keys) if (k.key && timingSafeStringEqual(k.key, presented ?? "")) entry = k
-                if (entry) {
-                    const roles = entry.roles ?? []
-                    return { user: entry.user, roles, policies: policiesFor(appPolicies, roles), shares: [] }
-                }
-                throw new Error("E_AUTH: a valid session token or API key is required")
+        const devPols = devPolicies(schemas)
+        const context = (req) => {
+            // spread per request: appPolicies mutates live (Studio hot-apply)
+            if (!authState.required)
+                return { user: req.headers["x-nexus-user"] || "dev", roles: ["dev"], policies: [...devPols, ...appPolicies], shares: [] }
+            const header = req.headers["authorization"] ?? ""
+            const bearer = header.startsWith("Bearer ") ? header.slice(7) : null
+            // 1) a ZEN session token (issued by /_auth/verify)
+            if (bearer) {
+                const claims = verifyToken(bearer, authState.secret)
+                if (claims) return { user: claims.user, roles: claims.roles, policies: policiesFor(appPolicies, claims.roles), shares: [] }
             }
-        } else {
-            const policies = [...devPolicies(schemas), ...appPolicies]
-            context = (req) => ({ user: req.headers["x-nexus-user"] || "dev", roles: ["dev"], policies, shares: [] })
+            // 2) a static API key (constant-time, SEC-06)
+            const presented = bearer ?? req.headers["x-nexus-key"]
+            let entry = null
+            for (const k of keys) if (k.key && timingSafeStringEqual(k.key, presented ?? "")) entry = k
+            if (entry) {
+                const roles = entry.roles ?? []
+                return { user: entry.user, roles, policies: policiesFor(appPolicies, roles), shares: [] }
+            }
+            throw new Error("E_AUTH: a valid session token or API key is required")
         }
 
         api = createApi({ plane, endpoints: extensions.endpoints, context })
         authMode = authState.required
-            ? `${[keys.length && `${keys.length} API keys`, identities.length && `${identities.length} ZEN identities`].filter(Boolean).join(" + ")} (E_AUTH without credentials)`
+            ? `${[keys.length && `${keys.length} API keys`, authState.identities.length && `${authState.identities.length} ZEN identities`].filter(Boolean).join(" + ")} (E_AUTH without credentials)`
             : "DEV identity — wide-open policies, user via x-nexus-user header"
     }
 

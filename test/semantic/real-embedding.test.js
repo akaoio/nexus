@@ -11,6 +11,7 @@
  *   npm --prefix test/.engines install @huggingface/transformers
  */
 
+import { fileURLToPath } from "url"
 import Test, { assert } from "../../src/kernel/Test.js"
 import { transformersProvider } from "../../src/semantic/transformers.js"
 import { embeddingNLProvider, translate } from "../../src/nl/nl.js"
@@ -21,7 +22,7 @@ import * as AST from "../../src/ast/AST.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 import { doc, leaf } from "../conformance/ast/_helpers.js"
 
-const ENGINES_ROOT = new URL("../.engines", import.meta.url).pathname
+const ENGINES_ROOT = fileURLToPath(new URL("../.engines", import.meta.url))
 
 // Probe once at load: is the real model available? (Downloads on first run,
 // cached thereafter under ~/.cache/huggingface.)

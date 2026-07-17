@@ -48,6 +48,33 @@ function promptsFor(model, override) {
 }
 
 /**
+ * The model's relevance floor — the cosine below which a match is noise, not
+ * a result. Dense models score unrelated text well above zero (Gemma ~0.4,
+ * e5 ~0.75 — e5's space is compressed), so search without a floor returns
+ * everything for any query. Values from observed related/unrelated gaps.
+ */
+export function modelFloor(model = "") {
+    if (/gemma/i.test(model)) return 0.5
+    if (/\be5\b|multilingual-e5/i.test(model)) return 0.75
+    if (/minilm/i.test(model)) return 0.3
+    return 0.25
+}
+
+/**
+ * The NL-intent threshold — stricter than the search floor, because intent
+ * retrieval maps a phrase to an ACTION and a wrong guess is worse than a
+ * refusal. Measured on EmbeddingGemma: real paraphrases score 0.71–0.84
+ * against the schema intents, out-of-domain asks 0.53–0.57 — 0.65 splits
+ * them with margin on both sides.
+ */
+export function modelNLThreshold(model = "") {
+    if (/gemma/i.test(model)) return 0.65
+    if (/\be5\b|multilingual-e5/i.test(model)) return 0.85
+    if (/minilm/i.test(model)) return 0.35
+    return 0.35
+}
+
+/**
  * @param {Object} config
  * @param {string} [config.model] - HF model id (ONNX). Default EmbeddingGemma-300m.
  * @param {string} [config.root] - Instance dir for resolving the library.
@@ -74,6 +101,8 @@ export async function transformersProvider({ model = "onnx-community/embeddingge
         version: 1,
         dims: probe.length,
         prompts: P,
+        floor: modelFloor(model),
+        nlThreshold: modelNLThreshold(model),
         /** Embed documents (the indexing side). */
         embed: (texts) => many(texts, P.document),
         /** Embed search queries (the retrieval side) — asymmetric for Gemma. */

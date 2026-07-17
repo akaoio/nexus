@@ -317,8 +317,31 @@ export class DataPlane {
 
     async #ensureVec(entity, dims) {
         if (this.#vecReady.has(entity)) return
+        // A model switch can change dimensions — a vec0 table is fixed-dims,
+        // so a mismatched leftover must be rebuilt (backfill repopulates it).
+        const existing = await this.executor.all(`SELECT sql FROM sqlite_master WHERE name = ?`, [`_nexus_vec_${entity}`])
+        const declared = existing[0]?.sql?.match(/float\[(\d+)\]/)?.[1]
+        if (declared && Number(declared) !== dims) await this.executor.run(`DROP TABLE "_nexus_vec_${entity}"`)
         await this.executor.run(`CREATE VIRTUAL TABLE IF NOT EXISTS "_nexus_vec_${entity}" USING vec0(row_id text, embedding float[${dims}])`)
         this.#vecReady.add(entity)
+    }
+
+    /** The current provider's identity tag — vectors are only comparable within one tag. */
+    #modelTag() {
+        return `${this.embedder.name}@${this.embedder.version ?? 0}`
+    }
+
+    async #storeEmbedding(entity, rowId, vector) {
+        await this.executor.run(`DELETE FROM _nexus_embeddings WHERE entity = ? AND row_id = ?`, [entity, rowId])
+        await this.executor.run(`INSERT INTO _nexus_embeddings (entity, row_id, model, vector) VALUES (?, ?, ?, ?)`, [
+            entity, rowId, this.#modelTag(), JSON.stringify(vector)
+        ])
+        // sqlite-vec ANN index (real KNN), when the engine loaded the extension
+        if (this.executor.vec) {
+            await this.#ensureVec(entity, vector.length)
+            await this.executor.run(`DELETE FROM "_nexus_vec_${entity}" WHERE row_id = ?`, [rowId])
+            await this.executor.run(`INSERT INTO "_nexus_vec_${entity}"(row_id, embedding) VALUES (?, ?)`, [rowId, this.#f32(vector)])
+        }
     }
 
     async #maintainEmbedding(entity, row) {
@@ -326,16 +349,34 @@ export class DataPlane {
         if (!this.embedder || !schema?.semantic) return
         await this.#ensureEmbeddings()
         const [vector] = await this.embedder.embed([serializeRow(schema, row)])
-        await this.executor.run(`DELETE FROM _nexus_embeddings WHERE entity = ? AND row_id = ?`, [entity, row.id])
-        await this.executor.run(`INSERT INTO _nexus_embeddings (entity, row_id, model, vector) VALUES (?, ?, ?, ?)`, [
-            entity, row.id, `${this.embedder.name}@${this.embedder.version}`, JSON.stringify(vector)
-        ])
-        // sqlite-vec ANN index (real KNN), when the engine loaded the extension
-        if (this.executor.vec) {
-            await this.#ensureVec(entity, vector.length)
-            await this.executor.run(`DELETE FROM "_nexus_vec_${entity}" WHERE row_id = ?`, [row.id])
-            await this.executor.run(`INSERT INTO "_nexus_vec_${entity}"(row_id, embedding) VALUES (?, ?)`, [row.id, this.#f32(vector)])
+        await this.#storeEmbedding(entity, row.id, vector)
+    }
+
+    /**
+     * Load the CURRENT model's vectors for the given rows, (re-)embedding any
+     * row whose stored vector is missing or was written by a different model.
+     * This makes model switches self-healing: stale vectors are never compared
+     * against a differently-dimensioned query — they are replaced.
+     * @returns {Promise<Map<string, number[]>>} row_id → vector
+     */
+    async #currentVectors(entity, schema, rows) {
+        await this.#ensureEmbeddings()
+        const stored = await this.executor.all(
+            `SELECT row_id, vector FROM _nexus_embeddings WHERE entity = ? AND model = ?`,
+            [entity, this.#modelTag()]
+        )
+        const vectors = new Map(stored.map((r) => [r.row_id, JSON.parse(r.vector)]))
+        const missing = rows.filter((row) => !vectors.has(row.id))
+        const BATCH = 32
+        for (let start = 0; start < missing.length; start += BATCH) {
+            const batch = missing.slice(start, start + BATCH)
+            const embedded = await this.embedder.embed(batch.map((row) => serializeRow(schema, row)))
+            for (let i = 0; i < batch.length; i++) {
+                vectors.set(batch[i].id, embedded[i])
+                await this.#storeEmbedding(entity, batch[i].id, embedded[i])
+            }
         }
+        return vectors
     }
 
     async #dropEmbedding(entity, id) {
@@ -397,6 +438,14 @@ export class DataPlane {
             const encodeQuery = this.embedder.embedQuery ?? this.embedder.embed
             const [queryVector] = await encodeQuery.call(this.embedder, [String(query)])
             const candIds = new Set(candidates.map((r) => r.id))
+            // Current-model vectors for every candidate — missing or stale
+            // (other-model) vectors are re-embedded here, so a model switch or
+            // a late-enabled embedder can never silently blank the results.
+            const vectors = await this.#currentVectors(entity, schema, candidates)
+            // The provider's relevance floor: dense models score even unrelated
+            // text well above zero, so without a floor every query "matches"
+            // everything. Below-floor candidates are dropped, not ranked last.
+            const floor = this.embedder.floor ?? 0
             if (this.executor.vec && this.#vecReady.has(entity)) {
                 // Real sqlite-vec ANN: KNN over-fetches, then we keep only the
                 // permission-visible candidates — ranking stays inside
@@ -408,15 +457,14 @@ export class DataPlane {
                 )
                 vectorRanked = knn
                     .filter((r) => candIds.has(r.row_id))
+                    // L2 on normalized vectors: cos = 1 − d²/2 — the floor is a cosine
+                    .filter((r) => 1 - (r.distance * r.distance) / 2 >= floor)
                     .map((r) => ({ id: r.row_id, score: 1 / (1 + r.distance) }))
             } else {
-                await this.#ensureEmbeddings()
-                const stored = await this.executor.all(`SELECT row_id, vector FROM _nexus_embeddings WHERE entity = ?`, [entity])
-                const vectors = new Map(stored.map((r) => [r.row_id, JSON.parse(r.vector)]))
                 vectorRanked = candidates
                     .filter((row) => vectors.has(row.id))
                     .map((row) => ({ id: row.id, score: cosine(queryVector, vectors.get(row.id)) }))
-                    .filter((r) => r.score > 0)
+                    .filter((r) => r.score > 0 && r.score >= floor)
                     .sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1))
             }
         }

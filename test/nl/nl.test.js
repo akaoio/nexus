@@ -6,7 +6,9 @@
  */
 
 import Test, { assert } from "../../src/kernel/Test.js"
-import { ruleProvider, translate } from "../../src/nl/nl.js"
+import { ruleProvider, embeddingNLProvider, translate } from "../../src/nl/nl.js"
+import { intentsFor } from "../../src/nl/intents.js"
+import { hashProvider } from "../../src/semantic/semantic.js"
 import * as AST from "../../src/ast/AST.js"
 import { DataPlane } from "../../src/data/DataPlane.js"
 import { tableDDL } from "../../src/data/ddl.js"
@@ -17,10 +19,12 @@ import { doc, leaf } from "../conformance/ast/_helpers.js"
 const TASK = schema({
     name: "task",
     fields: [
-        field("title", "text", { required: true }),
-        field("done", "boolean"),
+        field("title", "text", { required: true, label: { en: "Title", vi: "Tiêu đề" } }),
+        field("done", "boolean", { label: { en: "Done", vi: "Xong" } }),
         field("priority", "select", { options: ["low", "medium", "high"] }),
         field("points", "integer"),
+        field("due", "date"),
+        field("status", "select", { options: ["open", "in progress", "closed"] }),
         field("secret", "text", { permlevel: 2 })
     ]
 })
@@ -68,6 +72,88 @@ Test.describe("NL→AST (NL-*)", () => {
         }
         const document = await translate("show me open tasks", TASK, cannedLLM)
         assert.deepEqual(document.root, { field: "done", operator: "eq", value: false })
+    })
+
+    Test.it("NL-05 field designators are case-insensitive and may be schema labels (any locale)", async () => {
+        assert.deepEqual((await ruleProvider("Priority = high", { schema: TASK })).root, { field: "priority", operator: "eq", value: "high" })
+        assert.deepEqual((await ruleProvider("DONE = true", { schema: TASK })).root, { field: "done", operator: "eq", value: true })
+        assert.deepEqual((await ruleProvider("Title contains ship", { schema: TASK })).root, { field: "title", operator: "like", value: "%ship%" })
+        // labels resolve to the real field — English and Vietnamese alike
+        assert.deepEqual((await ruleProvider("Tiêu đề contains bánh", { schema: TASK })).root, { field: "title", operator: "like", value: "%bánh%" })
+        // translate() sees the RESOLVED field name, so labels pass the vocabulary check
+        const document = await translate("Title contains ship", TASK)
+        assert.equal(document.root.field, "title")
+    })
+
+    Test.it("NL-06 and/or precedence and quoted values: or binds looser; quotes protect connectives", async () => {
+        const mixed = (await ruleProvider("done = true and points > 3 or priority = low", { schema: TASK })).root
+        assert.equal(mixed.op, "or")
+        assert.equal(mixed.children[0].op, "and")
+        assert.deepEqual(mixed.children[1], { field: "priority", operator: "eq", value: "low" })
+        // a quoted value containing " and " is one value, not two clauses
+        const quoted = (await ruleProvider('title ~ "bread and butter"', { schema: TASK })).root
+        assert.deepEqual(quoted, { field: "title", operator: "like", value: "%bread and butter%" })
+    })
+
+    Test.it("NL-07 date words become $NOW variables on date fields: today / tomorrow / yesterday, before / after", async () => {
+        assert.deepEqual((await ruleProvider("due < today", { schema: TASK })).root, { field: "due", operator: "lt", value: "$NOW" })
+        assert.deepEqual((await ruleProvider("due before today", { schema: TASK })).root, { field: "due", operator: "lt", value: "$NOW" })
+        assert.deepEqual((await ruleProvider("due after tomorrow", { schema: TASK })).root, { field: "due", operator: "gt", value: "$NOW(+1 day)" })
+        assert.deepEqual((await ruleProvider("due >= yesterday", { schema: TASK })).root, { field: "due", operator: "gte", value: "$NOW(-1 day)" })
+        // the produced document still validates and resolves like any AST
+        const document = await translate("due before today", TASK)
+        const resolved = AST.resolve(document, { now: "2026-07-17T00:00:00.000Z" })
+        assert.equal(resolved.root.value, "2026-07-17T00:00:00.000Z")
+    })
+
+    Test.it("NL-08 natural reading understands negation windows, un- prefixes and Vietnamese negations", async () => {
+        assert.deepEqual((await ruleProvider("not yet done", { schema: TASK })).root, { field: "done", operator: "eq", value: false })
+        assert.deepEqual((await ruleProvider("undone tasks", { schema: TASK })).root, { field: "done", operator: "eq", value: false })
+        assert.deepEqual((await ruleProvider("chưa done", { schema: TASK })).root, { field: "done", operator: "eq", value: false })
+        assert.deepEqual((await ruleProvider("không done", { schema: TASK })).root, { field: "done", operator: "eq", value: false })
+        // a boolean's label counts as naming it — "chưa xong" reads the vi label of done
+        assert.deepEqual((await ruleProvider("chưa xong", { schema: TASK })).root, { field: "done", operator: "eq", value: false })
+        assert.deepEqual((await ruleProvider("xong", { schema: TASK })).root, { field: "done", operator: "eq", value: true })
+    })
+
+    Test.it("NL-09 natural reading matches multi-word select options as phrases", async () => {
+        assert.deepEqual((await ruleProvider("in progress", { schema: TASK })).root, { field: "status", operator: "eq", value: "in progress" })
+        const both = (await ruleProvider("in progress and high priority", { schema: TASK })).root
+        assert.equal(both.op, "and")
+        assert.deepEqual(new Set(both.children.map((c) => c.field)), new Set(["status", "priority"]))
+    })
+
+    Test.it("NL-10 several options of ONE select named together become an `in` — 'high or medium priority'", async () => {
+        assert.deepEqual((await ruleProvider("high or medium priority", { schema: TASK })).root, { field: "priority", operator: "in", value: ["high", "medium"] })
+        assert.deepEqual((await ruleProvider("high priority", { schema: TASK })).root, { field: "priority", operator: "eq", value: "high" })
+    })
+
+    Test.it("NL-11 the schema-derived intent library + a real embedder translate text the grammar can't", async () => {
+        const intents = intentsFor(TASK)
+        assert.truthy(intents.length > 10, "the schema generates a non-trivial intent library")
+        assert.truthy(intents.every((i) => i.ast.astVersion === 1), "every intent carries a real AST document")
+        // retrieval through a REAL (lexical) embedder — the semantic model path
+        // is pinned by the gated real-embedding suite and the live server
+        const provider = embeddingNLProvider({ examples: intents, embedder: hashProvider(256), threshold: 0.3 })
+        const document = await translate("việc chưa xong", TASK, provider)
+        assert.deepEqual(document.root, { field: "done", operator: "eq", value: false })
+    })
+
+    Test.it("NL-12 the LLM tier's pure halves: the schema prompt is complete, extractAST is strict", async () => {
+        const { schemaPrompt, extractAST } = await import("../../src/nl/llm.js")
+        const prompt = schemaPrompt(TASK)
+        for (const must of ["priority", "low, medium, high", "Tiêu đề", "$NOW", '"op": "and"|"or"|"not"'])
+            assert.truthy(prompt.includes(must), `prompt carries ${JSON.stringify(must)}`)
+        // fenced, bare, and prose-wrapped JSON all extract; the result is a document
+        const ast = { field: "done", operator: "eq", value: false }
+        for (const text of [JSON.stringify(ast), "```json\n" + JSON.stringify(ast) + "\n```", "Sure! " + JSON.stringify(ast) + " hope that helps"])
+            assert.deepEqual(extractAST(text), { astVersion: 1, root: ast })
+        assert.deepEqual(extractAST("null"), { astVersion: 1, root: null })
+        await Test.assert.rejects(Promise.resolve().then(() => extractAST("I cannot help with that")), "E_NL_LLM")
+        await Test.assert.rejects(Promise.resolve().then(() => extractAST('{"broken": ')), "E_NL_LLM")
+        // an extracted document flows through the SAME choke point as every provider
+        const provider = async () => extractAST(JSON.stringify({ field: "ghost", operator: "eq", value: 1 }))
+        await Test.assert.rejects(translate("anything", TASK, provider), "E_NL_FIELD")
     })
 
     Test.it("NL-04 SECURITY: DataPlane.ask runs through permission — NL cannot widen access", async () => {

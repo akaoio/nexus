@@ -27,16 +27,20 @@ const NOTE = schema({
 const policy = { entity: "note", actions: ["read", "write", "create", "delete"], rule: null, permlevel: 0, ifOwner: false }
 const CTX = { user: "u1", roles: [], policies: [policy], shares: [] }
 
-async function makePlane() {
+async function makeExecutor() {
     const { DatabaseSync } = await import("node:sqlite")
     const db = new DatabaseSync(":memory:")
     const kysely = createCompiler("sqlite")
     for (const builder of tableDDL(kysely, NOTE)) db.exec(builder.compile().sql)
-    const executor = {
+    return {
         run: (sql, params = []) => void db.prepare(sql).run(...params),
         all: (sql, params = []) => db.prepare(sql).all(...params)
     }
-    return new DataPlane({ executor, schemas: [NOTE], dialect: "sqlite", embedder: hashProvider(128) })
+}
+
+async function makePlane(embedder = hashProvider(128), executor = null) {
+    executor = executor ?? (await makeExecutor())
+    return new DataPlane({ executor, schemas: [NOTE], dialect: "sqlite", embedder })
 }
 
 Test.describe("Semantic — core (SEM-*)", () => {
@@ -105,6 +109,51 @@ Test.describe("Semantic — core (SEM-*)", () => {
             (await plane.search("note", { query: "penguins", mode: "vector" }, CTX)).some((h) => h.row.id === distractor.id),
             "the deleted row's embedding is gone"
         )
+    })
+
+    Test.it("SEM-07 switching the embedding model self-heals: stale vectors are ignored and re-embedded with the current model", async () => {
+        // rows written under provider A (128d)…
+        const executor = await makeExecutor()
+        const planeA = await makePlane(hashProvider(128), executor)
+        const target = await planeA.create("note", { title: "query builder", body: "recursive AST editor for filters" }, CTX)
+        await planeA.create("note", { title: "grocery list", body: "rice, fish sauce, coffee" }, CTX)
+        // …then the site switches to provider B (64d, different name) — same database
+        const planeB = await makePlane({ ...hashProvider(64), name: "hash-bow-v2" }, executor)
+        const hits = await planeB.search("note", { query: "recursive query editor", mode: "vector" }, CTX)
+        assert.truthy(hits.length >= 1, "vector search still works after a model switch")
+        assert.equal(hits[0].row.id, target.id, "the right note ranks first — no NaN garbage from mixed dims")
+        assert.truthy(hits.every((h) => Number.isFinite(h.score)), "every score is a real number")
+        // the store now carries CURRENT-model vectors for the searched rows
+        const models = executor.all(`SELECT DISTINCT model FROM _nexus_embeddings WHERE entity = 'note'`).map((r) => r.model)
+        assert.deepEqual(models, ["hash-bow-v2@1"], "stale vectors were replaced, not merely skipped")
+    })
+
+    Test.it("SEM-08 rows created BEFORE any embedder existed are backfilled on first search", async () => {
+        const executor = await makeExecutor()
+        const bare = await makePlane(null, executor) // no embedder — nothing indexed at write time
+        const target = await bare.create("note", { title: "query builder", body: "recursive AST editor" }, CTX)
+        await bare.create("note", { title: "grocery list", body: "rice and coffee" }, CTX)
+        const plane = await makePlane(hashProvider(128), executor) // the embedder arrives later
+        const hits = await plane.search("note", { query: "recursive query editor", mode: "vector" }, CTX)
+        assert.truthy(hits.length >= 1, "previously-unindexed rows are searchable")
+        assert.equal(hits[0].row.id, target.id)
+    })
+
+    Test.it("SEM-09 a provider-declared relevance floor drops weak vector matches — garbage queries return [] instead of everything", async () => {
+        // a fake semantic provider: "penguin" texts → [1,0], others → [0.6,0.8]
+        // (cosine 0.6 against a penguin query — related-ish but below the floor)
+        const fake = {
+            name: "fake-sem", version: 1, dims: 2, floor: 0.9,
+            async embed(texts) { return texts.map((t) => (/penguin/i.test(t) ? [1, 0] : [0.6, 0.8])) }
+        }
+        const plane = await makePlane(fake)
+        const hit = await plane.create("note", { title: "penguin colony", body: "antarctic" }, CTX)
+        await plane.create("note", { title: "quarterly report", body: "numbers" }, CTX)
+        const hits = await plane.search("note", { query: "penguin", mode: "vector" }, CTX)
+        assert.deepEqual(hits.map((h) => h.row.id), [hit.id], "only the above-floor match surfaces")
+        // hybrid: the below-floor row must not ride in through the vector list
+        const hybrid = await plane.search("note", { query: "penguin", mode: "hybrid" }, CTX)
+        assert.truthy(hybrid.every((h) => h.row.id === hit.id), "no below-floor garbage in hybrid either")
     })
 
     Test.it("SEM-06 SECURITY: ranking happens INSIDE permission — no row a query could not see surfaces", async () => {

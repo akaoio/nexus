@@ -20,15 +20,23 @@ const err = (code, detail) => new Error(detail ? `${code}: ${detail}` : code)
 
 const OP_WORDS = {
     "=": "eq", "==": "eq", is: "eq",
-    "!=": "ne", "<>": "ne", not: "ne",
+    "!=": "ne", "<>": "ne", not: "ne", "is not": "ne",
     ">": "gt", ">=": "gte", "<": "lt", "<=": "lte",
     "~": "like", like: "like", contains: "like",
-    in: "in"
+    in: "in",
+    before: "lt", after: "gt"
 }
 
 const NUMERIC = new Set(["integer", "number"])
+const DATE_TYPES = new Set(["date", "datetime"])
 
-/** Coerce a raw token to the field's type (numbers for numeric fields, bools). */
+/** Date words → AST dynamic variables (resolved later with the injected clock). */
+const DATE_WORDS = {
+    now: "$NOW", today: "$NOW",
+    tomorrow: "$NOW(+1 day)", yesterday: "$NOW(-1 day)"
+}
+
+/** Coerce a raw token to the field's type (numbers for numeric fields, bools, date words). */
 function coerce(field, raw) {
     let v = raw.trim()
     if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) return v.slice(1, -1)
@@ -37,75 +45,182 @@ function coerce(field, raw) {
         if (!Number.isNaN(n)) return field.type === "integer" ? Math.trunc(n) : n
     }
     if (field?.type === "boolean") {
-        if (v === "true") return true
-        if (v === "false") return false
+        const w = v.toLowerCase()
+        if (w === "true" || w === "yes") return true
+        if (w === "false" || w === "no") return false
+    }
+    if (field && DATE_TYPES.has(field.type)) {
+        const dateWord = DATE_WORDS[v.toLowerCase()]
+        if (dateWord) return dateWord
     }
     return v
 }
 
-const NEGATION = new Set(["not", "no", "non", "without", "isnt", "arent", "never", "un"])
+/** Words that flip a named boolean to false — English and Vietnamese. */
+const NEGATION = new Set([
+    "not", "no", "non", "without", "isnt", "arent", "never", "un",
+    "chưa", "chua", "không", "khong", "chẳng", "chang"
+])
 
-/** One strict `field OP value` clause → leaf, or null if it isn't one. */
-function parseClause(part, byName) {
-    const m = part.trim().match(/^([a-z][a-z0-9_]*)\s*(>=|<=|!=|<>|==|=|>|<|~|\bis\b|\bnot\b|\blike\b|\bcontains\b|\bin\b)\s*(.+)$/i)
+/** Unicode-safe word split (Vietnamese diacritics survive). */
+const words = (text) => String(text).toLowerCase().split(/[^\p{L}\p{N}_]+/u).filter(Boolean)
+
+/**
+ * Field designators resolve case-insensitively by NAME or by any LABEL locale
+ * ("Tiêu đề" → title). Returns { resolve(designator) → field|null, aliases(field) → [names…] }.
+ */
+function fieldIndex(fields) {
+    const byAlias = new Map()
+    const aliasesOf = new Map()
+    for (const f of fields) {
+        const aliases = [f.name.toLowerCase()]
+        for (const label of Object.values(f.label ?? {})) aliases.push(String(label).toLowerCase())
+        for (const alias of aliases) if (!byAlias.has(alias)) byAlias.set(alias, f)
+        aliasesOf.set(f, [...new Set(aliases)])
+    }
+    return {
+        resolve: (designator) => byAlias.get(designator.trim().toLowerCase()) ?? null,
+        aliases: (f) => aliasesOf.get(f) ?? []
+    }
+}
+
+/** Split on a connective word (and/or) OUTSIDE quotes, case-insensitively. */
+function splitConnective(text, connective) {
+    const parts = []
+    let last = 0
+    let quote = null
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i]
+        if (quote) {
+            if (ch === quote) quote = null
+            continue
+        }
+        if (ch === '"' || ch === "'") {
+            quote = ch
+            continue
+        }
+        if (
+            text.slice(i, i + connective.length).toLowerCase() === connective &&
+            i > 0 && /\s/.test(text[i - 1]) &&
+            /\s/.test(text[i + connective.length] ?? "")
+        ) {
+            parts.push(text.slice(last, i))
+            i += connective.length
+            last = i
+        }
+    }
+    parts.push(text.slice(last))
+    return parts.map((s) => s.trim()).filter(Boolean)
+}
+
+const CLAUSE_RE = /^(.+?)\s*(>=|<=|!=|<>|==|=|>|<|~)\s*(.+)$|^(.+?)\s+(is\s+not|is|not|like|contains|in|before|after)\s+(.+)$/i
+
+/**
+ * One `designator OP value` clause → leaf, or null. The designator resolves by
+ * name or label; an identifier-looking unknown stays as-is so translate() can
+ * reject it loudly (E_NL_FIELD) — anything else is not a clause.
+ */
+function parseClause(part, index) {
+    const m = part.trim().match(CLAUSE_RE)
     if (!m) return null
-    const [, fieldName, opRaw, valueRaw] = m
-    const operator = OP_WORDS[opRaw.toLowerCase()]
+    const designator = m[1] ?? m[4]
+    const opRaw = (m[2] ?? m[5]).toLowerCase().replace(/\s+/g, " ")
+    const valueRaw = m[3] ?? m[6]
+    const operator = OP_WORDS[opRaw]
     if (!operator) return null
-    const field = byName.get(fieldName)
+    const field = index.resolve(designator)
+    const fieldName = field ? field.name : designator.trim()
+    if (!field && !/^[a-z][a-z0-9_]*$/i.test(fieldName)) return null
     if (operator === "in") return { field: fieldName, operator: "in", value: valueRaw.replace(/^\[|\]$/g, "").split(",").map((s) => coerce(field, s)) }
     if (operator === "like") return { field: fieldName, operator: "like", value: `%${coerce(field, valueRaw)}%` }
     return { field: fieldName, operator, value: coerce(field, valueRaw) }
 }
 
-/** The strict grammar: `clause [and|or clause…]` → AST root, or null. */
-function tryStrict(text, byName) {
-    const connective = /\s+\bor\b\s+/i.test(text) ? "or" : "and"
-    const parts = text.split(new RegExp(`\\s+\\b${connective}\\b\\s+`, "i"))
-    const leaves = []
-    for (const part of parts) {
-        const leaf = parseClause(part, byName)
-        if (!leaf) return null
-        leaves.push(leaf)
+/** The strict grammar with precedence: or binds looser than and. */
+function tryStrict(text, index) {
+    const orChildren = []
+    for (const orPart of splitConnective(text, "or")) {
+        const andChildren = []
+        for (const part of splitConnective(orPart, "and")) {
+            const leaf = parseClause(part, index)
+            if (!leaf) return null
+            andChildren.push(leaf)
+        }
+        orChildren.push(andChildren.length === 1 ? andChildren[0] : { op: "and", children: andChildren })
     }
-    return leaves.length === 1 ? leaves[0] : { op: connective, children: leaves }
+    if (!orChildren.length) return null
+    return orChildren.length === 1 ? orChildren[0] : { op: "or", children: orChildren }
 }
 
 /**
  * Schema-aware natural reading (no model needed): a boolean field named in the
- * text ⇒ `field = true` (or false if a negation precedes it — "not done"); a
- * select option named ⇒ `field = option` ("high priority"). Multiple ⇒ AND.
+ * text — by NAME or LABEL — ⇒ `field = true` (false when a negation appears in
+ * the two words before, or as an un- prefix: "not yet done", "undone", "chưa
+ * xong"); a select option named ⇒ `field = option`, multi-word options matched
+ * as phrases ("in progress"). Multiple hits ⇒ AND.
  */
-function naturalParse(text, fields) {
-    const words = text.toLowerCase().split(/[^a-z0-9_]+/).filter(Boolean)
-    const seen = new Set(words)
+function naturalParse(text, fields, index) {
+    const tokens = words(text)
+    const padded = ` ${tokens.join(" ")} `
     const leaves = []
     for (const f of fields.filter((f) => f.type === "boolean")) {
-        const i = words.indexOf(f.name.toLowerCase())
-        if (i !== -1) leaves.push({ field: f.name, operator: "eq", value: !(i > 0 && NEGATION.has(words[i - 1])) })
+        for (const alias of index.aliases(f)) {
+            let i = tokens.indexOf(alias)
+            let negated = false
+            if (i === -1 && tokens.includes(`un${alias}`)) {
+                i = tokens.indexOf(`un${alias}`)
+                negated = true
+            }
+            if (i === -1) continue
+            const window = tokens.slice(Math.max(0, i - 2), i)
+            if (window.some((w) => NEGATION.has(w))) negated = true
+            leaves.push({ field: f.name, operator: "eq", value: !negated })
+            break
+        }
     }
     for (const f of fields.filter((f) => f.type === "select" && Array.isArray(f.options))) {
-        const opt = f.options.find((o) => seen.has(String(o).toLowerCase()))
-        if (opt !== undefined) leaves.push({ field: f.name, operator: "eq", value: opt })
+        const matched = f.options
+            .filter((option) => {
+                const phrase = words(String(option)).join(" ")
+                return phrase && padded.includes(` ${phrase} `)
+            })
+            .sort((a, b) => padded.indexOf(` ${words(String(a)).join(" ")} `) - padded.indexOf(` ${words(String(b)).join(" ")} `))
+        if (matched.length === 1) leaves.push({ field: f.name, operator: "eq", value: matched[0] })
+        else if (matched.length > 1) leaves.push({ field: f.name, operator: "in", value: matched })
     }
     return leaves.length ? (leaves.length === 1 ? leaves[0] : { op: "and", children: leaves }) : null
 }
 
 /**
+ * The STRICT grammar alone, as a document or null — for callers that must
+ * not accept a fragment reading (a compound ask routed to an LLM): strict
+ * parses the WHOLE text or nothing, while naturalParse happily reads one
+ * clause out of a longer sentence.
+ */
+export function strictParse(query, schema) {
+    const text = String(query).trim()
+    if (!text) return { astVersion: 1, root: null }
+    const index = fieldIndex(schema?.fields ?? [])
+    const strict = tryStrict(text, index)
+    return strict ? { astVersion: 1, root: strict } : null
+}
+
+/**
  * The deterministic default provider. First the strict `field OP value`
- * grammar (joined by and/or); if that doesn't fit, a schema-aware natural
- * reading ("done tasks" → done = true, "high priority" → priority = high).
- * Only when neither understands the text does it throw E_NL_PARSE.
+ * grammar (labels welcome, and/or with precedence, quoted values, date
+ * words); if that doesn't fit, a schema-aware natural reading ("done tasks"
+ * → done = true, "chưa xong" → done = false, "in progress" → status). Only
+ * when neither understands the text does it throw E_NL_PARSE.
  */
 export async function ruleProvider(query, { schema } = {}) {
     const text = String(query).trim()
     if (!text) return { astVersion: 1, root: null }
     const fields = schema?.fields ?? []
-    const byName = new Map(fields.map((f) => [f.name, f]))
+    const index = fieldIndex(fields)
 
-    const strict = tryStrict(text, byName)
+    const strict = tryStrict(text, index)
     if (strict) return { astVersion: 1, root: strict }
-    const natural = naturalParse(text, fields)
+    const natural = naturalParse(text, fields, index)
     if (natural) return { astVersion: 1, root: natural }
     throw err("E_NL_PARSE", `couldn't parse "${text}" — use "field = value" (e.g. done = true), or name a boolean field or a select option (e.g. "done tasks", "high priority")`)
 }
