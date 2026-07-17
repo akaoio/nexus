@@ -43,35 +43,71 @@ function coerce(field, raw) {
     return v
 }
 
+const NEGATION = new Set(["not", "no", "non", "without", "isnt", "arent", "never", "un"])
+
+/** One strict `field OP value` clause → leaf, or null if it isn't one. */
+function parseClause(part, byName) {
+    const m = part.trim().match(/^([a-z][a-z0-9_]*)\s*(>=|<=|!=|<>|==|=|>|<|~|\bis\b|\bnot\b|\blike\b|\bcontains\b|\bin\b)\s*(.+)$/i)
+    if (!m) return null
+    const [, fieldName, opRaw, valueRaw] = m
+    const operator = OP_WORDS[opRaw.toLowerCase()]
+    if (!operator) return null
+    const field = byName.get(fieldName)
+    if (operator === "in") return { field: fieldName, operator: "in", value: valueRaw.replace(/^\[|\]$/g, "").split(",").map((s) => coerce(field, s)) }
+    if (operator === "like") return { field: fieldName, operator: "like", value: `%${coerce(field, valueRaw)}%` }
+    return { field: fieldName, operator, value: coerce(field, valueRaw) }
+}
+
+/** The strict grammar: `clause [and|or clause…]` → AST root, or null. */
+function tryStrict(text, byName) {
+    const connective = /\s+\bor\b\s+/i.test(text) ? "or" : "and"
+    const parts = text.split(new RegExp(`\\s+\\b${connective}\\b\\s+`, "i"))
+    const leaves = []
+    for (const part of parts) {
+        const leaf = parseClause(part, byName)
+        if (!leaf) return null
+        leaves.push(leaf)
+    }
+    return leaves.length === 1 ? leaves[0] : { op: connective, children: leaves }
+}
+
 /**
- * The deterministic default provider: parses `field OP value` clauses joined
- * by `and` / `or` (single connective per query) into an AST document.
- * `contains`/`~` becomes a %value% LIKE. Unknown shapes throw E_NL_PARSE.
+ * Schema-aware natural reading (no model needed): a boolean field named in the
+ * text ⇒ `field = true` (or false if a negation precedes it — "not done"); a
+ * select option named ⇒ `field = option` ("high priority"). Multiple ⇒ AND.
+ */
+function naturalParse(text, fields) {
+    const words = text.toLowerCase().split(/[^a-z0-9_]+/).filter(Boolean)
+    const seen = new Set(words)
+    const leaves = []
+    for (const f of fields.filter((f) => f.type === "boolean")) {
+        const i = words.indexOf(f.name.toLowerCase())
+        if (i !== -1) leaves.push({ field: f.name, operator: "eq", value: !(i > 0 && NEGATION.has(words[i - 1])) })
+    }
+    for (const f of fields.filter((f) => f.type === "select" && Array.isArray(f.options))) {
+        const opt = f.options.find((o) => seen.has(String(o).toLowerCase()))
+        if (opt !== undefined) leaves.push({ field: f.name, operator: "eq", value: opt })
+    }
+    return leaves.length ? (leaves.length === 1 ? leaves[0] : { op: "and", children: leaves }) : null
+}
+
+/**
+ * The deterministic default provider. First the strict `field OP value`
+ * grammar (joined by and/or); if that doesn't fit, a schema-aware natural
+ * reading ("done tasks" → done = true, "high priority" → priority = high).
+ * Only when neither understands the text does it throw E_NL_PARSE.
  */
 export async function ruleProvider(query, { schema } = {}) {
     const text = String(query).trim()
     if (!text) return { astVersion: 1, root: null }
-    const byName = new Map((schema?.fields ?? []).map((f) => [f.name, f]))
+    const fields = schema?.fields ?? []
+    const byName = new Map(fields.map((f) => [f.name, f]))
 
-    const connective = /\s+\bor\b\s+/i.test(text) ? "or" : "and"
-    const parts = text.split(new RegExp(`\\s+\\b${connective}\\b\\s+`, "i"))
-    const leaves = parts.map((part) => {
-        const m = part.trim().match(/^([a-z][a-z0-9_]*)\s*(>=|<=|!=|<>|==|=|>|<|~|\bis\b|\bnot\b|\blike\b|\bcontains\b|\bin\b)\s*(.+)$/i)
-        if (!m) throw err("E_NL_PARSE", `cannot parse clause "${part.trim()}"`)
-        const [, fieldName, opRaw, valueRaw] = m
-        const operator = OP_WORDS[opRaw.toLowerCase()]
-        if (!operator) throw err("E_NL_PARSE", `unknown operator "${opRaw}"`)
-        const field = byName.get(fieldName)
-        if (operator === "in") {
-            const items = valueRaw.replace(/^\[|\]$/g, "").split(",").map((s) => coerce(field, s))
-            return { field: fieldName, operator: "in", value: items }
-        }
-        if (operator === "like") return { field: fieldName, operator: "like", value: `%${coerce(field, valueRaw)}%` }
-        return { field: fieldName, operator, value: coerce(field, valueRaw) }
-    })
-
-    const root = leaves.length === 1 ? leaves[0] : { op: connective, children: leaves }
-    return { astVersion: 1, root }
+    const strict = tryStrict(text, byName)
+    if (strict) return { astVersion: 1, root: strict }
+    const natural = naturalParse(text, fields)
+    if (natural) return { astVersion: 1, root: natural }
+    throw err("E_NL_PARSE", `couldn't parse "${text}" — use "field = value" (e.g. done = true), or name a boolean field or a select option (e.g. "done tasks", "high priority")`)
 }
 
 /**

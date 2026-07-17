@@ -42,6 +42,15 @@ Test.describe("NL→AST (NL-*)", () => {
         assert.deepEqual(list.root, { field: "priority", operator: "in", value: ["low", "high"] })
     })
 
+    Test.it("NL-01b schema-aware natural reading: a boolean field / select option named in plain words", async () => {
+        assert.deepEqual((await ruleProvider("done tasks", { schema: TASK })).root, { field: "done", operator: "eq", value: true })
+        assert.deepEqual((await ruleProvider("not done", { schema: TASK })).root, { field: "done", operator: "eq", value: false })
+        assert.deepEqual((await ruleProvider("high priority", { schema: TASK })).root, { field: "priority", operator: "eq", value: "high" })
+        const both = (await ruleProvider("done high priority tasks", { schema: TASK })).root
+        assert.equal(both.op, "and")
+        assert.equal(both.children.length, 2)
+    })
+
     Test.it("NL-02 translate validates the AST and the field vocabulary — loudly", async () => {
         const document = await translate("points >= 5", TASK)
         assert.equal(AST.validate(document).valid, true)
