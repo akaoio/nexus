@@ -112,7 +112,7 @@ Test.describe("Kernel — file system (KRN-FS)", () => {
 
     Test.it("KRN-FS99 cleanup temp root", () => {
         delete globalThis._root
-        rmSync(TMP, { recursive: true, force: true })
+        rmSync(TMP, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
         assert.equal(globalThis._root, undefined)
     })
 })

@@ -7,6 +7,7 @@
  *   npm --prefix test/.engines install sqlite-vec @huggingface/transformers
  */
 
+import { fileURLToPath } from "url"
 import Test, { assert } from "../../src/kernel/Test.js"
 import { createExecutor } from "../../src/data/adapters.js"
 import { transformersProvider } from "../../src/semantic/transformers.js"
@@ -15,7 +16,7 @@ import { tableDDL } from "../../src/data/ddl.js"
 import { createCompiler } from "../../src/data/kysely.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 
-const ENGINES_ROOT = new URL("../.engines", import.meta.url).pathname
+const ENGINES_ROOT = fileURLToPath(new URL("../.engines", import.meta.url))
 
 let vecOk = false
 let embedder = null

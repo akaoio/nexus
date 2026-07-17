@@ -6,6 +6,7 @@
  * the suite; here we pin the registry, config, CLI, and endpoints.
  */
 
+import { fileURLToPath } from "url"
 import { spawnSync, spawn } from "child_process"
 import { mkdtempSync, rmSync, readFileSync } from "fs"
 import { tmpdir } from "os"
@@ -13,7 +14,7 @@ import { join } from "path"
 import Test, { assert } from "../../src/kernel/Test.js"
 import { MODELS, DEFAULT_MODEL, currentModel, withModel, status, progressLine } from "../../src/app/models.js"
 
-const BIN = new URL("../../bin/nexus.js", import.meta.url).pathname
+const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 
 Test.describe("AI models (MODEL)", () => {
     Test.it("MODEL-01 registry + pure config ops", () => {
@@ -47,7 +48,7 @@ Test.describe("AI models (MODEL)", () => {
         // `use none` clears it
         run(["use", "none"])
         assert.equal(JSON.parse(readFileSync(join(cwd, "nexus.config.json"), "utf8")).semantic?.model ?? null, null)
-        rmSync(scratch, { recursive: true, force: true })
+        rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
 
     Test.it("MODEL-04 `nexus create --model` records the choice; `none` omits it", () => {
@@ -57,7 +58,7 @@ Test.describe("AI models (MODEL)", () => {
         assert.equal(JSON.parse(readFileSync(join(scratch, "a", "nexus.config.json"), "utf8")).semantic.model, DEFAULT_MODEL)
         run(["b", "--model", "none"])
         assert.equal(JSON.parse(readFileSync(join(scratch, "b", "nexus.config.json"), "utf8")).semantic, undefined)
-        rmSync(scratch, { recursive: true, force: true })
+        rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
 
     Test.it("MODEL-06 progressLine formats a download event into % + MB, skips non-progress", () => {
@@ -85,8 +86,8 @@ Test.describe("AI models (MODEL)", () => {
             assert.equal(set.data.model, DEFAULT_MODEL)
             assert.equal(JSON.parse(readFileSync(join(scratch, "shop", "nexus.config.json"), "utf8")).semantic.model, DEFAULT_MODEL)
         } finally {
-            server.kill("SIGKILL")
-            rmSync(scratch, { recursive: true, force: true })
+            await new Promise((resolve) => { server.once("exit", resolve); server.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
         }
     })
 })

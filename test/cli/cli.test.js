@@ -6,6 +6,7 @@
  * plain-text rule are the spec — not implementation details.
  */
 
+import { fileURLToPath } from "url"
 import { spawnSync, spawn } from "child_process"
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "fs"
 import { tmpdir } from "os"
@@ -13,7 +14,7 @@ import { join } from "path"
 import Test, { assert } from "../../src/kernel/Test.js"
 import { validate } from "../../src/model/Model.js"
 
-const BIN = new URL("../../bin/nexus.js", import.meta.url).pathname
+const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 const PKG = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"))
 
 const run = (args, options = {}) => {
@@ -168,12 +169,13 @@ Test.describe("CLI — nexus (CLI-*)", () => {
             const traversal = await fetch(`${url}/..%2f..%2fetc%2fpasswd`)
             assert.equal(traversal.status, 404)
         } finally {
-            child.kill()
+            await new Promise((resolve) => { child.once("exit", resolve); child.kill("SIGKILL") })
         }
     })
 
     Test.it("CLI-99 cleanup scratch directory", () => {
-        rmSync(scratch, { recursive: true, force: true })
+        // Windows can hold locks on just-closed sqlite files — retry briefly
+        rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
         assert.equal(existsSync(scratch), false)
     })
 })

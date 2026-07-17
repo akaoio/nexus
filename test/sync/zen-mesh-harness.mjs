@@ -12,13 +12,14 @@
  * WebSocket wire. It prints a single JSON line of results and exits 0.
  */
 
+import { fileURLToPath } from "url"
 import { spawn } from "child_process"
 import { DatabaseSync } from "node:sqlite"
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 
-const ROOT = new URL("../..", import.meta.url).pathname
+const ROOT = fileURLToPath(new URL("../..", import.meta.url))
 const ZEN = (await import(join(ROOT, "vendor/zen/index.js"))).default
 const { SyncEngine } = await import(join(ROOT, "src/sync/Sync.js"))
 const { createZenTransport } = await import(join(ROOT, "src/sync/ZenTransport.js"))
@@ -124,7 +125,7 @@ try {
     results.error = error.message
 } finally {
     try { relay?.kill("SIGKILL") } catch {}
-    rmSync(scratch, { recursive: true, force: true })
+    rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     process.stdout.write(JSON.stringify(results) + "\n")
     process.exit(0) // ZEN handles are intentionally long-lived; end the process
 }

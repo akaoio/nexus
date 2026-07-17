@@ -14,12 +14,13 @@
  * { "type": "module" }, so vendor/kysely/index.js imports directly.
  */
 
+import { fileURLToPath } from "url"
 import { createHash } from "crypto"
 import { gunzipSync } from "zlib"
 import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from "fs"
 import { join, dirname } from "path"
 
-const ROOT = new URL("..", import.meta.url).pathname
+const ROOT = fileURLToPath(new URL("..", import.meta.url))
 const TARGET = join(ROOT, "vendor", "kysely")
 const PIN_FILE = join(TARGET, "VENDOR.json")
 

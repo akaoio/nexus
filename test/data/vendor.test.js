@@ -7,12 +7,13 @@
  * with zero drivers — the seam the AST compiler will target.
  */
 
+import { fileURLToPath } from "url"
 import { readFileSync, readdirSync, statSync } from "fs"
 import { join } from "path"
 import Test, { assert } from "../../src/kernel/Test.js"
 import { createCompiler, DIALECT_NAMES } from "../../src/data/kysely.js"
 
-const ROOT = new URL("../..", import.meta.url).pathname
+const ROOT = fileURLToPath(new URL("../..", import.meta.url))
 
 Test.describe("Data Plane — vendored Kysely (VND-*)", () => {
     Test.it("VND-01 the VENDOR.json pin matches the vendored code and declares integrity", async () => {

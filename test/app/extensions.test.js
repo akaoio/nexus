@@ -7,6 +7,7 @@
  * ride the scaffolded starter app through the real dev server and CLI.
  */
 
+import { fileURLToPath } from "url"
 import { spawnSync, spawn } from "child_process"
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs"
 import { tmpdir } from "os"
@@ -18,7 +19,7 @@ import { tableDDL } from "../../src/data/ddl.js"
 import { createCompiler } from "../../src/data/kysely.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 
-const BIN = new URL("../../bin/nexus.js", import.meta.url).pathname
+const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 const TASK = schema({ name: "task", fields: [field("title", "text", { required: true }), field("done", "boolean", { default: false })] })
 const policy = { entity: "task", actions: ["read", "write", "create", "delete"], rule: null, permlevel: 0, ifOwner: false }
 const CTX = { user: "u1", roles: [], policies: [policy], shares: [] }
@@ -99,7 +100,7 @@ Test.describe("App system — extension points (EXT-*)", () => {
         mkdirSync(join(root, "apps", "two"), { recursive: true })
         writeFileSync(join(root, "apps", "two", "hooks.js"), `export const nothing = true`)
         await Test.assert.rejects(loadExtensions(root, [{ dir: "two" }]), "E_HOOKS_EXPORT")
-        rmSync(root, { recursive: true, force: true })
+        rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
 
     Test.it("EXT-06 E2E: the starter app's hook, endpoint and command work through dev + CLI", async () => {
@@ -142,8 +143,8 @@ Test.describe("App system — extension points (EXT-*)", () => {
             const missing = await fetch(`${base}/api/v1/_/ghost`)
             assert.equal(missing.status, 404)
         } finally {
-            dev.kill()
-            rmSync(scratch, { recursive: true, force: true })
+            await new Promise((resolve) => { dev.once("exit", resolve); dev.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
         }
     })
 })

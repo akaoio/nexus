@@ -59,7 +59,7 @@ Test.describe("Data Plane — engine adapters (ADP-*)", () => {
         const second = await createExecutor("sqlite", { path })
         assert.deepEqual(await second.all("SELECT a FROM t"), [{ a: "persisted" }])
         second.close()
-        rmSync(dir, { recursive: true, force: true })
+        rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
 
     Test.it("ADP-04 the full Data Plane stack rides an adapter unchanged", async () => {

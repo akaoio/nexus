@@ -7,6 +7,7 @@
  * AST endpoint, and the error-status contract through it.
  */
 
+import { fileURLToPath } from "url"
 import { spawn, spawnSync } from "child_process"
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
@@ -14,7 +15,7 @@ import { join } from "path"
 import Test, { assert } from "../../src/kernel/Test.js"
 import { doc, leaf, and } from "../conformance/ast/_helpers.js"
 
-const BIN = new URL("../../bin/nexus.js", import.meta.url).pathname
+const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 const scratch = mkdtempSync(join(tmpdir(), "nexus-api-"))
 const INSTANCE = join(scratch, "shop")
 
@@ -175,9 +176,9 @@ Test.describe("HTTP API — auto-generated from schemas (API-*)", () => {
         assert.truthy(Number.isFinite(body.data.uptime))
     })
 
-    Test.it("API-99 cleanup: stop the server, remove scratch", () => {
-        if (server) server.kill()
-        rmSync(scratch, { recursive: true, force: true })
+    Test.it("API-99 cleanup: stop the server, remove scratch", async () => {
+        if (server) await new Promise((resolve) => { server.once("exit", resolve); server.kill("SIGKILL") })
+        rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
         assert.equal(true, true)
     })
 })

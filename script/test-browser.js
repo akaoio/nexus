@@ -16,13 +16,14 @@
  * Exit codes: 0 all green · 1 failures/timeout · 3 no browser found.
  */
 
+import { fileURLToPath } from "url"
 import { createServer } from "http"
 import { spawn } from "child_process"
 import { existsSync, readFileSync, statSync, readdirSync, mkdtempSync, rmSync } from "fs"
 import { join, resolve, extname } from "path"
 import { tmpdir } from "os"
 
-const ROOT = new URL("..", import.meta.url).pathname
+const ROOT = fileURLToPath(new URL("..", import.meta.url))
 const MIME = {
     ".html": "text/html; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
@@ -44,6 +45,12 @@ function findBrowsers() {
             candidates.push(join(playwright, dir, "chrome-linux", "chrome"))
     }
     candidates.push("/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome")
+    // Windows default installs
+    for (const base of [process.env["ProgramFiles"], process.env["ProgramFiles(x86)"], process.env.LOCALAPPDATA])
+        if (base) candidates.push(
+            join(base, "Google", "Chrome", "Application", "chrome.exe"),
+            join(base, "Microsoft", "Edge", "Application", "msedge.exe")
+        )
     return candidates.filter((c) => existsSync(c))
 }
 
@@ -128,8 +135,13 @@ async function runInBrowser(binary, url) {
         if (!match) throw new Error("results block missing")
         return JSON.parse(match[1])
     } finally {
-        child.kill()
-        rmSync(profile, { recursive: true, force: true })
+        // Wait for the browser to really exit (Windows holds file locks), and
+        // never let profile cleanup mask the run's actual result.
+        await new Promise((resolve) => {
+            child.once("exit", resolve)
+            child.kill()
+        })
+        try { rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) } catch {}
     }
 }
 

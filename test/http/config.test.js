@@ -4,6 +4,7 @@
  * value coercion, and secret redaction.
  */
 
+import { fileURLToPath } from "url"
 import { spawnSync } from "child_process"
 import { mkdtempSync, rmSync, readFileSync } from "fs"
 import { tmpdir } from "os"
@@ -11,7 +12,7 @@ import { join } from "path"
 import Test, { assert } from "../../src/kernel/Test.js"
 import { getPath, setPath, unsetPath, coerce, redact, isSecretPath } from "../../src/app/config.js"
 
-const BIN = new URL("../../bin/nexus.js", import.meta.url).pathname
+const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 
 Test.describe("Config control-plane (CONFIG)", () => {
     Test.it("CONFIG-01 pure dot-path ops + coercion + redaction", () => {
@@ -50,7 +51,7 @@ Test.describe("Config control-plane (CONFIG)", () => {
         assert.equal("count" in read().foo, false)
         // usage errors
         assert.equal(spawnSync(process.execPath, [BIN, "config", "set", "onlykey", "--json"], { cwd, encoding: "utf8" }).status, 2)
-        rmSync(scratch, { recursive: true, force: true })
+        rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
 
     Test.it("CONFIG-03 secrets are masked in list/get unless --show-secrets", () => {
@@ -63,6 +64,6 @@ Test.describe("Config control-plane (CONFIG)", () => {
         assert.equal(JSON.parse(run(["list"]).stdout).config.token_secret, "***")
         assert.equal(JSON.parse(run(["get", "token_secret"]).stdout).value, "***")
         assert.equal(JSON.parse(run(["get", "token_secret", "--show-secrets"]).stdout).value, "topsecret")
-        rmSync(scratch, { recursive: true, force: true })
+        rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
 })

@@ -5,13 +5,14 @@
  * must not expose the Studio or framework source. Spawned as a real process.
  */
 
+import { fileURLToPath } from "url"
 import { spawnSync, spawn } from "child_process"
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import Test, { assert } from "../../src/kernel/Test.js"
 
-const BIN = new URL("../../bin/nexus.js", import.meta.url).pathname
+const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 
 function scaffold({ withAuth = false, withPolicies = false } = {}) {
     const scratch = mkdtempSync(join(tmpdir(), "nexus-start-"))
@@ -61,7 +62,7 @@ Test.describe("Production server — nexus start (START)", () => {
         const out = JSON.parse(r.stdout)
         assert.equal(out.ok, false)
         assert.equal(out.code, "E_NO_AUTH")
-        rmSync(scratch, { recursive: true, force: true })
+        rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
 
     Test.it("START-02 refuses to run without TLS unless --insecure is explicit", () => {
@@ -71,7 +72,7 @@ Test.describe("Production server — nexus start (START)", () => {
         const out = JSON.parse(r.stdout)
         assert.equal(out.ok, false)
         assert.equal(out.code, "E_NO_TLS")
-        rmSync(scratch, { recursive: true, force: true })
+        rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
 
     Test.it("START-03 with auth + --insecure: enforces auth, exposes no Studio/framework, serves /_health", async () => {
@@ -93,8 +94,8 @@ Test.describe("Production server — nexus start (START)", () => {
             assert.equal((await call("GET", "/")).status, 404)
             assert.equal((await call("GET", "/_nexus/src/kernel/UI.js")).status, 404)
         } finally {
-            proc.kill("SIGKILL")
-            rmSync(scratch, { recursive: true, force: true })
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
         }
     })
 
@@ -121,10 +122,10 @@ Test.describe("Production server — nexus start (START)", () => {
             assert.equal(health.status, 200)
             assert.equal((await health.json()).data.status, "ok")
         } finally {
-            proc.kill("SIGKILL")
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
             if (prev === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
             else process.env.NODE_TLS_REJECT_UNAUTHORIZED = prev
-            rmSync(scratch, { recursive: true, force: true })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
         }
     })
 })

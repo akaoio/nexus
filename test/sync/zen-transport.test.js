@@ -16,10 +16,11 @@
  * child cannot be spawned at all, exactly like the other live-engine suites.
  */
 
+import { fileURLToPath } from "url"
 import { spawnSync } from "child_process"
 import Test, { assert } from "../../src/kernel/Test.js"
 
-const HARNESS = new URL("./zen-mesh-harness.mjs", import.meta.url).pathname
+const HARNESS = fileURLToPath(new URL("./zen-mesh-harness.mjs", import.meta.url))
 
 // Run the mesh once; every clause reads a field of the same verdict. The
 // convergence budget is generous — real WS peer discovery on a slow board.

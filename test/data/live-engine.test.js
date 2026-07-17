@@ -15,6 +15,7 @@
  * driver are present (createExecutor already resolves them).
  */
 
+import { fileURLToPath } from "url"
 import Test, { assert } from "../../src/kernel/Test.js"
 import { createExecutor } from "../../src/data/adapters.js"
 import { DataPlane } from "../../src/data/DataPlane.js"
@@ -26,7 +27,7 @@ import * as AST from "../../src/ast/AST.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 import { doc, and, or, prng, randomNode, randomRow } from "../conformance/ast/_helpers.js"
 
-const ENGINES_ROOT = new URL("../.engines", import.meta.url).pathname
+const ENGINES_ROOT = fileURLToPath(new URL("../.engines", import.meta.url))
 
 async function available(engine) {
     try {

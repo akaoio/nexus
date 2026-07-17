@@ -6,13 +6,14 @@
  * re-runs.
  */
 
+import { fileURLToPath } from "url"
 import { spawnSync } from "child_process"
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, readdirSync, copyFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import Test, { assert } from "../../src/kernel/Test.js"
 
-const BIN = new URL("../../bin/nexus.js", import.meta.url).pathname
+const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 const run = (args, cwd) => {
     const result = spawnSync(process.execPath, [BIN, ...args, "--json"], { cwd, encoding: "utf8" })
     let data = null
@@ -106,7 +107,7 @@ Test.describe("CLI operations (OPS-*)", () => {
 
     Test.it("OPS-05 restore into a fresh instance is equivalent; restoring twice is a no-op", async () => {
         run(["create", "site-b"], scratch)
-        rmSync(join(B, "apps"), { recursive: true, force: true }) // truly fresh
+        rmSync(join(B, "apps"), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) // truly fresh
         copyFileSync(join(A, "dump.json"), join(B, "dump.json"))
 
         const preview = run(["site", "restore", "dump.json"], B)
@@ -194,11 +195,11 @@ Test.describe("CLI operations (OPS-*)", () => {
         assert.equal(result.data.rejected.task, 1, "R-notag rejects (required tag cannot be invented)")
         const rows = await sqlite(dst, "SELECT id, tag FROM task ORDER BY id")
         assert.deepEqual(rows, [{ id: "R-fit", tag: "urgent" }], "only the fitted row, its dropped column gone")
-        rmSync(home, { recursive: true, force: true })
+        rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
 
     Test.it("OPS-99 cleanup", () => {
-        rmSync(scratch, { recursive: true, force: true })
+        rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
         assert.equal(existsSync(scratch), false)
     })
 })

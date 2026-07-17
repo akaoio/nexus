@@ -5,6 +5,7 @@
  * Spawned as a real dev server; the write is verified on disk.
  */
 
+import { fileURLToPath } from "url"
 import { spawnSync, spawn } from "child_process"
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "fs"
 import { tmpdir } from "os"
@@ -12,7 +13,7 @@ import { join } from "path"
 import Test, { assert } from "../../src/kernel/Test.js"
 import { validate } from "../../src/model/Model.js"
 
-const BIN = new URL("../../bin/nexus.js", import.meta.url).pathname
+const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 
 const scratch = mkdtempSync(join(tmpdir(), "nexus-studio-"))
 spawnSync(process.execPath, [BIN, "create", "shop"], { cwd: scratch })
@@ -84,9 +85,9 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.equal(list.data.config.token_secret, "***")
     })
 
-    Test.it("STUDIO-99 cleanup", () => {
-        if (server) server.kill("SIGKILL")
-        rmSync(scratch, { recursive: true, force: true })
+    Test.it("STUDIO-99 cleanup", async () => {
+        if (server) await new Promise((resolve) => { server.once("exit", resolve); server.kill("SIGKILL") })
+        rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
         assert.equal(true, true)
     })
 })

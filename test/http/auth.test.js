@@ -5,6 +5,7 @@
  * permissions/*.json policies gate through role assignment.
  */
 
+import { fileURLToPath } from "url"
 import { spawnSync, spawn } from "child_process"
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from "fs"
 import { tmpdir } from "os"
@@ -13,7 +14,7 @@ import Test, { assert } from "../../src/kernel/Test.js"
 import { policiesFor, loadPolicies, validatePolicy } from "../../src/app/Policies.js"
 import { issueToken, verifyToken, verifyChallenge } from "../../src/app/auth.js"
 
-const BIN = new URL("../../bin/nexus.js", import.meta.url).pathname
+const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 const ZEN = (await import("../../vendor/zen/zen.js")).default
 
 Test.describe("AuthN — assignment helpers (AUTH)", () => {
@@ -147,8 +148,8 @@ Test.describe("AuthN — assignment helpers (AUTH)", () => {
             const forged = issueToken({ user: admin.pub, roles: ["admin"] }, "guessed-secret")
             assert.equal((await post("/api/v1/task", { title: "forged" }, forged)).status, 401)
         } finally {
-            dev.kill()
-            rmSync(scratch, { recursive: true, force: true })
+            await new Promise((resolve) => { dev.once("exit", resolve); dev.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
         }
     })
 
@@ -164,7 +165,7 @@ Test.describe("AuthN — assignment helpers (AUTH)", () => {
         writeFileSync(join(root, "apps", "one", "permissions", "bad.json"), JSON.stringify([{ entity: "ghost", actions: ["read"] }]))
         assert.throws(() => loadPolicies(root, [{ dir: "one" }], schemas), "E_INVALID")
         assert.equal(validatePolicy({ entity: "task", actions: ["read"] }, schemas).valid, true)
-        rmSync(root, { recursive: true, force: true })
+        rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
 
     Test.it("AUTH-03 E2E: api_keys require a key (401), stamp identity, and gate through app policies", async () => {
@@ -236,8 +237,8 @@ Test.describe("AuthN — assignment helpers (AUTH)", () => {
             const removed = await call("DELETE", `/api/v1/task/${admin.body.data.id}`, undefined, "k-admin")
             assert.equal(removed.status, 200)
         } finally {
-            dev.kill()
-            rmSync(scratch, { recursive: true, force: true })
+            await new Promise((resolve) => { dev.once("exit", resolve); dev.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
         }
     })
 })

@@ -6,6 +6,7 @@
  * by AUTH-06/07 and verified in-browser; here we pin the management surface.
  */
 
+import { fileURLToPath } from "url"
 import { spawnSync, spawn } from "child_process"
 import { mkdtempSync, rmSync, readFileSync } from "fs"
 import { tmpdir } from "os"
@@ -13,7 +14,7 @@ import { join } from "path"
 import Test, { assert } from "../../src/kernel/Test.js"
 import { listUsers, addUser, removeUser, setRoles, labelOf } from "../../src/app/users.js"
 
-const BIN = new URL("../../bin/nexus.js", import.meta.url).pathname
+const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 
 Test.describe("Users / identities (USER)", () => {
     Test.it("USER-01 pure ops: add/list/remove/setRoles with validation", () => {
@@ -46,7 +47,7 @@ Test.describe("Users / identities (USER)", () => {
         assert.deepEqual(JSON.parse(readFileSync(join(cwd, "nexus.config.json"), "utf8")).identities[0].roles, ["viewer"])
         run(["remove", "PUBx"])
         assert.deepEqual(JSON.parse(readFileSync(join(cwd, "nexus.config.json"), "utf8")).identities, [])
-        rmSync(scratch, { recursive: true, force: true })
+        rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
 
     Test.it("USER-03 dev endpoints: /_studio/session and /_studio/users manage identities", async () => {
@@ -75,8 +76,8 @@ Test.describe("Users / identities (USER)", () => {
             // a bad add is rejected
             assert.equal((await post({ action: "add", pub: "" })).ok, false)
         } finally {
-            server.kill("SIGKILL")
-            rmSync(scratch, { recursive: true, force: true })
+            await new Promise((resolve) => { server.once("exit", resolve); server.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
         }
     })
 })

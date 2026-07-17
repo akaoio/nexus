@@ -4,6 +4,7 @@
  * SECURE behavior; they were red against the pre-fix code.
  */
 
+import { fileURLToPath } from "url"
 import { spawnSync, spawn } from "child_process"
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
@@ -16,7 +17,7 @@ import { timingSafeStringEqual } from "../../src/cli/output.js"
 import { doc, leaf } from "../conformance/ast/_helpers.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 
-const BIN = new URL("../../bin/nexus.js", import.meta.url).pathname
+const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 
 // ── the dev server, booted once with a secret in its config ──────────────────
 const scratch = mkdtempSync(join(tmpdir(), "nexus-sec-"))
@@ -129,9 +130,9 @@ Test.describe("Security (SEC-*)", () => {
         assert.equal((await plane.list("task", { filter: doc(leaf("title", "eq", "x")) }, base)).length, 1)
     })
 
-    Test.it("SEC-99 cleanup", () => {
-        if (server) server.kill()
-        rmSync(scratch, { recursive: true, force: true })
+    Test.it("SEC-99 cleanup", async () => {
+        if (server) await new Promise((resolve) => { server.once("exit", resolve); server.kill("SIGKILL") })
+        rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
         assert.equal(true, true)
     })
 })
