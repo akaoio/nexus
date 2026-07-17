@@ -88,6 +88,10 @@ h2{font-size:1rem;margin:.2rem 0 .6rem}
 </nav>
 
 <section class="panel" id="panel-data">
+    <div class="row">
+        <input id="ask" placeholder='Ask in plain language — e.g. done = true and points > 3' style="flex:1" spellcheck="false">
+        <button id="ask-go">Ask → AST</button>
+    </div>
     <div id="data-builder"></div>
     <div class="row">
         <textarea id="data-payload" placeholder='{"title": "hello nexus"}' spellcheck="false"></textarea>
@@ -170,6 +174,24 @@ $("data-create").addEventListener("click", async () => {
     if (!body.ok) { $("data-error").textContent = body.error.code + ": " + body.error.message; return }
     $("data-payload").value = ""; runQuery()
 })
+
+// NL → AST: the /ask endpoint translates plain language into a validated Query
+// AST and runs it through the same permission-checked pipeline.
+async function runAsk() {
+    const query = $("ask").value.trim()
+    if (!query) return
+    $("data-error").textContent = ""
+    const body = await postJSON(state.entity + "/ask", { query, limit: 50 })
+    if (!body.ok) { $("data-error").textContent = body.error.code + ": " + body.error.message; return }
+    // /ask returns { filter, rows }: show the rows AND reflect the derived AST
+    // back into the visual builder, so plain language and the builder stay one.
+    const rows = Array.isArray(body.data) ? body.data : (body.data.rows ?? [])
+    if (body.data && body.data.filter && qbuilder) qbuilder.value = body.data.filter
+    $("count").textContent = rows.length + (rows.length === 1 ? " row" : " rows") + " · asked: “" + query + "”"
+    if (listView) { listView.schema = currentSchema(); listView.rows = rows }
+}
+$("ask-go").addEventListener("click", runAsk)
+$("ask").addEventListener("keydown", (e) => { if (e.key === "Enter") runAsk() })
 
 // ── Form: nx-form runtime → submit → create ───────────────────────────────────
 function mountForm() {
@@ -334,6 +356,17 @@ export async function dev(args, flags, out) {
 
     const server = createServer(async (req, res) => {
         const url = new URL(req.url, "http://localhost")
+
+        // Observability: one line per request on stderr (stdout stays clean for
+        // --json). Timed at response finish so the status and latency are real.
+        const started = Date.now()
+        res.on("finish", () => process.stderr.write(`  ${req.method} ${url.pathname} ${out.dim("→")} ${res.statusCode} ${out.dim(`${Date.now() - started}ms`)}\n`))
+
+        // Liveness/readiness — always available, no auth, cheap. Standard shape
+        // for load balancers, container probes, and `nexus doctor`.
+        if (url.pathname === "/_health") {
+            return json(res, 200, { ok: true, data: { status: "ok", entities: schemas.map((s) => s.name), engine, uptime: Math.round(process.uptime()) } })
+        }
 
         // ZEN auth handshake — issue a nonce, verify a signature, mint a token.
         // Only live once a token secret exists (i.e. the instance has data).

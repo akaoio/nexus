@@ -160,6 +160,19 @@ Test.describe("HTTP API — auto-generated from schemas (API-*)", () => {
         assert.equal((await fetch(`${base}/_nexus/src/..%2f..%2fpackage.json`)).status, 404)
     })
 
+    Test.it("API-09 /_health is an unauthenticated liveness probe with a stable shape", async () => {
+        const base = await ensureServer()
+        const response = await fetch(base + "/_health")
+        assert.equal(response.status, 200)
+        const body = await response.json()
+        assert.equal(body.ok, true)
+        assert.equal(body.data.status, "ok")
+        assert.truthy(Array.isArray(body.data.entities))
+        assert.truthy(body.data.entities.includes("task"))
+        assert.truthy(typeof body.data.engine === "string")
+        assert.truthy(Number.isFinite(body.data.uptime))
+    })
+
     Test.it("API-99 cleanup: stop the server, remove scratch", () => {
         if (server) server.kill()
         rmSync(scratch, { recursive: true, force: true })
