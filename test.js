@@ -54,6 +54,9 @@ import "./test/data/live-engine.test.js"
 import "./test/data/live-postgres.test.js"
 import "./test/data/vec.test.js"
 
+// i18n — akao translation-memory format + runtime (clauses I18N-*)
+import "./test/i18n/i18n.test.js"
+
 // Kernel — extracted from akao (clauses KRN-EN/UT/EV/ST/RT/TH/UI)
 import "./test/kernel/utils.test.js"
 import "./test/kernel/events.test.js"

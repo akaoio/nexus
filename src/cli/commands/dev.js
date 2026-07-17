@@ -17,6 +17,7 @@ import { loadInstance } from "../instance.js"
 import { buildInstanceApi } from "../../http/instance-server.js"
 import { studioPage } from "../studio-page.js"
 import { validate } from "../../model/Model.js"
+import { loadDictionary, mergeDictionaries, coveredLocales } from "../../i18n/i18n.js"
 import { verifyChallenge, issueToken } from "../../app/auth.js"
 import { randomBytes } from "crypto"
 
@@ -54,6 +55,15 @@ export async function dev(args, flags, out) {
     // Load and validate the instance — broken schemas are refused, not served
     const { config, schemas, apps, policies: appPolicies } = loadInstance(root)
     const appName = apps[0]?.dir ?? "app"
+    // i18n (§5.1): the framework's Studio strings + any instance i18n/*.yaml,
+    // merged into one translation memory the UI resolves at render time.
+    const fw = loadDictionary(join(NEXUS_ROOT, "src/i18n/dict"))
+    const inst = loadDictionary(join(root, "i18n"))
+    const i18n = {
+        dict: mergeDictionaries(fw.dict, inst.dict),
+        names: { ...fw.locales, ...inst.locales }
+    }
+    i18n.locales = coveredLocales(i18n.dict)
     // Data Plane + auth + API through the shared wiring. Dev mode falls back to
     // the loud DEV identity when no auth is configured (production refuses that).
     const { api, authState, challenges, engine, authMode, embedderInfo } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" })
@@ -147,7 +157,7 @@ export async function dev(args, flags, out) {
 
         if (url.pathname === "/") {
             res.writeHead(200, { "content-type": MIME[".html"] })
-            return res.end(studioPage(config, schemas, { embedder: embedderInfo, appName }))
+            return res.end(studioPage(config, schemas, { embedder: embedderInfo, appName, i18n }))
         }
         // Framework modules for instance pages — /_nexus/{src,vendor}/* only,
         // resolved inside the Nexus package, traversal-guarded. vendor/ is

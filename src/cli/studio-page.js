@@ -110,13 +110,14 @@ footer.foot code{background:var(--surface-2);padding:.1em .4em;border-radius:5px
     <span class="brand">⬡ ${site} <small>Studio</small></span>
     <span class="spacer"></span>
     <span class="badge dot ${embedder.mode === "semantic" ? "on" : ""}" id="embadge" title="Embedding provider">…</span>
+    <select class="btn" id="locale" aria-label="Language" title="Language" style="padding:7px 8px"></select>
     <button class="btn icon" id="theme" aria-label="Theme" title="Theme">🌗</button>
   </header>
   <div class="scrim" id="scrim"></div>
   <aside class="side">
-    <div class="grouplabel">Collections</div>
+    <div class="grouplabel" data-i18n="collections">Collections</div>
     <nav id="nav-collections"></nav>
-    <div class="grouplabel">Build</div>
+    <div class="grouplabel" data-i18n="build">Build</div>
     <nav id="nav-build"></nav>
   </aside>
   <main class="main" id="main"></main>
@@ -128,7 +129,7 @@ footer.foot code{background:var(--surface-2);padding:.1em .4em;border-radius:5px
 
 <footer class="foot" style="padding:16px 26px 40px">Entities: ${schemas.map((s) => `<code>${s.name}</code>`).join(" · ") || "—"} — API: <code>GET/POST /api/v1/:entity</code> · <code>POST /api/v1/:entity/query</code> · <code>/search</code> · <code>/ask</code></footer>
 
-<script type="application/json" id="boot">${JSON.stringify({ schemas, embedder, appName })}</script>
+<script type="application/json" id="boot">${JSON.stringify({ schemas, embedder, appName, i18n: meta.i18n ?? { dict: {}, names: {}, locales: ["en"] } })}</script>
 <script type="module">
 import "/_nexus/src/studio/query-builder.js"
 import "/_nexus/src/studio/form-builder.js"
@@ -155,6 +156,27 @@ function applyTheme(t) {
 let theme = localStorage.getItem("nexus-theme") || "auto"
 applyTheme(theme)
 $("theme").addEventListener("click", () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]; localStorage.setItem("nexus-theme", theme); applyTheme(theme) })
+
+// ── i18n (translation memory — akao format, resolved at render) ────────────────
+const i18n = boot.i18n || { dict: {}, names: {}, locales: ["en"] }
+let locale = localStorage.getItem("nexus-locale")
+const guess = (navigator.language || "en").slice(0, 2)
+if (!i18n.locales.includes(locale)) locale = i18n.locales.includes(guess) ? guess : "en"
+function t(key, fb) {
+  const e = i18n.dict[key]
+  const v = e && (e[locale] != null ? e[locale] : e.en)
+  return v != null ? v : (fb != null ? fb : key)
+}
+const localeSel = $("locale")
+localeSel.replaceChildren(...i18n.locales.map((c) => { const o = document.createElement("option"); o.value = c; o.textContent = i18n.names[c] || c; return o }))
+function applyLocale() {
+  localeSel.value = locale
+  document.documentElement.lang = locale
+  for (const el of document.querySelectorAll("[data-i18n]")) el.textContent = t(el.getAttribute("data-i18n"))
+  renderNav()
+  if (state.view && VIEWS[state.view]) VIEWS[state.view]()
+}
+localeSel.addEventListener("change", () => { locale = localeSel.value; localStorage.setItem("nexus-locale", locale); applyLocale() })
 
 // ── embedder badge (honest status) ────────────────────────────────────────────
 ;(() => {
@@ -194,7 +216,7 @@ function renderNav() {
     col.append(a)
   }
   const build = $("nav-build"); build.replaceChildren()
-  const items = [["model", "＋", "Data model"], ["permissions", "⚿", "Permissions"], ["search", "⌕", "Search"]]
+  const items = [["model", "＋", t("dataModel")], ["permissions", "⚿", t("permissions")], ["search", "⌕", t("search")]]
   for (const [view, ico, label] of items) {
     const a = el("a", {})
     a.append(el("span", { className: "ico", textContent: ico }), document.createTextNode(label))
@@ -217,21 +239,21 @@ function viewContent() {
   const s = schemaOf(state.entity)
   const main = $("main"); main.replaceChildren()
   const count = el("span", { className: "muted", id: "c-count" })
-  const newBtn = el("button", { className: "btn primary", textContent: "＋ New" })
+  const newBtn = el("button", { className: "btn primary", textContent: "＋ " + t("newRecord") })
   newBtn.addEventListener("click", () => openRecordForm(s))
-  const filterBtn = el("button", { className: "btn", textContent: "⚙ Filter" })
+  const filterBtn = el("button", { className: "btn", textContent: "⚙ " + t("filter") })
   const head = el("div", { className: "viewhead" }, [el("h1", { textContent: s.name }), count, el("span", { className: "spacer" }), filterBtn, newBtn])
 
   const ask = el("input", { className: "text", placeholder: "Ask in plain language — e.g. done = false and points > 3" })
   ask.addEventListener("keydown", (e) => { if (e.key === "Enter") runAsk(ask.value) })
-  const askBtn = el("button", { className: "btn", textContent: "Ask → AST" })
+  const askBtn = el("button", { className: "btn", textContent: t("ask") + " → AST" })
   askBtn.addEventListener("click", () => runAsk(ask.value))
   const askRow = el("div", { className: "toolbar" }, [ask, askBtn])
 
   const bslot = el("div", { className: "collapse", id: "c-filter" })
   qbuilder = el("nx-query-builder"); qbuilder.schema = s
-  let t = null
-  qbuilder.addEventListener("change", (e) => { if (!e.detail.valid) return; clearTimeout(t); t = setTimeout(() => runQuery(), 250) })
+  let debounce = null
+  qbuilder.addEventListener("change", (e) => { if (!e.detail.valid) return; clearTimeout(debounce); debounce = setTimeout(() => runQuery(), 250) })
   bslot.append(qbuilder)
   filterBtn.addEventListener("click", () => bslot.classList.toggle("show"))
 
@@ -275,9 +297,9 @@ $("drawer-back").addEventListener("click", () => $("drawer").classList.remove("s
 // ── VIEW: data model (view / edit / new — SAVES to a file) ────────────────────
 function viewModel() {
   const main = $("main"); main.replaceChildren()
-  const picker = el("select", { className: "text" }, [el("option", { value: "__new", textContent: "＋ New collection" }), ...schemas.map((s) => el("option", { value: s.name, textContent: s.name }))])
+  const picker = el("select", { className: "text" }, [el("option", { value: "__new", textContent: "＋ " + t("newCollection") }), ...schemas.map((s) => el("option", { value: s.name, textContent: s.name }))])
   picker.value = state.entity || "__new"
-  const head = el("div", { className: "viewhead" }, [el("h1", { textContent: "Data model" }), el("span", { className: "spacer" }), picker])
+  const head = el("div", { className: "viewhead" }, [el("h1", { textContent: t("dataModel") }), el("span", { className: "spacer" }), picker])
   const body = el("div", { id: "model-body" })
   const msg = el("div", { className: "ok", id: "model-msg" })
   main.append(head, body, msg)
@@ -291,12 +313,12 @@ function mountModel(name, body) {
   if (name === "__new") {
     const nameInput = el("input", { className: "text", placeholder: "collection name (e.g. customer)" })
     const builder = el("nx-form-builder")
-    const save = el("button", { className: "btn primary", textContent: "Create collection" })
+    const save = el("button", { className: "btn primary", textContent: t("createCollection") })
     save.addEventListener("click", () => saveModel({ ...(builder.value || { fields: [] }), name: nameInput.value.trim(), schemaVersion: 1 }))
-    body.append(el("div", { className: "card" }, [el("div", { className: "field" }, [el("label", { className: "muted", textContent: "Name" }), nameInput]), el("p", { className: "muted", textContent: "Design the fields:" }), builder, el("div", { className: "toolbar" }, [save])]))
+    body.append(el("div", { className: "card" }, [el("div", { className: "field" }, [el("label", { className: "muted", textContent: t("name") }), nameInput]), el("p", { className: "muted", textContent: "Design the fields:" }), builder, el("div", { className: "toolbar" }, [save])]))
   } else {
     const designer = el("nx-schema-designer"); designer.baseline = schemaOf(name)
-    const save = el("button", { className: "btn primary", textContent: "Save changes" })
+    const save = el("button", { className: "btn primary", textContent: t("saveChanges") })
     save.addEventListener("click", () => saveModel(designer.value))
     body.append(el("div", { className: "card" }, [designer, el("div", { className: "toolbar" }, [save])]))
   }
@@ -313,14 +335,14 @@ async function saveModel(schema) {
 function viewPermissions() {
   const main = $("main"); main.replaceChildren()
   const mgr = el("nx-permission-manager"); mgr.schemas = schemas
-  const save = el("button", { className: "btn primary", textContent: "Save policies" })
+  const save = el("button", { className: "btn primary", textContent: t("savePolicies") })
   const msg = el("div", { className: "ok", id: "perm-msg" })
   save.addEventListener("click", async () => {
     const body = await post("/_studio/permissions", { policies: mgr.value })
     msg.className = body.ok ? "ok" : "err"
     msg.textContent = body.ok ? "Saved apps/" + boot.appName + "/permissions/studio.json — restart nexus dev to apply" : body.error.code + ": " + body.error.message
   })
-  main.append(el("div", { className: "viewhead" }, [el("h1", { textContent: "Permissions" }), el("span", { className: "spacer" }), save]), el("div", { className: "card" }, [mgr]), msg)
+  main.append(el("div", { className: "viewhead" }, [el("h1", { textContent: t("permissions") }), el("span", { className: "spacer" }), save]), el("div", { className: "card" }, [mgr]), msg)
 }
 
 // ── VIEW: search ──────────────────────────────────────────────────────────────
@@ -329,13 +351,13 @@ function viewSearch() {
   const note = boot.embedder.mode === "semantic" ? "Semantic search over " + boot.embedder.name : "Keyword search (no ML model configured — results rank by lexical overlap)"
   const search = el("nx-search"); search.schemas = schemas
   search.searcher = async ({ entity, query }) => { const b = await apiSearch(entity, query); return b.ok ? b.data : [] }
-  main.append(el("div", { className: "viewhead" }, [el("h1", { textContent: "Search" }), el("span", { className: "spacer" }), el("span", { className: "badge", textContent: boot.embedder.mode })]), el("p", { className: "muted", textContent: note }), el("div", { className: "card" }, [search]))
+  main.append(el("div", { className: "viewhead" }, [el("h1", { textContent: t("search") }), el("span", { className: "spacer" }), el("span", { className: "badge", textContent: boot.embedder.mode })]), el("p", { className: "muted", textContent: note }), el("div", { className: "card" }, [search]))
 }
 
 const VIEWS = { content: viewContent, model: viewModel, permissions: viewPermissions, search: viewSearch }
 
-renderNav()
 go(state.entity ? "content" : "model", state.entity)
+applyLocale()
 </script>
 </body></html>`
 }
