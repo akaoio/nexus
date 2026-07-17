@@ -1,6 +1,6 @@
 /** <nx-form-builder> / <nx-form> styles — token-driven. */
 
-import { css } from "../../../kernel/UI/css.js"
+import { css } from "../../../core/UI/css.js"
 
 export const STYLE = () => css`
     :host { font-family: var(--font, system-ui); font-size: var(--text-md, 0.875rem); display: block }

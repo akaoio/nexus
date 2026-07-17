@@ -3,8 +3,8 @@
  * operation in every view. Frappe's list habits, pinned.
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import { createSelection } from "../../src/studio/app/selection.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { createSelection } from "../../src/studio/selection.js"
 
 const IDS = ["a", "b", "c", "d"]
 

@@ -5,8 +5,8 @@
  * time, loudly, never by crashing later.
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import { MANIFEST_VERSION, validate, satisfies, compatible, upgrade } from "../../src/app/Manifest.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { MANIFEST_VERSION, validate, satisfies, compatible, upgrade } from "../../src/core/App/manifest.js"
 
 const MANIFEST = (over = {}) => ({ manifestVersion: 1, name: "crm", version: "1.2.3", ...over })
 const hasError = (result, code) => result.valid === false && result.errors.some((e) => e.code === code)

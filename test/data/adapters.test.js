@@ -11,11 +11,11 @@
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import Test, { assert } from "../../src/kernel/Test.js"
-import { createExecutor, ENGINES, engineDialect } from "../../src/data/adapters.js"
-import { DataPlane } from "../../src/data/DataPlane.js"
-import { tableDDL } from "../../src/data/ddl.js"
-import { createCompiler } from "../../src/data/kysely.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { createExecutor, ENGINES, engineDialect } from "../../src/core/Data/adapters.js"
+import { DataPlane } from "../../src/core/Data.js"
+import { tableDDL } from "../../src/core/Data/ddl.js"
+import { createCompiler } from "../../src/core/Data/kysely.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 
 const TASK = schema({

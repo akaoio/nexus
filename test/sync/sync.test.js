@@ -13,7 +13,7 @@
  * (gate 3 — Nexus's gate 4 re-checks permission regardless).
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
+import Test, { assert } from "../../src/core/Test.js"
 import Sync from "./_load.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 import { prng } from "../conformance/ast/_helpers.js"

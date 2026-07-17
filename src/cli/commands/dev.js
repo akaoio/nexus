@@ -14,17 +14,17 @@ import { createServer } from "http"
 import { existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from "fs"
 import { join, resolve, extname, sep } from "path"
 import { loadInstance } from "../instance.js"
-import { buildInstanceApi } from "../../http/instance-server.js"
-import { studioIndex } from "../studio-index.js"
-import { validate } from "../../model/Model.js"
+import { buildInstanceApi } from "../../core/HTTP/server.js"
+import { studioIndex } from "../../studio/shell.js"
+import { validate } from "../../core/Model.js"
 import { loadDictionary, mergeDictionaries, coveredLocales } from "../../i18n/i18n.js"
-import { verifyChallenge, issueToken, verifyToken } from "../../app/auth.js"
-import { listUsers, addUser, removeUser, setRoles } from "../../app/users.js"
-import { MODELS, status as modelStatus, withModel } from "../../app/models.js"
-import { redact, setPath, unsetPath } from "../../app/config.js"
+import { verifyChallenge, issueToken, verifyToken } from "../../core/App/auth.js"
+import { listUsers, addUser, removeUser, setRoles } from "../../core/App/users.js"
+import { MODELS, status as modelStatus, withModel } from "../../core/App/models.js"
+import { redact, setPath, unsetPath } from "../../core/App/config.js"
 import { randomBytes } from "crypto"
 import { fileURLToPath } from "url"
-import { Router } from "../../kernel/Router.js"
+import { Router } from "../../core/Router.js"
 
 const MIME = {
     ".html": "text/html; charset=utf-8",
@@ -287,7 +287,7 @@ export async function dev(args, flags, out) {
         }
         // The Studio stylesheet is COMPOSED from the css modules (akao triad
         // layout) at request time — single source of truth, no build step.
-        if (url.pathname === "/_nexus/src/studio/app/studio.css") {
+        if (url.pathname === "/_nexus/src/studio/studio.css") {
             const { pageStyles } = await import("../../studio/css/page.css.js")
             res.writeHead(200, { "content-type": MIME[".css"], "cache-control": "no-cache" })
             return res.end(pageStyles)

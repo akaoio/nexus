@@ -16,7 +16,7 @@
  *  - Field access unions across policies, per action.
  */
 
-import Test, { assert } from "../../../src/kernel/Test.js"
+import Test, { assert } from "../../../src/core/Test.js"
 import Permission from "./_load.js"
 import { policy, ctx } from "./_helpers.js"
 import { schema, field } from "../model/_helpers.js"

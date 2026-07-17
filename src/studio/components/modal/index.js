@@ -5,7 +5,7 @@
  * the backdrop closes.
  */
 
-import { render } from "../../../kernel/UI.js"
+import { render } from "../../../core/UI.js"
 import { modalTemplate } from "./template.js"
 
 export class NxModal extends HTMLElement {

@@ -1,6 +1,6 @@
 /** <nx-permission-manager> template — the toolbar + the policy list slot. */
 
-import { html } from "../../../kernel/UI.js"
+import { html } from "../../../core/UI.js"
 import { STYLE } from "./styles.css.js"
 
 export const managerTemplate = (c, { count, onAddPolicy }) => html`

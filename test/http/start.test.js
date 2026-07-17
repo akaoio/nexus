@@ -10,7 +10,7 @@ import { spawnSync, spawn } from "child_process"
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import Test, { assert } from "../../src/kernel/Test.js"
+import Test, { assert } from "../../src/core/Test.js"
 
 const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 
@@ -92,7 +92,7 @@ Test.describe("Production server — nexus start (START)", () => {
             assert.equal(created.status, 201)
             // NO Studio index, NO framework source in production
             assert.equal((await call("GET", "/")).status, 404)
-            assert.equal((await call("GET", "/_nexus/src/kernel/UI.js")).status, 404)
+            assert.equal((await call("GET", "/_nexus/src/core/UI.js")).status, 404)
         } finally {
             await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
             rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })

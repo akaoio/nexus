@@ -5,14 +5,14 @@
  * permission — an LLM shapes the filter but can never widen access.
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import { ruleProvider, embeddingNLProvider, translate } from "../../src/nl/nl.js"
-import { intentsFor } from "../../src/nl/intents.js"
-import { hashProvider } from "../../src/semantic/semantic.js"
-import * as AST from "../../src/ast/AST.js"
-import { DataPlane } from "../../src/data/DataPlane.js"
-import { tableDDL } from "../../src/data/ddl.js"
-import { createCompiler } from "../../src/data/kysely.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { ruleProvider, embeddingNLProvider, translate } from "../../src/core/NL.js"
+import { intentsFor } from "../../src/core/NL/intents.js"
+import { hashProvider } from "../../src/core/Semantic.js"
+import * as AST from "../../src/core/AST.js"
+import { DataPlane } from "../../src/core/Data.js"
+import { tableDDL } from "../../src/core/Data/ddl.js"
+import { createCompiler } from "../../src/core/Data/kysely.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 import { doc, leaf } from "../conformance/ast/_helpers.js"
 
@@ -140,7 +140,7 @@ Test.describe("NL→AST (NL-*)", () => {
     })
 
     Test.it("NL-12 the LLM tier's pure halves: the schema prompt is complete, extractAST is strict", async () => {
-        const { schemaPrompt, extractAST } = await import("../../src/nl/llm.js")
+        const { schemaPrompt, extractAST } = await import("../../src/core/NL/llm.js")
         const prompt = schemaPrompt(TASK)
         for (const must of ["priority", "low, medium, high", "Tiêu đề", "$NOW", '"op": "and"|"or"|"not"'])
             assert.truthy(prompt.includes(must), `prompt carries ${JSON.stringify(must)}`)

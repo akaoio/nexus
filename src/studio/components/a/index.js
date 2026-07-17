@@ -12,7 +12,7 @@
  *   NxA.fetchRows = async (entity) => rows     (pre-cache source)
  */
 
-import { remember } from "../../app/cache.js"
+import { remember } from "../../cache.js"
 
 const warmed = new Set()
 

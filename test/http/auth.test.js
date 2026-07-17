@@ -10,9 +10,9 @@ import { spawnSync, spawn } from "child_process"
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import Test, { assert } from "../../src/kernel/Test.js"
-import { policiesFor, loadPolicies, validatePolicy } from "../../src/app/Policies.js"
-import { issueToken, verifyToken, verifyChallenge } from "../../src/app/auth.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { policiesFor, loadPolicies, validatePolicy } from "../../src/core/App/policies.js"
+import { issueToken, verifyToken, verifyChallenge } from "../../src/core/App/auth.js"
 
 const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 const ZEN = (await import("../../vendor/zen/zen.js")).default

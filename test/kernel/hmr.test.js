@@ -7,8 +7,8 @@
  * runner executes on localhost, where DEV is true.
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import hmr from "../../src/kernel/HMR.js"
+import Test, { assert } from "../../src/core/Test.js"
+import hmr from "../../src/core/HMR.js"
 
 Test.describe("Kernel — HMR (KRN-HM)", () => {
     Test.it("KRN-HM01 in Node the module imports safely and exports the inert stub", () => {

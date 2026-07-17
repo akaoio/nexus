@@ -1,6 +1,6 @@
 /** <nx-search> template — one query box, results grouped per entity. */
 
-import { html } from "../../../kernel/UI.js"
+import { html } from "../../../core/UI.js"
 import { STYLE } from "./styles.css.js"
 
 export const searchTemplate = (c, { onInput }) => html`

@@ -10,9 +10,9 @@
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join as joinPath } from "path"
-import Test, { assert } from "../../src/kernel/Test.js"
-import FS, { registerFormat } from "../../src/kernel/FS.js"
-import { sha256, WIN } from "../../src/kernel/Utils.js"
+import Test, { assert } from "../../src/core/Test.js"
+import FS, { registerFormat } from "../../src/core/FS.js"
+import { sha256, WIN } from "../../src/core/Utils.js"
 
 const TMP = mkdtempSync(joinPath(tmpdir(), "nexus-fs-"))
 globalThis._root = TMP

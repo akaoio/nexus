@@ -10,7 +10,7 @@
  * prune, bootstrap-from-snapshot, late-event handling) is proven here.
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
+import Test, { assert } from "../../src/core/Test.js"
 import Sync from "./_load.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 

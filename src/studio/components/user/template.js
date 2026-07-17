@@ -1,6 +1,6 @@
 /** <nx-user> template — identicon + shortened pub; click asks to sign out. */
 
-import { html } from "../../../kernel/UI.js"
+import { html } from "../../../core/UI.js"
 import { STYLE } from "./styles.css.js"
 import "../identicon/index.js"
 

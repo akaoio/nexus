@@ -21,8 +21,8 @@ import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync } from 
 import { join } from "path"
 import { loadInstance } from "../instance.js"
 import { openInstanceData, ensureTables } from "../data.js"
-import { plan, hotApply, migrationPlan, applyMigration, appliedMigrations, ensureLedger } from "../../data/migrate.js"
-import { tableDDL } from "../../data/ddl.js"
+import { plan, hotApply, migrationPlan, applyMigration, appliedMigrations, ensureLedger } from "../../core/Data/migrate.js"
+import { tableDDL } from "../../core/Data/ddl.js"
 
 export async function migrate(args, flags, out) {
     const root = process.cwd()

@@ -1,6 +1,6 @@
 /** <nx-modal> template — dialog + header (nx-t) + close + slotted body. */
 
-import { html } from "../../../kernel/UI.js"
+import { html } from "../../../core/UI.js"
 import { STYLE } from "./styles.css.js"
 import "../icon/index.js"
 import "../context/index.js"

@@ -5,12 +5,12 @@
  * all pinned on the real engine. nx-search rides the browser run.
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import { serializeRow, hashProvider, cosine, textScore, rrf } from "../../src/semantic/semantic.js"
-import { NxSearch } from "../../src/studio/search.js"
-import { DataPlane } from "../../src/data/DataPlane.js"
-import { tableDDL } from "../../src/data/ddl.js"
-import { createCompiler } from "../../src/data/kysely.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { serializeRow, hashProvider, cosine, textScore, rrf } from "../../src/core/Semantic.js"
+import { NxSearch } from "../../src/studio/components/search/index.js"
+import { DataPlane } from "../../src/core/Data.js"
+import { tableDDL } from "../../src/core/Data/ddl.js"
+import { createCompiler } from "../../src/core/Data/kysely.js"
 import { doc, leaf } from "../conformance/ast/_helpers.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 

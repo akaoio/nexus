@@ -12,7 +12,7 @@
  * elements populated by a controller (see app/navigators.js), not subclasses.
  */
 
-import { render } from "../../../kernel/UI.js"
+import { render } from "../../../core/UI.js"
 import { navigatorTemplate } from "./template.js"
 
 export class NxNavigator extends HTMLElement {

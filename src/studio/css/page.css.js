@@ -1,7 +1,7 @@
 /**
  * The composed Studio page stylesheet — tokens + shared elements + the shell
  * layout, in cascade order. Pure strings (no DOM imports): the dev server
- * serves this as /_nexus/src/studio/app/studio.css, so the css modules stay
+ * serves this as /_nexus/src/studio/studio.css, so the css modules stay
  * the single source of truth — no build step, no duplication.
  */
 

@@ -1,6 +1,6 @@
 /** <nx-icon> template — one svg shell; the body swaps by name. */
 
-import { html } from "../../../kernel/UI.js"
+import { html } from "../../../core/UI.js"
 import { STYLE } from "./styles.css.js"
 
 export const iconTemplate = (c) => html`

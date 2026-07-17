@@ -10,9 +10,9 @@
  * (ZEN's VM accepts/rejects) and that the engine's gate 3 fires before gate 4.
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
+import Test, { assert } from "../../src/core/Test.js"
 import Sync from "./_load.js"
-import { compileEntityPolicy, authorizeWrite, logSoul } from "../../src/sync/PenPolicy.js"
+import { compileEntityPolicy, authorizeWrite, logSoul } from "../../src/core/Sync/PenPolicy.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 
 const ZEN = (await import("../../vendor/zen/zen.js")).default

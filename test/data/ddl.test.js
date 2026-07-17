@@ -8,11 +8,11 @@
  */
 
 import { DatabaseSync } from "node:sqlite"
-import Test, { assert } from "../../src/kernel/Test.js"
-import { tableDDL, columnType } from "../../src/data/ddl.js"
-import { createCompiler } from "../../src/data/kysely.js"
-import { applyWhere } from "../../src/data/compile.js"
-import * as AST from "../../src/ast/AST.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { tableDDL, columnType } from "../../src/core/Data/ddl.js"
+import { createCompiler } from "../../src/core/Data/kysely.js"
+import { applyWhere } from "../../src/core/Data/compile.js"
+import * as AST from "../../src/core/AST.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 import { doc, leaf, and } from "../conformance/ast/_helpers.js"
 

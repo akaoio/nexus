@@ -7,8 +7,8 @@
  * executed by the browser runner — akao's /test route pattern).
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import { html, css, render, Component } from "../../src/kernel/UI.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { html, css, render, Component } from "../../src/core/UI.js"
 
 Test.describe("Kernel — UI html() (KRN-UI)", () => {
     Test.it("KRN-UI01 html returns a TemplateResult { strings, values, html, _isTemplateResult }", () => {

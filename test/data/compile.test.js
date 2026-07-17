@@ -13,10 +13,10 @@
  */
 
 import { DatabaseSync } from "node:sqlite"
-import Test, { assert } from "../../src/kernel/Test.js"
-import * as AST from "../../src/ast/AST.js"
-import { toWhere, applyWhere } from "../../src/data/compile.js"
-import { createCompiler } from "../../src/data/kysely.js"
+import Test, { assert } from "../../src/core/Test.js"
+import * as AST from "../../src/core/AST.js"
+import { toWhere, applyWhere } from "../../src/core/Data/compile.js"
+import { createCompiler } from "../../src/core/Data/kysely.js"
 import { doc, leaf, and, or, not, prng, randomNode, randomRow, ROWS } from "../conformance/ast/_helpers.js"
 
 // ─── Harness: real SQLite, one table, JS rows mirrored in ────────────────────

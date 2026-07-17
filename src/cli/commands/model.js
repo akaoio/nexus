@@ -12,7 +12,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "fs"
 import { join } from "path"
-import { MODELS, DEFAULT_MODEL, withModel, status, pull, progressLine } from "../../app/models.js"
+import { MODELS, DEFAULT_MODEL, withModel, status, pull, progressLine } from "../../core/App/models.js"
 
 export async function model(args, flags, out) {
     const root = process.cwd()

@@ -18,7 +18,7 @@
  *  - resolve() is pure: the policy list and documents are never mutated.
  */
 
-import Test, { assert } from "../../../src/kernel/Test.js"
+import Test, { assert } from "../../../src/core/Test.js"
 import Permission from "./_load.js"
 import AST from "../ast/_load.js"
 import { policy, ctx, rule, ROWS, filter } from "./_helpers.js"

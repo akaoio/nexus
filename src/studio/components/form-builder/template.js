@@ -1,6 +1,6 @@
 /** <nx-form-builder> / <nx-form> templates — structure only, logic in index.js. */
 
-import { html } from "../../../kernel/UI.js"
+import { html } from "../../../core/UI.js"
 import { STYLE } from "./styles.css.js"
 
 /** The form runtime shell — fields are appended by the component. */

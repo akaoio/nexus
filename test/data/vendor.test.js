@@ -10,8 +10,8 @@
 import { fileURLToPath } from "url"
 import { readFileSync, readdirSync, statSync } from "fs"
 import { join } from "path"
-import Test, { assert } from "../../src/kernel/Test.js"
-import { createCompiler, DIALECT_NAMES } from "../../src/data/kysely.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { createCompiler, DIALECT_NAMES } from "../../src/core/Data/kysely.js"
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url))
 
@@ -26,7 +26,7 @@ Test.describe("Data Plane — vendored Kysely (VND-*)", () => {
         assert.equal(typeof kysely.DummyDriver, "function")
     })
 
-    Test.it("VND-02 BOUNDARY: no production code outside src/data/ touches vendor/kysely", () => {
+    Test.it("VND-02 BOUNDARY: no production code outside src/core/Data/ touches vendor/kysely", () => {
         // The rule governs production code (src/ + bin/). Tests may reference
         // the vendored package to verify it — that is their job.
         const offenders = []
@@ -36,7 +36,7 @@ Test.describe("Data Plane — vendored Kysely (VND-*)", () => {
                 if (statSync(path).isDirectory()) walk(path)
                 else if (entry.endsWith(".js")) {
                     const source = readFileSync(path, "utf8")
-                    if (source.includes("vendor/kysely") && !path.includes(join("src", "data")))
+                    if (source.includes("vendor/kysely") && !path.includes(join("src", "core", "Data")))
                         offenders.push(path.slice(ROOT.length))
                 }
             }

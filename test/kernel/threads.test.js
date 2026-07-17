@@ -5,8 +5,8 @@
  * protocol is exercised end-to-end, not simulated.
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import Threads from "../../src/kernel/Threads.js"
+import Test, { assert } from "../../src/core/Test.js"
+import Threads from "../../src/core/Threads.js"
 
 const FIXTURE = new URL("./fixtures/echo.js", import.meta.url)
 

@@ -20,7 +20,7 @@
  *  - between is inclusive of both bounds.
  */
 
-import Test, { assert } from "../../../src/kernel/Test.js"
+import Test, { assert } from "../../../src/core/Test.js"
 import AST from "./_load.js"
 import { doc, leaf } from "./_helpers.js"
 

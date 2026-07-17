@@ -21,9 +21,9 @@
  * akao triad: logic here, templates in template.js, styles in styles.css.js.
  */
 
-import { Component } from "../../../kernel/UI/Component.js"
-import { render } from "../../../kernel/UI.js"
-import { validate, FIELD_TYPES } from "../../../model/Model.js"
+import { Component } from "../../../core/UI/Component.js"
+import { render } from "../../../core/UI.js"
+import { validate, FIELD_TYPES } from "../../../core/Model.js"
 import { defaultValue } from "../query-builder/index.js"
 import { formTemplate, builderTemplate } from "./template.js"
 

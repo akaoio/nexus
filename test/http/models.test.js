@@ -11,8 +11,8 @@ import { spawnSync, spawn } from "child_process"
 import { mkdtempSync, rmSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import Test, { assert } from "../../src/kernel/Test.js"
-import { MODELS, DEFAULT_MODEL, currentModel, withModel, status, progressLine } from "../../src/app/models.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { MODELS, DEFAULT_MODEL, currentModel, withModel, status, progressLine } from "../../src/core/App/models.js"
 
 const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 

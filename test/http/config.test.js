@@ -9,8 +9,8 @@ import { spawnSync } from "child_process"
 import { mkdtempSync, rmSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import Test, { assert } from "../../src/kernel/Test.js"
-import { getPath, setPath, unsetPath, coerce, redact, isSecretPath } from "../../src/app/config.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { getPath, setPath, unsetPath, coerce, redact, isSecretPath } from "../../src/core/App/config.js"
 
 const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 

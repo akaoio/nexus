@@ -5,11 +5,11 @@
  * saved. Closes the <nx-list-view> "saved views deferred to storage" note.
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
+import Test, { assert } from "../../src/core/Test.js"
 import { applyView, packView, unpackView, viewSchema, saveView, updateView, listViews, getView, removeView } from "../../src/studio/views.js"
-import { DataPlane } from "../../src/data/DataPlane.js"
-import { tableDDL } from "../../src/data/ddl.js"
-import { createCompiler } from "../../src/data/kysely.js"
+import { DataPlane } from "../../src/core/Data.js"
+import { tableDDL } from "../../src/core/Data/ddl.js"
+import { createCompiler } from "../../src/core/Data/kysely.js"
 import { doc, leaf } from "../conformance/ast/_helpers.js"
 
 const VIEW = viewSchema()

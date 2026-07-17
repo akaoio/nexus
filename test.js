@@ -9,7 +9,7 @@
  * They are expected to be fully red until the implementation lands (Phase 2).
  */
 
-import Test from "./src/kernel/Test.js"
+import Test from "./src/core/Test.js"
 
 // Conformance — Query AST v1 (clauses AST-S/O/V/P/I/N/Q)
 import "./test/conformance/ast/structure.test.js"

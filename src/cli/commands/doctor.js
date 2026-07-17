@@ -7,9 +7,9 @@
 import { existsSync, readFileSync, readdirSync } from "fs"
 import { join } from "path"
 import { loadInstance, CORE_VERSION } from "../instance.js"
-import { loadExtensions } from "../../app/Extensions.js"
+import { loadExtensions } from "../../core/App/extensions.js"
 import { openInstanceData } from "../data.js"
-import { appliedMigrations } from "../../data/migrate.js"
+import { appliedMigrations } from "../../core/Data/migrate.js"
 
 export async function doctor(args, flags, out) {
     const root = process.cwd()

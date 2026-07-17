@@ -12,13 +12,13 @@
  */
 
 import { fileURLToPath } from "url"
-import Test, { assert } from "../../src/kernel/Test.js"
-import { transformersProvider } from "../../src/semantic/transformers.js"
-import { embeddingNLProvider, translate } from "../../src/nl/nl.js"
-import { DataPlane } from "../../src/data/DataPlane.js"
-import { tableDDL } from "../../src/data/ddl.js"
-import { createCompiler } from "../../src/data/kysely.js"
-import * as AST from "../../src/ast/AST.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { transformersProvider } from "../../src/core/Semantic/transformers.js"
+import { embeddingNLProvider, translate } from "../../src/core/NL.js"
+import { DataPlane } from "../../src/core/Data.js"
+import { tableDDL } from "../../src/core/Data/ddl.js"
+import { createCompiler } from "../../src/core/Data/kysely.js"
+import * as AST from "../../src/core/AST.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 import { doc, leaf } from "../conformance/ast/_helpers.js"
 
