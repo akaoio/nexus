@@ -122,7 +122,9 @@ export function createApi({ onUnauthorized } = {}) {
 export function createI18n(bundle) {
     const names = bundle?.names ?? {}
     const locales = bundle?.locales ?? ["en"]
-    let locale = localStorage.getItem("nexus-locale")
+    // "locale" is THE akao key — the kernel Router reads the same one, so a
+    // visit to the bare root reopens in the REMEMBERED language (/ → /vi/).
+    let locale = localStorage.getItem("locale")
     const guess = (navigator.language || "en").slice(0, 2)
     if (!locales.includes(locale)) locale = locales.includes(guess) ? guess : "en"
     NxContext.bundle({ dict: bundle?.dict ?? {}, locale })
@@ -133,7 +135,7 @@ export function createI18n(bundle) {
         get locale() { return locale },
         set(next) {
             locale = next
-            localStorage.setItem("nexus-locale", next)
+            localStorage.setItem("locale", next)
             document.documentElement.lang = next
             NxContext.setLocale(next)
         }
