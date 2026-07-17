@@ -28,7 +28,9 @@ button { cursor: pointer }
 .nx-input:focus { border-color: var(--accent); outline: none }
 
 .nx-label { color: var(--muted); font-size: var(--text-sm) }
-.nx-field { display: flex; flex-direction: column; gap: var(--sp-1); margin-bottom: var(--sp-3) }
+.nx-field { display: flex; flex-direction: column; gap: var(--sp-1) }
+.nx-form { display: grid; gap: var(--sp-3); align-content: start }
+.nx-fields-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--sp-2); align-items: end }
 .nx-actions { display: flex; gap: var(--sp-2); margin-top: var(--sp-2) }
 .nx-toolbar { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap }
 .nx-check { display: inline-flex; gap: var(--sp-2); align-items: center; accent-color: var(--accent) }

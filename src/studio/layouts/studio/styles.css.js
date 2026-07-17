@@ -73,7 +73,7 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
 .nx-toast.ok { border-left-color: var(--ok) }
 .nx-toast.err { border-left-color: var(--danger) }
 
-.nx-form .nx-field { max-width: 26.25rem }
+.nx-form { max-width: 26.25rem }
 footer.nx-foot { color: var(--muted); font-size: var(--text-sm); border-top: 1px solid var(--border); margin: 1.5rem 0.875rem; padding-top: 0.875rem }
 footer.nx-foot code { font-family: var(--mono); background: var(--surface-2); padding: .1em .4em; border-radius: 0.3125rem }
 @media (min-width: 53.75rem) { footer.nx-foot { margin-left: 17.125rem } }

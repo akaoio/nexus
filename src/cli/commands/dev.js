@@ -258,7 +258,7 @@ export async function dev(args, flags, out) {
         // layout) at request time — single source of truth, no build step.
         if (url.pathname === "/_nexus/src/studio/app/studio.css") {
             const { pageStyles } = await import("../../studio/css/page.css.js")
-            res.writeHead(200, { "content-type": MIME[".css"] })
+            res.writeHead(200, { "content-type": MIME[".css"], "cache-control": "no-cache" })
             return res.end(pageStyles)
         }
         // Framework modules for instance pages — /_nexus/{src,vendor}/* only,
@@ -272,7 +272,9 @@ export async function dev(args, flags, out) {
                 res.writeHead(404, { "content-type": "text/plain" })
                 return res.end("Not found")
             }
-            res.writeHead(200, { "content-type": MIME[extname(path)] ?? "application/octet-stream" })
+            // no-cache: the browser must revalidate framework modules on reload —
+            // heuristic caching would pin a STALE Studio after every code change
+            res.writeHead(200, { "content-type": MIME[extname(path)] ?? "application/octet-stream", "cache-control": "no-cache" })
             return res.end(readFileSync(path))
         }
         // Static files — SECURITY (SEC-01..04): served ONLY from <root>/public/,

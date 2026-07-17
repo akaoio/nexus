@@ -35,6 +35,7 @@ const api = createApi({ onUnauthorized: () => showLogin() })
 // This module IS the main thread; heavy work registers as workers so the UI
 // never freezes. Keypair derivation (KDF) is the first real occupant.
 import { Threads } from "/_nexus/src/kernel/Threads.js"
+import { Router } from "/_nexus/src/kernel/Router.js"
 const threads = new Threads()
 threads.register("crypto", { worker: true, type: "module", url: new URL("./threads/crypto.js", import.meta.url) })
 
@@ -127,7 +128,25 @@ function render() {
     renderNav()
     main.replaceChildren(MODULES[state.view].render(ctx))
 }
-function navigate(view, entity) { state.view = view; if (entity) state.entity = entity; app.classList.remove("open"); render() }
+// ── routing (kernel Router, akao pattern syntax) — the URL is the state ───────
+const ROUTES = ["/entity/[entity]", "/[view]"]
+function applyHash() {
+    const { route, params } = Router.process({ path: location.hash.slice(1) || "/", routes: ROUTES, locales: [] })
+    if (route === "/entity/[entity]" && schemas.some((s) => s.name === params.entity)) {
+        state.view = "content"
+        state.entity = params.entity
+    } else if (route === "/[view]" && MODULES[params.view] && params.view !== "content") {
+        state.view = params.view
+    }
+    app.classList.remove("open")
+    render()
+}
+window.addEventListener("hashchange", applyHash)
+function navigate(view, entity) {
+    const next = view === "content" ? "#/entity/" + (entity ?? state.entity) : "#/" + view
+    if (location.hash === next) return applyHash() // same route → just re-render
+    location.hash = next // hashchange → applyHash → render
+}
 
 // ── keyboard ───────────────────────────────────────────────────────────────────
 document.addEventListener("keydown", (e) => {
@@ -157,5 +176,5 @@ async function doLogin(pass, err) {
     } catch (e) { err.textContent = "Login error: " + e.message }
 }
 
-render()
+applyHash() // route from the URL (deep links work); falls back to the default state
 checkSession()

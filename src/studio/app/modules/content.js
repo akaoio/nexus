@@ -9,6 +9,7 @@ import { buildForm, editableFields, interfaces } from "../fields.js"
 import { hexSVG } from "../../css/elements/bits.css.js"
 import { activeFilter } from "../../components/query-builder/index.js"
 import { createSelection } from "../selection.js"
+import { cached, remember } from "../cache.js"
 import { VIEWS } from "../views/index.js"
 
 const countLeaves = (node) => (!node ? 0 : node.field ? 1 : node.children.reduce((n, c) => n + countLeaves(c), 0))
@@ -164,8 +165,20 @@ export function render(ctx) {
         error.textContent = ""
         if (!rows) {
             filterInfo.textContent = ""
-            const r = await ctx.api.list(s.name, null)
-            if (!r.ok) { error.textContent = r.error.code; rows = [] } else rows = r.data
+            // offline-first (akao DB.js thinking): last-known rows paint NOW…
+            const held = await cached("rows:" + s.name)
+            if (held?.length) paintRows(held)
+            try {
+                // …then the network revalidates and replaces
+                const r = await ctx.api.list(s.name, null)
+                if (!r.ok) { error.textContent = r.error.code; if (!held) paintRows([]); return }
+                rows = r.data
+                remember("rows:" + s.name, rows)
+            } catch {
+                if (held?.length) { ctx.toast("Offline — showing cached data", "err"); return }
+                error.textContent = "Offline — no cached data yet"
+                return
+            }
         }
         paintRows(rows)
     }

@@ -66,9 +66,9 @@ export function render(ctx) {
         }
     }
 
-    const pub = el("input", { class: "nx-input", placeholder: "public key", style: "flex:2;width:auto" })
-    const nm = el("input", { class: "nx-input", placeholder: "name", style: "flex:1;width:auto;max-width:160px" })
-    const rl = el("input", { class: "nx-input", placeholder: "roles (comma) e.g. admin,editor", style: "flex:1;width:auto;max-width:220px" })
+    const pub = el("input", { class: "nx-input", placeholder: "public key" })
+    const nm = el("input", { class: "nx-input", placeholder: "name" })
+    const rl = el("input", { class: "nx-input", placeholder: "roles (comma) e.g. admin,editor" })
     const add = el("button", {
         class: "nx-btn primary", text: "Add user",
         onclick: async () => {
@@ -84,6 +84,6 @@ export function render(ctx) {
         el("div", { class: "nx-head" }, [el("h1", { text: ctx.t("users") }), el("span", { class: "nx-spacer" }), el("button", { class: "nx-btn", onclick: addMe }, [icon("plus-lg"), document.createTextNode("Add me as admin")])]),
         banner,
         list,
-        el("div", { class: "nx-card" }, [el("p", { class: "nx-muted", text: "Add an identity by public key — the person signs in with the passphrase that derives it. Roles connect identities to Permissions policies." }), el("div", { class: "nx-toolbar" }, [pub, nm, rl, add])])
+        el("div", { class: "nx-card" }, [el("p", { class: "nx-muted", text: "Add an identity by public key — the person signs in with the passphrase that derives it. Roles connect identities to Permissions policies." }), el("div", { class: "nx-fields-row" }, [pub, nm, rl, add])])
     ])
 }
