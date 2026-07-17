@@ -22,6 +22,36 @@ import { ACTIONS } from "../permission/Permission.js"
 import { randomBytes } from "crypto"
 import { join } from "path"
 
+/**
+ * A real transformers.js embedder that loads its model on FIRST use, so
+ * enabling a semantic model never slows dev startup. Exposes the same
+ * { name, embed, embedQuery } contract; dims resolve once the model is loaded.
+ */
+function lazyTransformers(model, root) {
+    let inner = null
+    const ensure = async () => {
+        if (!inner) {
+            const { transformersProvider } = await import("../semantic/transformers.js")
+            inner = await transformersProvider({ model, root })
+        }
+        return inner
+    }
+    return {
+        name: model,
+        version: 1,
+        get dims() {
+            return inner?.dims
+        },
+        async embed(texts) {
+            return (await ensure()).embed(texts)
+        },
+        async embedQuery(texts) {
+            const e = await ensure()
+            return (e.embedQuery ?? e.embed)(texts)
+        }
+    }
+}
+
 /** The wide-open DEV policy set — every action, every permlevel (dev only). */
 function devPolicies(schemas) {
     const policies = []
@@ -57,20 +87,31 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         const { executor, kysely } = data
         await ensureTables(executor, kysely, schemas, executor.dialect)
 
+        // Embeddings (§4.6b). Honest, opt-in, and lazy:
+        //  • no entity declares `semantic:` → no embedder (mode "none").
+        //  • `semantic.model` set in config AND transformers.js installed in the
+        //    instance → a REAL ML model (loaded on first use, so dev boot stays
+        //    fast); search/NL become semantic (mode "semantic").
+        //  • otherwise → the deterministic LEXICAL provider (mode "lexical"),
+        //    with the status telling you exactly how to enable a real model.
         const { hashProvider } = await import("../semantic/semantic.js")
-        const embedder = schemas.some((s) => s.semantic) ? hashProvider() : null
-        // Honest embedder status for the UI (issue: "don't know if an embedder
-        // is installed"). Default is the deterministic LEXICAL provider; a real
-        // ML model (transformers.js) is used only if the instance installs it.
         let semanticAvailable = false
         try {
             const { createRequire } = await import("module")
             createRequire(join(root, "package.json")).resolve("@huggingface/transformers")
             semanticAvailable = true
         } catch {}
-        embedderInfo = embedder
-            ? { mode: "lexical", name: embedder.name, semanticAvailable }
-            : { mode: "none", semanticAvailable }
+        const wantsSemantic = schemas.some((s) => s.semantic)
+        const model = config.semantic?.model
+        let embedder = null
+        if (!wantsSemantic) embedderInfo = { mode: "none", semanticAvailable }
+        else if (model && semanticAvailable) {
+            embedder = lazyTransformers(model, root)
+            embedderInfo = { mode: "semantic", name: model, semanticAvailable: true }
+        } else {
+            embedder = hashProvider()
+            embedderInfo = { mode: "lexical", name: embedder.name, semanticAvailable, wanted: model || null }
+        }
         const plane = new DataPlane({ executor, schemas, dialect: executor.dialect, hooks: extensions, embedder })
 
         const keys = Array.isArray(config.api_keys) ? config.api_keys : []

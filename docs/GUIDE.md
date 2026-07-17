@@ -171,6 +171,17 @@ Honest boundaries (stated in the design): no cross-row transactions in pure P2P;
   `all-MiniLM-L6-v2` is the fast option; a deterministic lexical `hashProvider`
   is the offline fallback. Providers are the instance's dependency, never the
   kernel's. Embeddings are derived data — recomputed per peer, never synced.
+- **Enable a real model in `nexus dev`** (search starts lexical/keyword by
+  default — the Studio's embedder badge tells you which is active):
+  ```bash
+  npm install @huggingface/transformers    # in your instance
+  ```
+  ```json
+  // nexus.config.json
+  { "semantic": { "model": "onnx-community/embeddinggemma-300m-ONNX" } }
+  ```
+  The model loads lazily on first search (dev boot stays fast), and the badge
+  flips to **semantic**.
 - **Search** does text, vector (sqlite-vec ANN or brute force), and hybrid
   (RRF k=60) — always ranking **inside** permission (the over-fetch cannot leak).
 - **NL→AST** (`/ask`): a rule parser by default, or embedding-retrieval over an

@@ -160,9 +160,12 @@ $("theme").addEventListener("click", () => { theme = THEMES[(THEMES.indexOf(them
 ;(() => {
   const e = boot.embedder
   const b = $("embadge")
-  if (e.mode === "semantic") { b.textContent = "semantic · " + (e.name || "model"); b.classList.add("on") }
-  else if (e.mode === "lexical") { b.textContent = e.semanticAvailable ? "lexical · model ready" : "lexical (keyword)"; b.title = e.semanticAvailable ? "A semantic model is installed — set semantic.model in nexus.config.json to enable it" : "Keyword search only. Install @huggingface/transformers for semantic search." }
-  else { b.textContent = "no embedder"; b.title = "No entity declares a semantic block." }
+  if (e.mode === "semantic") { b.textContent = "semantic · " + (e.name || "model"); b.classList.add("on"); b.title = "Semantic search via " + e.name }
+  else if (e.mode === "lexical") {
+    if (e.wanted) { b.textContent = "lexical · model missing"; b.title = 'semantic.model="' + e.wanted + '" is set but @huggingface/transformers is not installed. Run: npm install @huggingface/transformers' }
+    else if (e.semanticAvailable) { b.textContent = "lexical · enable model"; b.title = "A model library is installed — set semantic.model in nexus.config.json to switch to semantic search" }
+    else { b.textContent = "lexical (keyword)"; b.title = "Keyword search only. Install @huggingface/transformers and set semantic.model for semantic search." }
+  } else { b.textContent = "no embedder"; b.title = "No entity declares a semantic: block, so nothing is indexed for search." }
 })()
 
 // ── mobile drawer for the sidebar ─────────────────────────────────────────────
