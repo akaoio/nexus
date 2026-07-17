@@ -62,10 +62,22 @@ export async function createExecutor(engine = "sqlite", config = {}) {
 
     if (engine === "sqlite") {
         const { DatabaseSync } = await import("node:sqlite")
-        const db = new DatabaseSync(config.path ?? ":memory:")
+        // config.vec loads the sqlite-vec extension (real ANN) — resolved
+        // from the instance like any driver; vec becomes false if unavailable.
+        const db = new DatabaseSync(config.path ?? ":memory:", config.vec ? { allowExtension: true } : {})
+        let vec = false
+        if (config.vec)
+            try {
+                const mod = await importDriver("sqlite-vec", "sqlite", config.root)
+                ;(mod.default ?? mod).load(db)
+                vec = true
+            } catch (error) {
+                if (config.vec === "require") throw err("E_VEC", `sqlite-vec required but unavailable: ${error.message}`)
+            }
         return {
             engine,
             dialect: "sqlite",
+            vec,
             run: (sql, params = []) => void db.prepare(sql).run(...params),
             all: (sql, params = []) => db.prepare(sql).all(...params),
             close: () => db.close()

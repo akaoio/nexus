@@ -58,6 +58,7 @@ export class DataPlane {
      * @param {Function} [config.now] - Injected clock → ISO string
      */
     #embeddingsReady = false
+    #vecReady = new Set()
 
     constructor({ executor, schemas = [], dialect = "sqlite", now, hooks = null, embedder = null } = {}) {
         if (!executor) throw err("E_EXECUTOR", "an executor { run, all } is required")
@@ -309,6 +310,17 @@ export class DataPlane {
         this.#embeddingsReady = true
     }
 
+    // Float32 → the byte blob sqlite-vec stores.
+    #f32(vector) {
+        return new Uint8Array(new Float32Array(vector).buffer)
+    }
+
+    async #ensureVec(entity, dims) {
+        if (this.#vecReady.has(entity)) return
+        await this.executor.run(`CREATE VIRTUAL TABLE IF NOT EXISTS "_nexus_vec_${entity}" USING vec0(row_id text, embedding float[${dims}])`)
+        this.#vecReady.add(entity)
+    }
+
     async #maintainEmbedding(entity, row) {
         const schema = this.schemas.get(entity)
         if (!this.embedder || !schema?.semantic) return
@@ -318,12 +330,20 @@ export class DataPlane {
         await this.executor.run(`INSERT INTO _nexus_embeddings (entity, row_id, model, vector) VALUES (?, ?, ?, ?)`, [
             entity, row.id, `${this.embedder.name}@${this.embedder.version}`, JSON.stringify(vector)
         ])
+        // sqlite-vec ANN index (real KNN), when the engine loaded the extension
+        if (this.executor.vec) {
+            await this.#ensureVec(entity, vector.length)
+            await this.executor.run(`DELETE FROM "_nexus_vec_${entity}" WHERE row_id = ?`, [row.id])
+            await this.executor.run(`INSERT INTO "_nexus_vec_${entity}"(row_id, embedding) VALUES (?, ?)`, [row.id, this.#f32(vector)])
+        }
     }
 
     async #dropEmbedding(entity, id) {
         if (!this.embedder) return
         await this.#ensureEmbeddings()
         await this.executor.run(`DELETE FROM _nexus_embeddings WHERE entity = ? AND row_id = ?`, [entity, id])
+        if (this.executor.vec && this.#vecReady.has(entity))
+            await this.executor.run(`DELETE FROM "_nexus_vec_${entity}" WHERE row_id = ?`, [id])
     }
 
     /**
@@ -371,17 +391,30 @@ export class DataPlane {
 
         let vectorRanked = []
         if (wantVector && this.embedder) {
-            await this.#ensureEmbeddings()
-            const stored = await this.executor.all(
-                `SELECT row_id, vector FROM _nexus_embeddings WHERE entity = ?`, [entity]
-            )
-            const vectors = new Map(stored.map((r) => [r.row_id, JSON.parse(r.vector)]))
             const [queryVector] = await this.embedder.embed([String(query)])
-            vectorRanked = candidates
-                .filter((row) => vectors.has(row.id))
-                .map((row) => ({ id: row.id, score: cosine(queryVector, vectors.get(row.id)) }))
-                .filter((r) => r.score > 0)
-                .sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1))
+            const candIds = new Set(candidates.map((r) => r.id))
+            if (this.executor.vec && this.#vecReady.has(entity)) {
+                // Real sqlite-vec ANN: KNN over-fetches, then we keep only the
+                // permission-visible candidates — ranking stays inside
+                // permission (SEM-06 holds; over-fetch covers the attrition).
+                const over = Math.min(candidates.length + k * 8 + 8, 1000)
+                const knn = await this.executor.all(
+                    `SELECT row_id, distance FROM "_nexus_vec_${entity}" WHERE embedding MATCH ? AND k = ${over} ORDER BY distance`,
+                    [this.#f32(queryVector)]
+                )
+                vectorRanked = knn
+                    .filter((r) => candIds.has(r.row_id))
+                    .map((r) => ({ id: r.row_id, score: 1 / (1 + r.distance) }))
+            } else {
+                await this.#ensureEmbeddings()
+                const stored = await this.executor.all(`SELECT row_id, vector FROM _nexus_embeddings WHERE entity = ?`, [entity])
+                const vectors = new Map(stored.map((r) => [r.row_id, JSON.parse(r.vector)]))
+                vectorRanked = candidates
+                    .filter((row) => vectors.has(row.id))
+                    .map((row) => ({ id: row.id, score: cosine(queryVector, vectors.get(row.id)) }))
+                    .filter((r) => r.score > 0)
+                    .sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1))
+            }
         }
 
         let fused

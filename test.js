@@ -51,6 +51,7 @@ import "./test/data/dataplane.test.js"
 // Data Plane — engine adapters behind the executor contract (clauses ADP-*)
 import "./test/data/adapters.test.js"
 import "./test/data/live-engine.test.js"
+import "./test/data/vec.test.js"
 
 // Kernel — extracted from akao (clauses KRN-EN/UT/EV/ST/RT/TH/UI)
 import "./test/kernel/utils.test.js"
