@@ -1,6 +1,6 @@
 /**
  * <nx-modal data-header="key"> — the akao MODAL primitive: a shadow <dialog>
- * with a dictionary-bound header (<nx-t>), a close control, and the body
+ * with a dictionary-bound header (<nx-context>), a close control, and the body
  * slotted. show()/showModal()/close() exactly like the original; clicking
  * the backdrop closes.
  */

@@ -24,6 +24,7 @@ import { MODELS, status as modelStatus, withModel } from "../../app/models.js"
 import { redact, setPath, unsetPath } from "../../app/config.js"
 import { randomBytes } from "crypto"
 import { fileURLToPath } from "url"
+import { Router } from "../../kernel/Router.js"
 
 const MIME = {
     ".html": "text/html; charset=utf-8",
@@ -93,6 +94,22 @@ export async function dev(args, flags, out) {
                 }
             })
         })
+
+    // The Studio's route table — the same patterns the client router uses.
+    const STUDIO_ROUTES = ["/entity/[entity]", "/[view]"]
+    const STUDIO_VIEWS = new Set(["entity", "permissions", "users", "ai", "settings", "search"])
+    function routeMatches(pathname) {
+        if (/\.[^/]+$/.test(pathname) || pathname.includes("/.")) return false // files + dotpaths are never routes
+        const locales = i18n.locales.map((code) => ({ code }))
+        const r = Router.process({ path: pathname, routes: STUDIO_ROUTES, locales })
+        // "home" covers both the root and unmatched leftovers — tell them apart
+        const segments = pathname.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean)
+        if (segments.length && (i18n.locales.includes(segments[0]) || /^[a-z]{2}(-[A-Z]{2})?$/.test(segments[0]))) segments.shift()
+        if (!segments.length) return true // "/" or a bare locale prefix
+        if (r.route === "/entity/[entity]") return schemas.some((s) => s.name === r.params.entity)
+        if (r.route === "/[view]") return STUDIO_VIEWS.has(r.params.view)
+        return false
+    }
 
     const server = createServer(async (req, res) => {
         const url = new URL(req.url, "http://localhost")
@@ -250,8 +267,13 @@ export async function dev(args, flags, out) {
 
         if (api && (await api(req, res))) return
 
-        if (url.pathname === "/") {
-            res.writeHead(200, { "content-type": MIME[".html"] })
+        // SPA routes (akao build-thinking: routes are data, shared with the
+        // client): /, /vi/, /en/entity/task, /permissions … all serve the SAME
+        // shell — but ONLY paths that precisely match a known route with a
+        // known value. File-looking paths and dotfiles never reach the shell
+        // (SEC-01..04 hold: /nexus.config.json, /.nexus/*, backups stay 404).
+        if (routeMatches(url.pathname)) {
+            res.writeHead(200, { "content-type": MIME[".html"], "cache-control": "no-cache" })
             return res.end(studioIndex(config, schemas, { embedder: embedderInfo, appName, i18n }))
         }
         // The Studio stylesheet is COMPOSED from the css modules (akao triad

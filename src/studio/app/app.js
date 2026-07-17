@@ -1,11 +1,11 @@
 /**
  * Studio shell — the composition root: reads boot data, wires state, auth,
  * i18n and theme, and mounts routes into the layout. Structure lives in
- * templates; text in the dictionary (<nx-t>); icons in <nx-icon>; heavy work
+ * templates; text in the dictionary (<nx-context>); icons in <nx-icon>; heavy work
  * in worker threads; the URL in the kernel Router. This file only composes.
  */
 
-import { icon, t, button, toast, createApi, createI18n, createTheme } from "./lib.js"
+import { icon, text, button, toast, createApi, createI18n, createTheme } from "./lib.js"
 import { buildLayout, buildLogin } from "../layouts/studio/index.js"
 // routes — one FOLDER per route, nested like the URL (the akao routes shape)
 import * as content from "./routes/entity/[entity]/index.js"
@@ -87,7 +87,7 @@ for (const code of i18n.locales) {
 }
 localeSel.addEventListener("change", () => {
     i18n.set(localeSel.value)
-    render()
+    navigate(state.view, state.entity) // the URL's locale prefix follows
 })
 
 const themeBtn = button({ variant: "icon", iconName: theme.icon(), title: "Theme", onclick: () => { theme.cycle(); themeBtn.dataset.icon = theme.icon() } })
@@ -126,11 +126,11 @@ const ctx = {
 }
 
 // ── navigation + render ────────────────────────────────────────────────────────
-/** A sidebar link: <a is="nx-a"> — the primitive PRE-CACHES its target. */
-function navLink({ href, active, iconName, label }) {
+/** A sidebar link: <a is="nx-a"> — localized href, pushState, pre-cache. */
+function navLink({ to, active, iconName, label }) {
     const a = document.createElement("a", { is: "nx-a" })
     a.setAttribute("is", "nx-a") // serialize for clarity; define() already upgraded it
-    a.href = href
+    a.dataset.to = to
     a.className = active ? "active" : ""
     const ico = document.createElement("span")
     ico.className = "ico"
@@ -142,7 +142,7 @@ function navLink({ href, active, iconName, label }) {
 function renderNav() {
     entNav.replaceChildren(...schemas.map((s) =>
         navLink({
-            href: "#/entity/" + s.name,
+            to: "/entity/" + s.name,
             active: state.view === "content" && state.entity === s.name,
             iconName: "database",
             label: document.createTextNode(s.name)
@@ -150,10 +150,10 @@ function renderNav() {
     ))
     nav.replaceChildren(...BUILD.map((name) =>
         navLink({
-            href: "#/" + name,
+            to: "/" + name,
             active: state.view === name,
             iconName: MODULES[name].icon,
-            label: t(MODULES[name].key)
+            label: text(MODULES[name].key)
         })
     ))
 }
@@ -165,24 +165,39 @@ function render() {
     main.replaceChildren(MODULES[state.view].render(ctx))
 }
 
-// ── routing (kernel Router, akao pattern syntax) — the URL is the state ───────
+// ── routing — REAL paths, locale-prefixed: /vi/entity/task (the akao shape) ───
 const ROUTES = ["/entity/[entity]", "/[view]"]
-function applyHash() {
-    const { route, params } = Router.process({ path: location.hash.slice(1) || "/", routes: ROUTES, locales: [] })
-    if (route === "/entity/[entity]" && schemas.some((s) => s.name === params.entity)) {
+const LOCALES = i18n.locales.map((code) => ({ code }))
+const hrefFor = (to) => Router.process({ path: to, routes: ROUTES, locales: LOCALES, locale: i18n.locale }).path
+
+function applyRoute() {
+    const r = Router.process({ path: location.pathname, routes: ROUTES, locales: LOCALES })
+    // the URL's locale prefix IS the locale
+    if (r.locale && r.locale.code !== i18n.locale) i18n.set(r.locale.code)
+    if (r.route === "/entity/[entity]" && schemas.some((s) => s.name === r.params.entity)) {
         state.view = "content"
-        state.entity = params.entity
-    } else if (route === "/[view]" && MODULES[params.view] && params.view !== "content") {
-        state.view = params.view
+        state.entity = r.params.entity
+    } else if (r.route === "/[view]" && MODULES[r.params.view] && r.params.view !== "content") {
+        state.view = r.params.view
     }
+    // canonicalize (adds the locale prefix and the trailing slash)
+    if (location.pathname !== r.path) history.replaceState({}, "", r.path + location.search)
     app.classList.remove("open")
     render()
 }
-window.addEventListener("hashchange", applyHash)
+window.addEventListener("popstate", applyRoute)
 function navigate(view, entity) {
-    const next = view === "content" ? "#/entity/" + (entity ?? state.entity) : "#/" + view
-    if (location.hash === next) return applyHash() // same route → just re-render
-    location.hash = next // hashchange → applyHash → render
+    const to = view === "content" ? "/entity/" + (entity ?? state.entity) : "/" + view
+    const path = hrefFor(to)
+    if (location.pathname !== path) history.pushState({}, "", path)
+    applyRoute()
+}
+// the nx-a primitive drives the same machinery
+NxA.hrefFor = hrefFor
+NxA.go = (to) => {
+    const path = hrefFor(to)
+    if (location.pathname !== path) history.pushState({}, "", path)
+    applyRoute()
 }
 
 // ── keyboard ───────────────────────────────────────────────────────────────────
@@ -213,5 +228,6 @@ async function doLogin(pass, err) {
     } catch (e) { err.textContent = "Login error: " + e.message }
 }
 
-applyHash() // route from the URL (deep links work); falls back to the default state
+if (location.hash.startsWith("#/")) history.replaceState({}, "", location.hash.slice(1)) // legacy hash links
+applyRoute() // route from the URL (deep links work); falls back to the default state
 checkSession()

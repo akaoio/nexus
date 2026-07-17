@@ -2,17 +2,17 @@
  *  and the results host the active view renders into. */
 
 import { html } from "../../../../../kernel/UI.js"
-import "../../../../components/t/index.js"
+import "../../../../components/context/index.js"
 import "../../../../components/button/index.js"
 
 export const entityTemplate = (c, { name, onNew, onAsk, onClear, onToggleFilter }) => html`
     <div class="nx-head">
         <h1>${name}</h1>
-        <span class="nx-muted" ${({ element }) => (c.$count = element)}></span>
+        <span class="nx-muted"><nx-context data-key="recordsCount" data-args="[0]" ${({ element }) => (c.$count = element)}></nx-context></span>
         <span class="nx-spacer"></span>
         <span class="nx-toolbar" ${({ element }) => (c.$switcher = element)}></span>
         <nx-button data-variant="primary" data-icon="plus-lg" ${({ element }) => element.addEventListener("click", onNew)}>
-            <nx-t data-key="newRecord"></nx-t>
+            <nx-context data-key="newRecord"></nx-context>
         </nx-button>
     </div>
     <div class="nx-card">
@@ -23,7 +23,7 @@ export const entityTemplate = (c, { name, onNew, onAsk, onClear, onToggleFilter 
                     element.addEventListener("keydown", (e) => { if (e.key === "Enter") onAsk(element.value) })
                 }}>
             <nx-button data-icon="funnel" ${({ element }) => element.addEventListener("click", onToggleFilter)}>
-                <nx-t data-key="filter" ${({ element }) => (c.$filterLabel = element)}></nx-t>
+                <nx-context data-key="filter" ${({ element }) => (c.$filterLabel = element)}></nx-context>
                 <span ${({ element }) => (c.$filterCount = element)}></span>
             </nx-button>
             <nx-button data-variant="icon" data-icon="x-lg" title="Clear" ${({ element }) => element.addEventListener("click", onClear)}></nx-button>

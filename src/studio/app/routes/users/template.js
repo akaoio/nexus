@@ -1,11 +1,11 @@
 /** /users route template — identities list + add-by-key row. */
 
 import { html } from "../../../../kernel/UI.js"
-import "../../../components/t/index.js"
+import "../../../components/context/index.js"
 
 export const usersTemplate = (c, { onAddMe, onAdd }) => html`
     <div class="nx-head">
-        <h1><nx-t data-key="users"></nx-t></h1>
+        <h1><nx-context data-key="users"></nx-context></h1>
         <span class="nx-spacer"></span>
         <nx-button data-icon="plus-lg" ${({ element }) => element.addEventListener("click", onAddMe)}>Add me as admin</nx-button>
     </div>

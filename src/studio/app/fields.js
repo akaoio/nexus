@@ -7,7 +7,7 @@
  * + primitives only (the akao dynamic style): no ad-hoc DOM helpers.
  */
 
-import { icon, button, t } from "./lib.js"
+import { icon, button, text } from "./lib.js"
 
 const label = (field, locale) =>
     (field.label && (field.label[locale] || field.label.en || Object.values(field.label)[0])) || field.name
@@ -112,7 +112,7 @@ export function buildForm(schema, { data = {}, onSubmit, submitLabel = "Save", l
     }
     const actions = document.createElement("div")
     actions.className = "nx-actions"
-    const submit = button({ variant: "primary", onclick: () => form.requestSubmit() }, [submitLabel === "Save" ? t("save") : submitLabel])
+    const submit = button({ variant: "primary", onclick: () => form.requestSubmit() }, [submitLabel === "Save" ? text("save") : submitLabel])
     actions.append(submit)
     form.append(actions)
     return form

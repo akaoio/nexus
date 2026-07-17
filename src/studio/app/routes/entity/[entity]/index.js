@@ -5,7 +5,7 @@
  * registry (list, kanban, …). Structure lives in template.js.
  */
 
-import { mountTemplate, button, icon, t, toast, confirmDialog } from "../../../lib.js"
+import { mountTemplate, button, icon, text, toast, confirmDialog } from "../../../lib.js"
 import { buildForm, editableFields, interfaces } from "../../../fields.js"
 import { hexSVG } from "../../../../css/elements/bits.css.js"
 import { activeFilter } from "../../../../components/query-builder/index.js"
@@ -52,13 +52,13 @@ export function render(ctx) {
         c.$bulkbar.hidden = selection.size === 0
         if (c.$bulkbar.hidden) return
         const label = document.createElement("b")
-        label.textContent = selection.size + " selected"
+        label.append(text("selectedCount", null, [selection.size]))
         const spacer = document.createElement("span")
         spacer.className = "nx-spacer"
         c.$bulkbar.replaceChildren(
             label,
-            button({ iconName: "pencil", onclick: bulkEdit }, [t("edit"), "…"]),
-            button({ variant: "danger", iconName: "trash", onclick: bulkDelete }, [t("delete")]),
+            button({ iconName: "pencil", onclick: bulkEdit }, [text("edit"), "…"]),
+            button({ variant: "danger", iconName: "trash", onclick: bulkDelete }, [text("delete")]),
             spacer,
             button({ variant: "icon", iconName: "x-lg", title: "Clear selection", onclick: () => selection.clear() })
         )
@@ -106,7 +106,7 @@ export function render(ctx) {
                 selection.clear()
                 refresh()
             }
-        }, [t("save")]))
+        }, [text("save")]))
         const body = document.createElement("div")
         body.append(fieldWrap, slot, actions)
         ctx.drawer(ctx.i18n.resolve("edit") + " " + selection.size + " · " + s.name, body)
@@ -162,7 +162,7 @@ export function render(ctx) {
                 toast("Record deleted")
                 refresh()
             }
-        }, [t("delete")]))
+        }, [text("delete")]))
         const meta = document.createElement("div")
         meta.setAttribute("style", "margin-bottom:0.75rem;display:flex;flex-direction:column;gap:0.125rem")
         for (const [label, value] of [["id      ", row.id], ["owner   ", row.owner], ["created ", (row.created_at ?? "").replace("T", " ").slice(0, 19)], ["updated ", (row.updated_at ?? "").replace("T", " ").slice(0, 19)]]) {
@@ -183,7 +183,7 @@ export function render(ctx) {
         mark.innerHTML = hexSVG(44)
         const line = document.createElement("div")
         line.textContent = "No " + s.name + " records yet"
-        const cta = button({ variant: "primary", iconName: "plus-lg", onclick: openCreate }, [t("newRecord")])
+        const cta = button({ variant: "primary", iconName: "plus-lg", onclick: openCreate }, [text("newRecord")])
         cta.style.marginTop = "0.75rem"
         empty.append(mark, line, cta)
         return empty
@@ -192,7 +192,7 @@ export function render(ctx) {
     // render the ACTIVE view from the registry — list, kanban, … same contract
     function paintRows(rows) {
         currentRows = rows
-        c.$count.textContent = rows.length + " " + ctx.i18n.resolve("records")
+        c.$count.dataset.args = JSON.stringify([rows.length])
         if (!rows.length) return c.$results.replaceChildren(emptyState())
         const view = VIEWS.find((v) => v.id === viewId && v.available(s)) ?? VIEWS[0]
         c.$results.replaceChildren(view.render({
@@ -233,7 +233,7 @@ export function render(ctx) {
         c.$filterInfo.textContent = info
         if (!rows.length) {
             currentRows = []
-            c.$count.textContent = "0 " + ctx.i18n.resolve("records")
+            c.$count.dataset.args = "[0]"
             const none = document.createElement("div")
             none.className = "nx-empty"
             none.textContent = "No rows match"

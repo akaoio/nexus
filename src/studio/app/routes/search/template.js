@@ -1,11 +1,11 @@
 /** /search route template — global search over every readable Entity. */
 
 import { html } from "../../../../kernel/UI.js"
-import "../../../components/t/index.js"
+import "../../../components/context/index.js"
 
 export const searchTemplate = (c, { mode, note }) => html`
     <div class="nx-head">
-        <h1><nx-t data-key="search"></nx-t></h1>
+        <h1><nx-context data-key="search"></nx-context></h1>
         <span class="nx-spacer"></span>
         <span class="nx-chip">${mode}</span>
     </div>

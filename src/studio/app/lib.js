@@ -1,12 +1,12 @@
 /**
  * Studio kit — the shared NON-UI primitives: the authenticated API client,
- * the i18n data store (text renders through <nx-t>, never a t() call), the
+ * the i18n data store (text renders through <nx-context>, never a t() call), the
  * theme controller, and thin seams over the UI primitives (toast → the
  * <nx-notifications> host, confirmDialog → an <nx-modal>). DOM structure
  * lives in templates and components — never built ad-hoc here.
  */
 
-import NxT from "../components/t/index.js"
+import NxContext from "../components/context/index.js"
 import NxNotifications from "../components/notifications/index.js"
 import "../components/modal/index.js"
 import "../components/button/index.js"
@@ -19,11 +19,12 @@ export const icon = (name) => {
     return node
 }
 
-/** A dictionary-bound text element (<nx-t>) — THE way to show a UI string. */
-export const t = (key, fallback) => {
-    const node = document.createElement("nx-t")
+/** A dictionary-bound text element (<nx-context>) — THE way to show a UI string. */
+export const text = (key, fallback, args) => {
+    const node = document.createElement("nx-context")
     node.dataset.key = key
     if (fallback != null) node.dataset.fallback = fallback
+    if (args != null) node.dataset.args = JSON.stringify(args)
     return node
 }
 
@@ -77,8 +78,8 @@ export function confirmDialog(message) {
             modal.close()
         }
         actions.append(
-            button({ onclick: () => done(false) }, [t("cancel")]),
-            button({ variant: "primary", onclick: () => done(true) }, [t("confirm")])
+            button({ onclick: () => done(false) }, [text("cancel")]),
+            button({ variant: "primary", onclick: () => done(true) }, [text("confirm")])
         )
         body.append(text, actions)
         modal.append(body)
@@ -117,24 +118,24 @@ export function createApi({ onUnauthorized } = {}) {
     }
 }
 
-// ── i18n data store — <nx-t> renders it; this only HOLDS locale + bundle ───────
+// ── i18n data store — <nx-context> renders it; this only HOLDS locale + bundle ───────
 export function createI18n(bundle) {
     const names = bundle?.names ?? {}
     const locales = bundle?.locales ?? ["en"]
     let locale = localStorage.getItem("nexus-locale")
     const guess = (navigator.language || "en").slice(0, 2)
     if (!locales.includes(locale)) locale = locales.includes(guess) ? guess : "en"
-    NxT.bundle({ dict: bundle?.dict ?? {}, locale })
+    NxContext.bundle({ dict: bundle?.dict ?? {}, locale })
     return {
         locales, names,
         /** Programmatic strings (toasts, confirms) resolve through the SAME memory. */
-        resolve: (key, fallback) => NxT.resolve(key, fallback),
+        resolve: (key, fallback, args) => NxContext.resolve(key, fallback, args),
         get locale() { return locale },
         set(next) {
             locale = next
             localStorage.setItem("nexus-locale", next)
             document.documentElement.lang = next
-            NxT.setLocale(next)
+            NxContext.setLocale(next)
         }
     }
 }

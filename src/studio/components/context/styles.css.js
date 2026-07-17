@@ -1,4 +1,4 @@
-/** <nx-t> styles — a text node with no box of its own. */
+/** <nx-context> styles — a text node with no box of its own. */
 
 import { css } from "../../../kernel/UI/css.js"
 

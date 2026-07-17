@@ -1,7 +1,7 @@
 /** /entity (data model) route — logic: create a new Entity or edit an
  *  existing one and SAVE (reuses <nx-form-builder> / <nx-schema-designer>). */
 
-import { mountTemplate, button, t, toast } from "../../lib.js"
+import { mountTemplate, button, text, toast } from "../../lib.js"
 import { modelTemplate } from "./template.js"
 
 export function render(ctx) {
@@ -48,15 +48,15 @@ export function render(ctx) {
             fieldWrap.className = "nx-field"
             const label = document.createElement("label")
             label.className = "nx-label"
-            label.append(t("name"))
+            label.append(text("name"))
             fieldWrap.append(label, name)
             const builder = document.createElement("nx-form-builder")
-            const create = button({ variant: "primary", onclick: () => save({ ...(builder.value || { fields: [] }), name: name.value.trim() }) }, [t("createCollection")])
+            const create = button({ variant: "primary", onclick: () => save({ ...(builder.value || { fields: [] }), name: name.value.trim() }) }, [text("createCollection")])
             c.$body.append(card([fieldWrap, builder, actions(create)]))
         } else {
             const designer = document.createElement("nx-schema-designer")
             designer.baseline = ctx.schemas.find((s) => s.name === c.$picker.value)
-            const saveBtn = button({ variant: "primary", onclick: () => save(designer.value) }, [t("saveChanges")])
+            const saveBtn = button({ variant: "primary", onclick: () => save(designer.value) }, [text("saveChanges")])
             c.$body.append(card([designer, actions(saveBtn)]))
         }
     }

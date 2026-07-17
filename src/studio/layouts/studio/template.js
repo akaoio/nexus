@@ -1,14 +1,14 @@
 /**
  * The Studio layout templates — STRUCTURE only, declarative (akao layouts
  * pattern): the shell (topbar/side/main), the drawer and the login panel.
- * Text is dictionary-bound through <nx-t>; icons are <nx-icon>; the top-bar
+ * Text is dictionary-bound through <nx-context>; icons are <nx-icon>; the top-bar
  * widgets (badge, locale select, theme button) arrive as slots from the
  * composition root.
  */
 
 import { html } from "../../../kernel/UI.js"
 import "../../components/icon/index.js"
-import "../../components/t/index.js"
+import "../../components/context/index.js"
 import "../../components/button/index.js"
 
 export const layoutTemplate = (c, { site, badge, localeSel, themeBtn }) => html`
@@ -26,9 +26,9 @@ export const layoutTemplate = (c, { site, badge, localeSel, themeBtn }) => html`
         </header>
         <div class="nx-scrim" ${({ element }) => element.addEventListener("click", () => c.app.classList.remove("open"))}></div>
         <aside class="nx-side">
-            <div class="nx-grouplabel"><nx-t data-key="collections"></nx-t></div>
+            <div class="nx-grouplabel"><nx-context data-key="collections"></nx-context></div>
             <nav class="nx-nav" id="nx-nav-ent" ${({ element }) => (c.entNav = element)}></nav>
-            <div class="nx-grouplabel"><nx-t data-key="build"></nx-t></div>
+            <div class="nx-grouplabel"><nx-context data-key="build"></nx-context></div>
             <nav class="nx-nav" id="nx-nav" ${({ element }) => (c.nav = element)}></nav>
         </aside>
         <main class="nx-main" id="nx-main" ${({ element }) => (c.main = element)}></main>
@@ -52,7 +52,7 @@ export const loginTemplate = (c, { site, onSubmit }) => html`
                 <span style="color:var(--accent);display:inline-flex"><nx-icon name="hexagon"></nx-icon></span>
                 ${site}
             </h2>
-            <p class="nx-muted"><nx-t data-key="login" data-fallback="Sign in"></nx-t></p>
+            <p class="nx-muted"><nx-context data-key="login" data-fallback="Sign in"></nx-context></p>
             <div class="nx-field">
                 <label class="nx-label">Passphrase</label>
                 <input id="nx-pass" class="nx-input" type="password" placeholder="your secret passphrase"
@@ -64,7 +64,7 @@ export const loginTemplate = (c, { site, onSubmit }) => html`
             <div class="nx-actions">
                 <nx-button data-variant="primary" style="flex:1"
                     ${({ element }) => element.addEventListener("click", () => onSubmit(c.pass.value, c.loginErr))}>
-                    <nx-t data-key="login" data-fallback="Sign in"></nx-t>
+                    <nx-context data-key="login" data-fallback="Sign in"></nx-context>
                 </nx-button>
             </div>
             <div class="nx-err" id="nx-login-err" ${({ element }) => (c.loginErr = element)}></div>
