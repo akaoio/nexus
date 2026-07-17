@@ -15,7 +15,7 @@ import { existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from "fs
 import { join, resolve, extname, sep } from "path"
 import { loadInstance } from "../instance.js"
 import { buildInstanceApi } from "../../http/instance-server.js"
-import { studioPage } from "../studio-page.js"
+import { studioIndex } from "../studio-index.js"
 import { validate } from "../../model/Model.js"
 import { loadDictionary, mergeDictionaries, coveredLocales } from "../../i18n/i18n.js"
 import { verifyChallenge, issueToken, verifyToken } from "../../app/auth.js"
@@ -221,7 +221,7 @@ export async function dev(args, flags, out) {
 
         if (url.pathname === "/") {
             res.writeHead(200, { "content-type": MIME[".html"] })
-            return res.end(studioPage(config, schemas, { embedder: embedderInfo, appName, i18n }))
+            return res.end(studioIndex(config, schemas, { embedder: embedderInfo, appName, i18n }))
         }
         // Framework modules for instance pages — /_nexus/{src,vendor}/* only,
         // resolved inside the Nexus package, traversal-guarded. vendor/ is

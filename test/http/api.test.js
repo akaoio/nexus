@@ -141,21 +141,23 @@ Test.describe("HTTP API — auto-generated from schemas (API-*)", () => {
         assert.equal(config.status, 404)
     })
 
-    Test.it("API-08 the index page mounts nx-query-builder and the framework modules are served", async () => {
+    Test.it("API-08 the shell loads the Studio app, which composes the served widgets", async () => {
         const base = await ensureServer()
-        const index = await fetch(base)
-        const html = await index.text()
-        assert.truthy(html.includes("nx-query-builder"), "the index page must mount the builder")
-        assert.truthy(html.includes("/_nexus/src/studio/query-builder.js"), "and import it from /_nexus")
+        const html = await (await fetch(base)).text()
+        // the shell is thin: it embeds boot data and loads the real app entry
+        assert.truthy(html.includes("/_nexus/src/studio/app/app.js"), "the shell loads the Studio app")
         assert.truthy(html.includes('"name":"task"'), "schemas are embedded for the client")
 
-        const module = await fetch(`${base}/_nexus/src/studio/query-builder.js`)
-        assert.equal(module.status, 200)
-        assert.truthy((await module.text()).includes("NxQueryBuilder"))
-        const kernel = await fetch(`${base}/_nexus/src/kernel/UI.js`)
-        assert.equal(kernel.status, 200)
+        // the app entry is served and composes the widgets (imports the builder)
+        const app = await fetch(`${base}/_nexus/src/studio/app/app.js`)
+        assert.equal(app.status, 200)
+        assert.truthy((await app.text()).includes("query-builder.js"), "app.js imports the widgets")
+        // a widget + the kernel + the stylesheet are served
+        assert.equal((await fetch(`${base}/_nexus/src/studio/query-builder.js`)).status, 200)
+        assert.equal((await fetch(`${base}/_nexus/src/kernel/UI.js`)).status, 200)
+        assert.equal((await fetch(`${base}/_nexus/src/studio/app/studio.css`)).status, 200)
 
-        // Only src/ is exposed, and traversal cannot escape it
+        // Only src/ + vendor/ are exposed, and traversal cannot escape
         assert.equal((await fetch(`${base}/_nexus/package.json`)).status, 404)
         assert.equal((await fetch(`${base}/_nexus/src/..%2f..%2fpackage.json`)).status, 404)
     })
