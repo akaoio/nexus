@@ -4,12 +4,14 @@
  * - serializeRow: the schema-aware row→text of §4.6c — the `semantic:`
  *   block (template per locale + weighted embed fields) IS the
  *   serialization spec, declared in data, not code.
- * - hashProvider: a deterministic, zero-dependency embedding provider —
- *   token-hash bag-of-words, L2-normalized. It is the DEV/TEST provider and
- *   the offline fallback; real providers (transformers.js/EmbeddingGemma
- *   locally, or API providers) are app-side plugins with the SAME interface
- *   { name, dims, embed(texts) → vectors } (§4.6b: providers are pluggable,
- *   embeddings are derived data — never synced, always recomputable).
+ * - hashProvider: a deterministic, zero-dependency LEXICAL provider —
+ *   token-hash bag-of-words, L2-normalized. Real vectors, real lexical
+ *   overlap, but NOT semantic (synonyms with no shared words score ~0). It
+ *   is the honest offline fallback, not a fake. The SEMANTIC provider is
+ *   src/semantic/transformers.js (a real ONNX model, EmbeddingGemma/MiniLM),
+ *   an instance-side plugin with the SAME interface { name, dims,
+ *   embed(texts) → vectors } (§4.6b: providers are pluggable, embeddings are
+ *   derived data — never synced, always recomputable). See REM-* clauses.
  * - cosine + brute-force ranking: the §5.1 baseline ("local brute-force —
  *   đủ cho vài chục nghìn row"); ANN capabilities (sqlite-vec, pgvector,
  *   Turso native) upgrade per engine with the CI matrix, behind the same
