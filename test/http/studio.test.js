@@ -72,6 +72,18 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), policies)
     })
 
+    Test.it("STUDIO-05 /_studio/config reads (redacted) and writes a dot-path", async () => {
+        await post("/_studio/config", { key: "token_secret", value: "sekret" }) // seed a secret
+        const got = await post("/_studio/config", { key: "site.locale", value: "vi" })
+        assert.equal(got.status, 200)
+        assert.equal(got.body.ok, true)
+        const cfg = JSON.parse(readFileSync(join(instance, "nexus.config.json"), "utf8"))
+        assert.equal(cfg.site.locale, "vi")
+        // GET is redacted
+        const list = await (await fetch((await ensure()) + "/_studio/config")).json()
+        assert.equal(list.data.config.token_secret, "***")
+    })
+
     Test.it("STUDIO-99 cleanup", () => {
         if (server) server.kill("SIGKILL")
         rmSync(scratch, { recursive: true, force: true })

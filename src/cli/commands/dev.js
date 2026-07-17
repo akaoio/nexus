@@ -21,6 +21,7 @@ import { loadDictionary, mergeDictionaries, coveredLocales } from "../../i18n/i1
 import { verifyChallenge, issueToken, verifyToken } from "../../app/auth.js"
 import { listUsers, addUser, removeUser, setRoles } from "../../app/users.js"
 import { MODELS, status as modelStatus, withModel } from "../../app/models.js"
+import { redact, setPath, unsetPath } from "../../app/config.js"
 import { randomBytes } from "crypto"
 
 const MIME = {
@@ -199,6 +200,21 @@ export async function dev(args, flags, out) {
             const cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
             writeFileSync(join(root, "nexus.config.json"), JSON.stringify(withModel(cfg, body?.model || null), null, 4) + "\n")
             return json(res, 200, { ok: true, data: { model: body?.model || null, restart: true } })
+        }
+
+        // Studio settings (DEV-ONLY): read the (redacted) config and set/unset
+        // any dot-path — the same safe editing as `nexus config`. Restart applies.
+        if (url.pathname === "/_studio/config" && req.method === "GET") {
+            const cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
+            return json(res, 200, { ok: true, data: { config: redact(cfg) } })
+        }
+        if (url.pathname === "/_studio/config" && req.method === "POST") {
+            const body = await readJson(req)
+            if (!body || typeof body.key !== "string") return json(res, 400, { ok: false, error: { code: "E_REQUEST" } })
+            const cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
+            const next = body.remove ? unsetPath(cfg, body.key) : setPath(cfg, body.key, body.value)
+            writeFileSync(join(root, "nexus.config.json"), JSON.stringify(next, null, 4) + "\n")
+            return json(res, 200, { ok: true, data: { restart: true } })
         }
 
         if (api && (await api(req, res))) return

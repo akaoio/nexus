@@ -109,6 +109,15 @@ footer.foot code{background:var(--surface-2);padding:.1em .4em;border-radius:5px
 .userrow .who{flex:1;min-width:0}
 .userrow .who .pub{font-family:ui-monospace,monospace;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chip{font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid var(--border);color:var(--muted)}
+.toasts{position:fixed;bottom:16px;right:16px;z-index:90;display:flex;flex-direction:column;gap:8px;max-width:min(92vw,380px)}
+.toast{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--primary);border-radius:8px;box-shadow:var(--shadow);padding:10px 14px;font-size:14px;animation:slidein .18s ease;transition:opacity .2s}
+.toast.ok{border-left-color:var(--ok)} .toast.err{border-left-color:var(--danger)}
+@keyframes slidein{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.empty{text-align:center;padding:48px 16px;color:var(--muted)}
+.empty .big{font-size:44px;opacity:.4;margin-bottom:6px}
+.empty .btn{margin-top:12px}
+.setsec{margin-bottom:20px}
+.setsec h3{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0 0 10px;border-bottom:1px solid var(--border);padding-bottom:6px}
 </style>
 </head><body>
 <div class="app" id="app">
@@ -133,6 +142,7 @@ footer.foot code{background:var(--surface-2);padding:.1em .4em;border-radius:5px
 <div class="drawer" id="drawer"><div class="back" id="drawer-back"></div>
   <div class="panel"><h2 id="drawer-title">New record</h2><div id="drawer-slot"></div></div>
 </div>
+<div class="toasts" id="toasts"></div>
 
 <footer class="foot" style="padding:16px 26px 40px">Entities: ${schemas.map((s) => `<code>${s.name}</code>`).join(" · ") || "—"} — API: <code>GET/POST /api/v1/:entity</code> · <code>POST /api/v1/:entity/query</code> · <code>/search</code> · <code>/ask</code></footer>
 
@@ -161,6 +171,15 @@ const boot = JSON.parse(document.getElementById("boot").textContent)
 const schemas = boot.schemas
 const $ = (id) => document.getElementById(id)
 const el = (tag, props = {}, kids = []) => { const n = document.createElement(tag); Object.assign(n, props); for (const k of [].concat(kids)) n.append(k); return n }
+function toast(msg, type = "ok") {
+  const node = el("div", { className: "toast " + type, textContent: msg })
+  $("toasts").append(node)
+  setTimeout(() => { node.style.opacity = "0"; setTimeout(() => node.remove(), 220) }, 3400)
+}
+const setsec = (title, kids) => el("div", { className: "setsec" }, [el("h3", { textContent: title }), ...[].concat(kids)])
+const sfield = (label, input) => el("div", { className: "field", style: "margin-bottom:10px;max-width:380px" }, [el("label", { className: "muted", textContent: label }), input])
+// Escape closes the record drawer (a small keyboard nicety)
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("drawer").classList.remove("show") })
 const state = { entity: schemas[0] ? schemas[0].name : null, view: "content" }
 const schemaOf = (name) => schemas.find((s) => s.name === name)
 
@@ -274,7 +293,7 @@ function renderNav() {
     col.append(a)
   }
   const build = $("nav-build"); build.replaceChildren()
-  const items = [["model", "＋", t("dataModel")], ["permissions", "⚿", t("permissions")], ["users", "👤", t("users")], ["ai", "✦", t("ai", "AI models")], ["search", "⌕", t("search")]]
+  const items = [["model", "＋", t("dataModel")], ["permissions", "⚿", t("permissions")], ["users", "👤", t("users")], ["ai", "✦", t("ai", "AI models")], ["settings", "⚙", t("settings")], ["search", "⌕", t("search")]]
   for (const [view, ico, label] of items) {
     const a = el("a", {})
     a.append(el("span", { className: "ico", textContent: ico }), document.createTextNode(label))
@@ -335,8 +354,21 @@ async function runAsk(query) {
   setRows(rows, " · asked: “" + query + "”")
 }
 function setRows(rows, suffix = "") {
-  listView.schema = schemaOf(state.entity); listView.rows = rows
   $("c-count").textContent = rows.length + (rows.length === 1 ? " record" : " records") + suffix
+  const s = schemaOf(state.entity)
+  if (!rows.length) {
+    listView.style.display = "none"
+    const empty = el("div", { className: "empty", id: "c-empty" }, [el("div", { className: "big", textContent: "▤" }), el("div", { textContent: "No " + s.name + " records yet" })])
+    const cta = el("button", { className: "btn primary empty", textContent: "＋ " + t("newRecord") })
+    cta.addEventListener("click", () => openRecordForm(s))
+    empty.append(cta)
+    const prev = $("c-empty"); if (prev) prev.remove()
+    listView.after(empty)
+  } else {
+    const prev = $("c-empty"); if (prev) prev.remove()
+    listView.style.display = ""
+    listView.schema = s; listView.rows = rows
+  }
 }
 function openRecordForm(s) {
   $("drawer-title").textContent = "New " + s.name
@@ -344,8 +376,8 @@ function openRecordForm(s) {
   const form = el("nx-form"); form.schema = s
   form.addEventListener("submit", async (e) => {
     const body = await apiCreate(state.entity, e.detail.value)
-    if (!body.ok) return alert(body.error.code + ": " + body.error.message)
-    $("drawer").classList.remove("show"); runQuery()
+    if (!body.ok) return toast(body.error.code + ": " + (body.error.message || ""), "err")
+    $("drawer").classList.remove("show"); toast("Record created"); runQuery()
   })
   slot.append(form)
   $("drawer").classList.add("show")
@@ -387,6 +419,7 @@ async function saveModel(schema) {
   const m = $("model-msg")
   m.className = body.ok ? "ok" : "err"
   m.textContent = body.ok ? "Saved apps/" + boot.appName + "/models/" + schema.name + ".json — restart nexus dev to load it" : body.error.code + ": " + body.error.message
+  toast(body.ok ? "Collection saved — restart nexus dev to load it" : (body.error.code + ": " + (body.error.message || "")), body.ok ? "ok" : "err")
 }
 
 // ── VIEW: permissions (SAVES to a file) ───────────────────────────────────────
@@ -399,6 +432,7 @@ function viewPermissions() {
     const body = await post("/_studio/permissions", { policies: mgr.value })
     msg.className = body.ok ? "ok" : "err"
     msg.textContent = body.ok ? "Saved apps/" + boot.appName + "/permissions/studio.json — restart nexus dev to apply" : body.error.code + ": " + body.error.message
+    toast(body.ok ? "Policies saved — restart nexus dev to apply" : (body.error.code + ": " + (body.error.message || "")), body.ok ? "ok" : "err")
   })
   main.append(el("div", { className: "viewhead" }, [el("h1", { textContent: t("permissions") }), el("span", { className: "spacer" }), save]), el("div", { className: "card" }, [mgr]), msg)
 }
@@ -425,8 +459,8 @@ function viewUsers() {
   const add = el("button", { className: "btn primary", textContent: "Add user" })
   add.addEventListener("click", async () => {
     const r = await post("/_studio/users", { action: "add", pub: pub.value.trim(), name: nm.value.trim() || undefined, roles: rl.value.split(",").map((s) => s.trim()).filter(Boolean) })
-    if (!r.ok) return alert(r.error.code + ": " + (r.error.message || ""))
-    pub.value = nm.value = rl.value = ""; loadUsers()
+    if (!r.ok) return toast(r.error.code + ": " + (r.error.message || ""), "err")
+    pub.value = nm.value = rl.value = ""; toast("User added — restart nexus dev to apply"); loadUsers()
   })
   main.append(
     el("div", { className: "viewhead" }, [el("h1", { textContent: t("users") }), el("span", { className: "spacer" }), addMe]),
@@ -439,7 +473,12 @@ async function loadUsers() {
   const r = await get("/_studio/users")
   const list = $("userlist"); list.replaceChildren()
   const ids = r.ok ? r.data.identities : []
-  if (!ids.length) { list.append(el("p", { className: "muted", textContent: "No users yet — the site runs in open DEV mode. Add yourself as admin to require login." })); return }
+  if (!ids.length) {
+    const empty = el("div", { className: "empty" }, [el("div", { className: "big", textContent: "👤" }), el("div", { textContent: "No users yet — the site runs in open DEV mode" })])
+    const cta = el("button", { className: "btn primary empty", textContent: "＋ Add me as admin" })
+    cta.addEventListener("click", addMeAsAdmin)
+    empty.append(cta); list.append(empty); return
+  }
   for (const u of ids) {
     const who = el("div", { className: "who" }, [el("div", { textContent: u.name || "(unnamed)" }), el("div", { className: "pub", textContent: u.pub })])
     const roles = el("span", { className: "chip", textContent: (u.roles || []).join(", ") || "no roles" })
@@ -484,7 +523,37 @@ async function loadAI() {
   body.append(el("p", { className: "muted", style: "font-size:12px", textContent: "Download weights with the nexus model pull command in your terminal. Changes apply after restarting nexus dev." }))
 }
 
-const VIEWS = { content: viewContent, model: viewModel, permissions: viewPermissions, users: viewUsers, ai: viewAI, search: viewSearch }
+// ── VIEW: settings (edit nexus.config.json from the UI — reuses config ops) ───
+function viewSettings() {
+  const main = $("main"); main.replaceChildren()
+  main.append(el("div", { className: "viewhead" }, [el("h1", { textContent: t("settings") })]), el("div", { className: "card", id: "set-body" }, [el("p", { className: "muted", textContent: "…" })]))
+  loadSettings()
+}
+async function loadSettings() {
+  const r = await get("/_studio/config"); const cfg = r.ok ? r.data.config : {}
+  const body = $("set-body"); body.replaceChildren()
+  const setCfg = async (key, value) => { const rr = await post("/_studio/config", { key, value }); rr.ok ? toast("Saved " + key + " — restart nexus dev to apply") : toast((rr.error && rr.error.code) || "error", "err") }
+  // Site
+  const siteName = el("input", { className: "text", value: (cfg.site && cfg.site.name) || "" })
+  siteName.addEventListener("change", () => setCfg("site.name", siteName.value))
+  const loc = el("select", { className: "text" }, i18n.locales.map((c) => el("option", { value: c, textContent: i18n.names[c] || c, selected: ((cfg.site && cfg.site.locale) || "en") === c })))
+  loc.addEventListener("change", () => setCfg("site.locale", loc.value))
+  body.append(setsec("Site", [sfield("Name", siteName), sfield("Default locale", loc)]))
+  // Database
+  const eng = el("select", { className: "text" }, ["sqlite", "turso", "postgres", "mysql"].map((e) => el("option", { value: e, textContent: e, selected: ((cfg.database && cfg.database.engine) || "sqlite") === e })))
+  eng.addEventListener("change", () => setCfg("database.engine", eng.value))
+  body.append(setsec("Database", [sfield("Engine (restart + install driver to apply)", eng)]))
+  // AI
+  body.append(setsec("AI model", [el("p", { className: "muted", textContent: "Current: " + ((cfg.semantic && cfg.semantic.model) || "none — lexical. Switch it in the AI models panel.") })]))
+  // Advanced raw editor
+  const k = el("input", { className: "text", placeholder: "dot.path e.g. site.locale", style: "max-width:220px" })
+  const v = el("input", { className: "text", placeholder: "value (JSON coerced)", style: "max-width:220px" })
+  const setb = el("button", { className: "btn primary", textContent: "Set" })
+  setb.addEventListener("click", async () => { let val = v.value; try { val = JSON.parse(val) } catch {} await setCfg(k.value.trim(), val); loadSettings() })
+  body.append(setsec("Advanced", [el("div", { className: "toolbar" }, [k, v, setb]), el("pre", { className: "out", textContent: JSON.stringify(cfg, null, 2) })]))
+}
+
+const VIEWS = { content: viewContent, model: viewModel, permissions: viewPermissions, users: viewUsers, ai: viewAI, settings: viewSettings, search: viewSearch }
 
 go(state.entity ? "content" : "model", state.entity)
 applyLocale()
