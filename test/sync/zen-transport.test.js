@@ -18,7 +18,7 @@
 
 import { fileURLToPath } from "url"
 import { spawnSync } from "child_process"
-import Test, { assert } from "../../src/kernel/Test.js"
+import Test, { assert } from "../../src/core/Test.js"
 
 const HARNESS = fileURLToPath(new URL("./zen-mesh-harness.mjs", import.meta.url))
 

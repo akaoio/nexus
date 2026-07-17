@@ -8,15 +8,15 @@
  * a rule built through the embedded query builder actually filters rows.
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import * as Permission from "../../src/permission/Permission.js"
-import * as AST from "../../src/ast/AST.js"
+import Test, { assert } from "../../src/core/Test.js"
+import * as Permission from "../../src/core/Permission.js"
+import * as AST from "../../src/core/AST.js"
 import {
     emptyPolicy,
     validatePolicy,
     validatePolicies,
     NxPermissionManager
-} from "../../src/studio/permission-manager.js"
+} from "../../src/studio/components/permission-manager/index.js"
 import { doc, leaf, ROWS, filter } from "../conformance/ast/_helpers.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 

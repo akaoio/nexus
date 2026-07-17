@@ -4,9 +4,9 @@
  * detection, key/path/global subscriptions, property-assignment subscribers.
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import States from "../../src/kernel/States.js"
-import Context from "../../src/kernel/Context.js"
+import Test, { assert } from "../../src/core/Test.js"
+import States from "../../src/core/States.js"
+import Context from "../../src/core/Context.js"
 
 Test.describe("Kernel — states (KRN-ST)", () => {
     Test.it("KRN-ST01 set/get round-trips strings, arrays-as-paths and objects", () => {

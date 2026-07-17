@@ -5,7 +5,7 @@
  * component the permissions route feeds live.
  */
 
-import { render } from "../../../kernel/UI.js"
+import { render } from "../../../core/UI.js"
 import { matrixTemplate } from "./template.js"
 
 export class NxMatrix extends HTMLElement {

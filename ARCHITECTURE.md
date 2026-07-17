@@ -365,7 +365,7 @@ Toàn bộ là Web Components trên UI engine của akao (`html`/`render`, Shado
 Studio **KHÔNG** được là một khối string. Tách theo **mối quan tâm**, mỗi thứ một chỗ, và **sinh UI từ schema** như API tự sinh (Directus interfaces/displays, Frappe controls, component-split của akao):
 
 ```
-src/studio/app/
+src/studio/
   lib.js            # kit dùng chung: DOM (el), toast, API client (authed), i18n t(), theme
   fields.js         # REGISTRY theo field.type:
                     #   interfaces = editor (text/boolean/select/date/link/…)
@@ -489,7 +489,7 @@ Mỗi milestone bắt đầu bằng viết **spec test đỏ** cho hợp đồng
 Kỷ luật spec-first (test đỏ trước, code sau) giữ xuyên suốt. Số điều khoản conformance tăng liên tục (0 đỏ). Các mảng lõi:
 
 - ✅ **Phase 0 — Spec**: conformance suite Query AST v1 (83) + Model Schema v1 (54) + Permission v1 (31), tất cả viết đỏ trước. docs/sync-design.md + docs/authn-design.md.
-- ✅ **Phase 1 — Kernel**: tách từ akao vào `src/kernel/` — UI engine (html/render/css/Component), States/Context, Threads (isomorphic, worker thật), Router, Events, FS (format registry)/OPFS/IDB, SQL worker, HMR, Test. Một hệ phản ứng duy nhất (§3). Browser runner qua CDP. CLI skeleton `create/dev/test`.
+- ✅ **Phase 1 — Kernel**: tách từ akao vào `src/core/` — UI engine (html/render/css/Component), States/Context, Threads (isomorphic, worker thật), Router, Events, FS (format registry)/OPFS/IDB, SQL worker, HMR, Test. Một hệ phản ứng duy nhất (§3). Browser runner qua CDP. CLI skeleton `create/dev/test`.
 - ✅ **Phase 2 — Data plane**: Kysely vendored (ranh giới enforce tĩnh) → AST→Kysely compiler (**bất biến vàng: SQL ≡ JS predicate từng row** trên engine thật) → Model→DDL → Migration Engine (hybrid, dry-run mặc định, renames, ledger) → Data Plane CRUD (permission hai ảnh, không rò tồn tại) → HTTP API tự sinh → engine adapters (sqlite built-in + turso/pg/mysql resolve động).
 - ✅ **Phase 3 — Studio**: `<nx-query-builder>` đệ quy (lồng vô hạn, fuzz), Form Builder + nx-form, Schema Designer (Model.diff sống → migration), Permission Manager (**lần tái dùng đầu tiên** của query-builder), List View. Index page dev = mini-Studio sống.
 - ✅ **Phase 4 — App system**: App Manifest v1 (format N4 thứ ba, engines-gated §8.4.2), extension points (hooks/endpoints/commands vào Data Plane/HTTP/CLI), CLI đầy đủ (`site backup/restore` additive không xoá đích, `migrate`, `app`, `doctor`), AuthN (docs + API key interim + app policies loading).
@@ -504,8 +504,8 @@ Kỷ luật spec-first (test đỏ trước, code sau) giữ xuyên suốt. Số
 2. **Vector/FTS**: **FTS5 đã BUILT-IN** trong node:sqlite (bm25 chạy được — không cần custom build cho FTS server-side); sqlite-vec là loadable extension (node:sqlite có `loadExtension`). *Ghi chú thiết kế*: vì search rank **trong** tập candidate đã lọc permission (chặn ≤ MAX_LIMIT), brute-force text/cosine đã đủ; FTS5/ANN là nâng cấp scale, giá trị biên trong kiến trúc permission-first này. Custom sqlite-wasm cho **browser** (emscripten) là phần nặng thật sự còn lại.
 3. **ZEN graph transport + PEN gate**: test được cục bộ (ZEN chạy in-process, có `Mesh`) nhưng cần dựng mesh đầy đủ (store adapter + relay + peers + timing hội tụ) — là công tích hợp ZEN thật sự, không quick-win. `onemit` là seam; cổng 4 đã re-check permission bất kể.
 4. **Checkpoint/pruning + super-peer roles** (§5.1, §8 sync-design) — nội bộ, doable cục bộ (nhiều instance Nexus các port khác nhau); cần vai trò arbiter + phân phối snapshot.
-5. ✅ **ZEN keypair auth flow — ĐÃ HOÀN THÀNH** (`src/app/auth.js`, AUTH-05/06/07). Còn lại: WebAuthn PRF binding phía client (**cần phần cứng + người thật** — mục duy nhất thực sự vậy).
-6. ✅ **NL→AST — ĐÃ HOÀN THÀNH** (`src/nl/nl.js`, NL-01..04): translate qua schema + permission là choke point; ruleProvider xác định, LLM thật cắm cùng signature. Chất lượng NL của model thật là thứ duy nhất cần model.
+5. ✅ **ZEN keypair auth flow — ĐÃ HOÀN THÀNH** (`src/core/App/auth.js`, AUTH-05/06/07). Còn lại: WebAuthn PRF binding phía client (**cần phần cứng + người thật** — mục duy nhất thực sự vậy).
+6. ✅ **NL→AST — ĐÃ HOÀN THÀNH** (`src/core/NL.js`, NL-01..04): translate qua schema + permission là choke point; ruleProvider xác định, LLM thật cắm cùng signature. Chất lượng NL của model thật là thứ duy nhất cần model.
 7. **Background jobs** (extension point `jobs`) + **client-side extension registries** — nội bộ, ride Threads / Studio.
 
 *Nguyên tắc đã sửa: chỉ WebAuthn PRF cần phần cứng/người. Còn lại hoặc đã làm (Turso live, ZEN auth, NL→AST), hoặc là công tích hợp cục bộ có seam sẵn — không cái nào cần đám mây.*

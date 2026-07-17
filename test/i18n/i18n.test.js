@@ -6,7 +6,7 @@
  */
 
 import { fileURLToPath } from "url"
-import Test, { assert } from "../../src/kernel/Test.js"
+import Test, { assert } from "../../src/core/Test.js"
 import { parseFlatYaml, loadDictionary, mergeDictionaries, t, translator, coveredLocales, localeName } from "../../src/i18n/i18n.js"
 
 const DICT_DIR = fileURLToPath(new URL("../../src/i18n/dict", import.meta.url))

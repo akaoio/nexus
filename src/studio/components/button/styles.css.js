@@ -1,6 +1,6 @@
 /** <nx-button> styles — composes the shared control tokens (akao button). */
 
-import { css } from "../../../kernel/UI/css.js"
+import { css } from "../../../core/UI/css.js"
 
 export const STYLE = () => css`
     :host { display: inline-flex }

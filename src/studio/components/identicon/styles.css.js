@@ -1,6 +1,6 @@
 /** <nx-identicon> styles — a square pixel identity, colored by context. */
 
-import { css } from "../../../kernel/UI/css.js"
+import { css } from "../../../core/UI/css.js"
 
 export const STYLE = () => css`
     :host { display: inline-flex; width: var(--icon-lg, 2.75rem); aspect-ratio: 1 / 1 }

@@ -3,9 +3,9 @@
  * Pins the pure utility behavior the rest of the kernel depends on.
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import { detectEnvironment, NODE, BROWSER } from "../../src/kernel/environment.js"
-import { clone, diff, merge, isPromise, randomInt, randomText, randomKey, now } from "../../src/kernel/Utils.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { detectEnvironment, NODE, BROWSER } from "../../src/core/environment.js"
+import { clone, diff, merge, isPromise, randomInt, randomText, randomKey, now } from "../../src/core/Utils.js"
 
 Test.describe("Kernel — environment (KRN-EN)", () => {
     Test.it("KRN-EN01 detects Node.js when process.versions.node exists", () => {

@@ -1,6 +1,6 @@
 /** <nx-query-builder> styles — token-driven; nesting depth reads as indent. */
 
-import { css } from "../../../kernel/UI/css.js"
+import { css } from "../../../core/UI/css.js"
 
 export const STYLE = () => css`
     :host { font-family: var(--font, system-ui); font-size: var(--text-md, 0.875rem); display: block }

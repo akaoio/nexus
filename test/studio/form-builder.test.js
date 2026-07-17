@@ -7,8 +7,8 @@
  * the builder never disagrees with Model.validate.
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import { validate, FIELD_TYPES } from "../../src/model/Model.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { validate, FIELD_TYPES } from "../../src/core/Model.js"
 import {
     emptyField,
     moveField,
@@ -16,7 +16,7 @@ import {
     emptySchema,
     NxFormBuilder,
     NxForm
-} from "../../src/studio/form-builder.js"
+} from "../../src/studio/components/form-builder/index.js"
 import { prng } from "../conformance/ast/_helpers.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 

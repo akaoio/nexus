@@ -22,10 +22,10 @@
  * akao triad: logic here, template in template.js, styles in styles.css.js.
  */
 
-import { Component } from "../../../kernel/UI/Component.js"
-import { render } from "../../../kernel/UI.js"
-import { validate, diff } from "../../../model/Model.js"
-import { migrationPlan } from "../../../data/migrate.js"
+import { Component } from "../../../core/UI/Component.js"
+import { render } from "../../../core/UI.js"
+import { validate, diff } from "../../../core/Model.js"
+import { migrationPlan } from "../../../core/Data/migrate.js"
 import "../form-builder/index.js" // registers <nx-form-builder>
 import { designerTemplate } from "./template.js"
 

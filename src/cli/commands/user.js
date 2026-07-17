@@ -1,6 +1,6 @@
 /**
  * nexus user — manage the site's identities (roster of ZEN public keys + roles).
- * A shell over src/app/users.js and nexus.config.json's `identities`. Adding any
+ * A shell over src/core/App/users.js and nexus.config.json's `identities`. Adding any
  * identity turns on required auth (no "open to all" once users exist).
  *
  *   nexus user list
@@ -11,7 +11,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "fs"
 import { join } from "path"
-import { listUsers, addUser, removeUser, setRoles, labelOf } from "../../app/users.js"
+import { listUsers, addUser, removeUser, setRoles, labelOf } from "../../core/App/users.js"
 
 const parseRoles = (flags) =>
     typeof flags.roles === "string"

@@ -4,8 +4,8 @@
  * { detail } regardless of platform.
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import Events, { events } from "../../src/kernel/Events.js"
+import Test, { assert } from "../../src/core/Test.js"
+import Events, { events } from "../../src/core/Events.js"
 
 Test.describe("Kernel — events (KRN-EV)", () => {
     Test.it("KRN-EV01 emit delivers the payload as { detail } to listeners", () => {

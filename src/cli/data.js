@@ -6,9 +6,9 @@
 
 import { mkdirSync } from "fs"
 import { join } from "path"
-import { createExecutor } from "../data/adapters.js"
-import { createCompiler } from "../data/kysely.js"
-import { tableDDL } from "../data/ddl.js"
+import { createExecutor } from "../core/Data/adapters.js"
+import { createCompiler } from "../core/Data/kysely.js"
+import { tableDDL } from "../core/Data/ddl.js"
 
 export async function openInstanceData(root, config) {
     const database = config.database ?? {}

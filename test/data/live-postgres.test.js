@@ -13,14 +13,14 @@
  */
 
 import { fileURLToPath } from "url"
-import Test, { assert } from "../../src/kernel/Test.js"
-import { createExecutor } from "../../src/data/adapters.js"
-import { DataPlane } from "../../src/data/DataPlane.js"
-import { tableDDL } from "../../src/data/ddl.js"
-import { createCompiler } from "../../src/data/kysely.js"
-import { applyWhere } from "../../src/data/compile.js"
-import { plan, hotApply } from "../../src/data/migrate.js"
-import * as AST from "../../src/ast/AST.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { createExecutor } from "../../src/core/Data/adapters.js"
+import { DataPlane } from "../../src/core/Data.js"
+import { tableDDL } from "../../src/core/Data/ddl.js"
+import { createCompiler } from "../../src/core/Data/kysely.js"
+import { applyWhere } from "../../src/core/Data/compile.js"
+import { plan, hotApply } from "../../src/core/Data/migrate.js"
+import * as AST from "../../src/core/AST.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 import { doc, prng, randomNode, randomRow } from "../conformance/ast/_helpers.js"
 

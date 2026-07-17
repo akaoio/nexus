@@ -4,7 +4,7 @@
  * structure lives in the template, styles in styles.css.js.
  */
 
-import { render } from "../../../kernel/UI.js"
+import { render } from "../../../core/UI.js"
 import { layoutTemplate, drawerTemplate, loginTemplate } from "./template.js"
 
 /** Render a template into a detached container and hand back its refs. */

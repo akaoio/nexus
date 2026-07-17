@@ -6,7 +6,7 @@
  * composition root.
  */
 
-import { html } from "../../../kernel/UI.js"
+import { html } from "../../../core/UI.js"
 import "../../components/icon/index.js"
 import "../../components/context/index.js"
 import "../../components/button/index.js"

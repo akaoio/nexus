@@ -18,10 +18,10 @@
  * akao triad: logic here, template in template.js, styles in styles.css.js.
  */
 
-import { Component } from "../../../kernel/UI/Component.js"
-import { render } from "../../../kernel/UI.js"
-import { ACTIONS } from "../../../permission/Permission.js"
-import { validatePolicy, validatePolicies } from "../../../app/Policies.js"
+import { Component } from "../../../core/UI/Component.js"
+import { render } from "../../../core/UI.js"
+import { ACTIONS } from "../../../core/Permission.js"
+import { validatePolicy, validatePolicies } from "../../../core/App/policies.js"
 import "../query-builder/index.js" // registers <nx-query-builder>
 import { managerTemplate } from "./template.js"
 

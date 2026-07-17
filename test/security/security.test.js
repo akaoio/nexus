@@ -9,10 +9,10 @@ import { spawnSync, spawn } from "child_process"
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import Test, { assert } from "../../src/kernel/Test.js"
-import { DataPlane } from "../../src/data/DataPlane.js"
-import { tableDDL } from "../../src/data/ddl.js"
-import { createCompiler } from "../../src/data/kysely.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { DataPlane } from "../../src/core/Data.js"
+import { tableDDL } from "../../src/core/Data/ddl.js"
+import { createCompiler } from "../../src/core/Data/kysely.js"
 import { timingSafeStringEqual } from "../../src/cli/output.js"
 import { doc, leaf } from "../conformance/ast/_helpers.js"
 import { schema, field } from "../conformance/model/_helpers.js"
@@ -106,7 +106,7 @@ Test.describe("Security (SEC-*)", () => {
     })
 
     Test.it("SEC-07 a pathological LIKE pattern cannot hang the predicate (ReDoS bound)", async () => {
-        const AST = await import("../../src/ast/AST.js")
+        const AST = await import("../../src/core/AST.js")
         const evil = "%".repeat(40) + "x"
         const predicate = AST.predicate(doc(leaf("s", "like", evil)))
         const start = Date.now()

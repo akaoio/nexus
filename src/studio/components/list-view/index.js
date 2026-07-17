@@ -10,8 +10,8 @@
  * akao triad: logic here, template in template.js, styles in styles.css.js.
  */
 
-import { Component } from "../../../kernel/UI/Component.js"
-import { render } from "../../../kernel/UI.js"
+import { Component } from "../../../core/UI/Component.js"
+import { render } from "../../../core/UI.js"
 import { listTemplate } from "./template.js"
 
 const clone = (x) => JSON.parse(JSON.stringify(x))

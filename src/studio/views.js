@@ -10,8 +10,8 @@
  * rows + a view, so a saved view reproduces what the user saw — proven pure.
  */
 
-import { sortRows, groupRows } from "./list-view.js"
-import * as AST from "../ast/AST.js"
+import { sortRows, groupRows } from "./components/list-view/index.js"
+import * as AST from "../core/AST.js"
 
 /** The frozen system-entity schema for a saved view (Model Schema v1). */
 export function viewSchema() {

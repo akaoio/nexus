@@ -8,9 +8,9 @@
  * once the vendored WASM build lands (Phase 2).
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import SQL from "../../src/kernel/SQL.js"
-import { threads } from "../../src/kernel/Threads.js"
+import Test, { assert } from "../../src/core/Test.js"
+import SQL from "../../src/core/SQL.js"
+import { threads } from "../../src/core/Threads.js"
 
 /** A scripted in-process "sql worker" speaking the Threads message protocol. */
 function installFakeWorker(script) {

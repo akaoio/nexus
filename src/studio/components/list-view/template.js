@@ -1,6 +1,6 @@
 /** <nx-list-view> template — the toolbar and the table skeleton. */
 
-import { html } from "../../../kernel/UI.js"
+import { html } from "../../../core/UI.js"
 import { STYLE } from "./styles.css.js"
 
 export const listTemplate = (c, { columns, groupBy, count, onGroupBy, onExport }) => html`

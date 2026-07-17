@@ -4,8 +4,8 @@
  * grouping, RFC-4180 CSV); the table behavior in the browser run.
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import { sortRows, groupRows, toCSV, columnsFor, NxListView } from "../../src/studio/list-view.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { sortRows, groupRows, toCSV, columnsFor, NxListView } from "../../src/studio/components/list-view/index.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 
 const TASK = schema({

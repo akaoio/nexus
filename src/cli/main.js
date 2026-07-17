@@ -49,7 +49,7 @@ async function resolveAppCommand(name) {
         const { existsSync } = await import("fs")
         if (!existsSync("nexus.config.json")) return null
         const { loadInstance } = await import("./instance.js")
-        const { loadExtensions } = await import("../app/Extensions.js")
+        const { loadExtensions } = await import("../core/App/extensions.js")
         const { apps } = loadInstance(process.cwd())
         const extensions = await loadExtensions(process.cwd(), apps)
         return extensions.commands.get(name) ?? null

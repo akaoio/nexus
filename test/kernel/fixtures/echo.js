@@ -3,7 +3,7 @@
  * Thread base class (the protocol is dogfooded, not simulated).
  */
 
-import Thread from "../../../src/kernel/Thread.js"
+import Thread from "../../../src/core/Thread.js"
 
 class Echo extends Thread {
     echo(params) {

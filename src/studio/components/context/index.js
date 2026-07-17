@@ -9,7 +9,7 @@
  *   NxContext.resolve(key, fb, args)    ← programmatic strings (toasts…)
  */
 
-import { render } from "../../../kernel/UI.js"
+import { render } from "../../../core/UI.js"
 import { contextTemplate } from "./template.js"
 
 const mounted = new Set()

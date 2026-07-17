@@ -6,7 +6,7 @@
  * morph, the ::slotted positioning — are unchanged from the source.
  */
 
-import { css } from "../../../kernel/UI/css.js"
+import { css } from "../../../core/UI/css.js"
 
 export const STYLE = () => css`
     :host {

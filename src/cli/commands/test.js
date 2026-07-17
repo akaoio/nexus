@@ -8,8 +8,8 @@
 
 import { existsSync, readdirSync, readFileSync } from "fs"
 import { join } from "path"
-import { validate } from "../../model/Model.js"
-import * as Manifest from "../../app/Manifest.js"
+import { validate } from "../../core/Model.js"
+import * as Manifest from "../../core/App/manifest.js"
 
 function listInstanceFiles(root) {
     const files = []

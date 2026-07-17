@@ -10,8 +10,8 @@ import { spawnSync, spawn } from "child_process"
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import Test, { assert } from "../../src/kernel/Test.js"
-import { validate } from "../../src/model/Model.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { validate } from "../../src/core/Model.js"
 
 const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 

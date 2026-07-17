@@ -4,8 +4,8 @@
  * parameter-driven (no global store reads — the kernel decoupling contract).
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import Router from "../../src/kernel/Router.js"
+import Test, { assert } from "../../src/core/Test.js"
+import Router from "../../src/core/Router.js"
 
 const LOCALES = [{ code: "en" }, { code: "vi" }, { code: "fr" }]
 const ROUTES = ["/item/[item]", "/tag/[tag]", "/docs/[...path]", "/files/[[...path]]"]

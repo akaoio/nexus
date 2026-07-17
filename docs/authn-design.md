@@ -37,7 +37,7 @@ Vì vậy khi flow ZEN server-mode được implement, nó test được đầy 
 
 - ✅ Interim API keys + role assignment + policies loading.
 - ✅ Chứng minh khả năng test key xác định từ seed (AUTH-04).
-- ✅ **ZEN challenge-sign flow + HMAC token — HOÀN THÀNH** (`src/app/auth.js`, AUTH-05/06/07):
+- ✅ **ZEN challenge-sign flow + HMAC token — HOÀN THÀNH** (`src/core/App/auth.js`, AUTH-05/06/07):
   - `POST /api/v1/_auth/challenge` → nonce (một lần, TTL 60s).
   - `POST /api/v1/_auth/verify` `{ pub, nonce, signature }` → server `recover(sig)===pub` **và** message ký === nonce → phát token HMAC-SHA256 (ký bởi `token_secret` của site, mang `{user: pub, roles, exp}`, TTL 1h).
   - Request sau: `Authorization: Bearer <token>` → `verifyToken` (HMAC constant-time + exp) → identity. Token tồn tại song song với API key (thử token trước, rồi key).

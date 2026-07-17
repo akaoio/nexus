@@ -14,7 +14,7 @@
  *  - THE security invariant: injection can only ever NARROW the result set.
  */
 
-import Test, { assert } from "../../../src/kernel/Test.js"
+import Test, { assert } from "../../../src/core/Test.js"
 import AST from "./_load.js"
 import { doc, leaf, and, or, filter, ROWS } from "./_helpers.js"
 

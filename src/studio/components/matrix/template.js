@@ -1,6 +1,6 @@
 /** <nx-matrix> template — heading + table shell; rows paint from .policies. */
 
-import { html } from "../../../kernel/UI.js"
+import { html } from "../../../core/UI.js"
 import { STYLE } from "./styles.css.js"
 
 export const matrixTemplate = (c) => html`

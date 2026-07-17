@@ -1,6 +1,6 @@
 /** <nx-navigator> template — the akao original, verbatim (ui-icon → nx-icon). */
 
-import { html } from "../../../kernel/UI.js"
+import { html } from "../../../core/UI.js"
 import { STYLE } from "./styles.css.js"
 import "../icon/index.js"
 

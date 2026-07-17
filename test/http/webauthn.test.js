@@ -8,8 +8,8 @@
  * exercised with a real authenticator, never faked.
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import { prfSeed, identityFromPRF } from "../../src/app/webauthn.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { prfSeed, identityFromPRF } from "../../src/core/App/webauthn.js"
 
 const ZEN = (await import("../../vendor/zen/zen.js")).default
 const bytes = (...n) => new Uint8Array(n.length === 1 ? Array.from({ length: 32 }, (_, i) => (n[0] + i) & 0xff) : n)

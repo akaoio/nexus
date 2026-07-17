@@ -1,6 +1,6 @@
 /** <nx-icon> styles — icons size from the --icon token, color from text. */
 
-import { css } from "../../../kernel/UI/css.js"
+import { css } from "../../../core/UI/css.js"
 
 export const STYLE = () => css`
     :host {

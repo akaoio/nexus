@@ -4,7 +4,7 @@
  * A single lazy instance serves the whole app (design once, use forever).
  */
 
-import { render } from "../../../kernel/UI.js"
+import { render } from "../../../core/UI.js"
 import { notificationsTemplate } from "./template.js"
 
 export class NxNotifications extends HTMLElement {

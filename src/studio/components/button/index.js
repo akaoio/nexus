@@ -5,7 +5,7 @@
  * (primary | danger | icon), disabled reflected. Design once, use forever.
  */
 
-import { render } from "../../../kernel/UI.js"
+import { render } from "../../../core/UI.js"
 import { buttonTemplate } from "./template.js"
 
 export class NxButton extends HTMLElement {

@@ -1,6 +1,6 @@
 /** <nx-button> template — one shadow button, content slotted (akao shape). */
 
-import { html } from "../../../kernel/UI.js"
+import { html } from "../../../core/UI.js"
 import { STYLE } from "./styles.css.js"
 import "../icon/index.js"
 

@@ -21,8 +21,8 @@ import { join } from "path"
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url))
 const ZEN = (await import(join(ROOT, "vendor/zen/index.js"))).default
-const { SyncEngine } = await import(join(ROOT, "src/sync/Sync.js"))
-const { createZenTransport } = await import(join(ROOT, "src/sync/ZenTransport.js"))
+const { SyncEngine } = await import(join(ROOT, "src/core/Sync.js"))
+const { createZenTransport } = await import(join(ROOT, "src/core/Sync/ZenTransport.js"))
 const { schema, field } = await import(join(ROOT, "test/conformance/model/_helpers.js"))
 
 /** Spawn the vendored ZEN relay as its own process; resolve once it serves. */

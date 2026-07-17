@@ -1,6 +1,6 @@
 /** <nx-modal> styles — a native <dialog> dressed in the design tokens. */
 
-import { css } from "../../../kernel/UI/css.js"
+import { css } from "../../../core/UI/css.js"
 
 export const STYLE = () => css`
     dialog {

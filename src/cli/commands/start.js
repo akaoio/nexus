@@ -21,8 +21,8 @@ import { createServer as createHttps } from "https"
 import { existsSync, readFileSync, statSync } from "fs"
 import { join, resolve, extname, sep } from "path"
 import { loadInstance } from "../instance.js"
-import { buildInstanceApi } from "../../http/instance-server.js"
-import { verifyChallenge, issueToken } from "../../app/auth.js"
+import { buildInstanceApi } from "../../core/HTTP/server.js"
+import { verifyChallenge, issueToken } from "../../core/App/auth.js"
 import { randomBytes } from "crypto"
 
 const MIME = {

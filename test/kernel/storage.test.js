@@ -4,9 +4,9 @@
  * and run under the browser runner (akao's /test route pattern).
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import OPFS from "../../src/kernel/OPFS.js"
-import IDB from "../../src/kernel/IDB.js"
+import Test, { assert } from "../../src/core/Test.js"
+import OPFS from "../../src/core/OPFS.js"
+import IDB from "../../src/core/IDB.js"
 
 Test.describe("Kernel — OPFS (KRN-OP, browser)", () => {
     Test.it("KRN-OP01 write/load round-trips bytes under an instance root", async () => {

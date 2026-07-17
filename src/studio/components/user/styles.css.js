@@ -1,6 +1,6 @@
 /** <nx-user> styles — the identity chip in the topbar. */
 
-import { css } from "../../../kernel/UI/css.js"
+import { css } from "../../../core/UI/css.js"
 
 export const STYLE = () => css`
     :host { display: none }

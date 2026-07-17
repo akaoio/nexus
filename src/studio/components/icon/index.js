@@ -5,7 +5,7 @@
  * akao triad: logic here, template/styles/registry in their own files.
  */
 
-import { render } from "../../../kernel/UI.js"
+import { render } from "../../../core/UI.js"
 import { ICONS } from "./icons.js"
 import { iconTemplate } from "./template.js"
 

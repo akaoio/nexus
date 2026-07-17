@@ -5,9 +5,9 @@
  * The app wires NxUser.onSignout once.
  */
 
-import { render } from "../../../kernel/UI.js"
+import { render } from "../../../core/UI.js"
 import { userTemplate } from "./template.js"
-import { confirmDialog } from "../../app/lib.js"
+import { confirmDialog } from "../../kit.js"
 
 export class NxUser extends HTMLElement {
     static onSignout = null

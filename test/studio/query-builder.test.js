@@ -8,9 +8,9 @@
  * nesting built with real clicks.
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import * as AST from "../../src/ast/AST.js"
-import { FIELD_TYPES } from "../../src/model/Model.js"
+import Test, { assert } from "../../src/core/Test.js"
+import * as AST from "../../src/core/AST.js"
+import { FIELD_TYPES } from "../../src/core/Model.js"
 import {
     OPERATORS_BY_TYPE,
     emptyCondition,
@@ -19,7 +19,7 @@ import {
     normalize,
     prune,
     NxQueryBuilder
-} from "../../src/studio/query-builder.js"
+} from "../../src/studio/components/query-builder/index.js"
 import { doc, leaf, and, or, not, prng, ROWS } from "../conformance/ast/_helpers.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 

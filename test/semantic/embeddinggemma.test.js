@@ -14,11 +14,11 @@
  */
 
 import { fileURLToPath } from "url"
-import Test, { assert } from "../../src/kernel/Test.js"
-import { transformersProvider } from "../../src/semantic/transformers.js"
-import { DataPlane } from "../../src/data/DataPlane.js"
-import { tableDDL } from "../../src/data/ddl.js"
-import { createCompiler } from "../../src/data/kysely.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { transformersProvider } from "../../src/core/Semantic/transformers.js"
+import { DataPlane } from "../../src/core/Data.js"
+import { tableDDL } from "../../src/core/Data/ddl.js"
+import { createCompiler } from "../../src/core/Data/kysely.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 
 const ENGINES_ROOT = fileURLToPath(new URL("../.engines", import.meta.url))

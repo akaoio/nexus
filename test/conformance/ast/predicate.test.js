@@ -15,7 +15,7 @@
  *    and rejects invalid documents at compile time with E_INVALID.
  */
 
-import Test, { assert } from "../../../src/kernel/Test.js"
+import Test, { assert } from "../../../src/core/Test.js"
 import AST from "./_load.js"
 import { doc, leaf, and, or, not, filter, ROWS } from "./_helpers.js"
 

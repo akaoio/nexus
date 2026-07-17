@@ -16,7 +16,7 @@
  *  - unique applies to scalar types only.
  */
 
-import Test, { assert } from "../../../src/kernel/Test.js"
+import Test, { assert } from "../../../src/core/Test.js"
 import Model from "./_load.js"
 import { schema, field, hasError } from "./_helpers.js"
 

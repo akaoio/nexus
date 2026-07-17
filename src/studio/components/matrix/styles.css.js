@@ -1,6 +1,6 @@
 /** <nx-matrix> styles — the policy verdict table, token-dressed. */
 
-import { css } from "../../../kernel/UI/css.js"
+import { css } from "../../../core/UI/css.js"
 
 export const STYLE = () => css`
     :host { display: block }

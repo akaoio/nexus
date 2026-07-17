@@ -5,7 +5,7 @@
  * identity appears (Users list, the signed-in chip). fill: currentColor.
  */
 
-import { render } from "../../../kernel/UI.js"
+import { render } from "../../../core/UI.js"
 import { identiconTemplate } from "./template.js"
 
 export class NxIdenticon extends HTMLElement {

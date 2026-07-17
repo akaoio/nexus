@@ -17,8 +17,8 @@ import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync } from 
 import { join, dirname } from "path"
 import { loadInstance } from "../instance.js"
 import { openInstanceData, ensureTables } from "../data.js"
-import { appliedMigrations, ensureLedger } from "../../data/migrate.js"
-import { restorableRow } from "../../model/Model.js"
+import { appliedMigrations, ensureLedger } from "../../core/Data/migrate.js"
+import { restorableRow } from "../../core/Model.js"
 
 const BACKUP_VERSION = 1
 const quote = (name) => `"${String(name).replace(/"/g, '""')}"` // SEC: double embedded quotes

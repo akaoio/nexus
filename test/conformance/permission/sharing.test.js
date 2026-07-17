@@ -13,7 +13,7 @@
  *  - Shares are per-user and per-action; they never leak.
  */
 
-import Test, { assert } from "../../../src/kernel/Test.js"
+import Test, { assert } from "../../../src/core/Test.js"
 import Permission from "./_load.js"
 import AST from "../ast/_load.js"
 import { policy, ctx, rule, ROWS, filter } from "./_helpers.js"

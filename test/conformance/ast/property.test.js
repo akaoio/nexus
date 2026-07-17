@@ -8,7 +8,7 @@
  * same generators drive SQL ≡ predicate equivalence on real engines.
  */
 
-import Test, { assert } from "../../../src/kernel/Test.js"
+import Test, { assert } from "../../../src/core/Test.js"
 import AST from "./_load.js"
 import { doc, not, and, or, prng, randomNode, randomRow, filter } from "./_helpers.js"
 

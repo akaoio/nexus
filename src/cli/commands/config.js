@@ -12,7 +12,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "fs"
 import { join } from "path"
-import { getPath, setPath, unsetPath, coerce, redact, isSecretPath } from "../../app/config.js"
+import { getPath, setPath, unsetPath, coerce, redact, isSecretPath } from "../../core/App/config.js"
 
 export async function config(args, flags, out) {
     const configPath = join(process.cwd(), "nexus.config.json")

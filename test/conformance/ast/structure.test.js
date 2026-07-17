@@ -18,7 +18,7 @@
  *    where path is a JSON-pointer to the offending node.
  */
 
-import Test, { assert } from "../../../src/kernel/Test.js"
+import Test, { assert } from "../../../src/core/Test.js"
 import AST from "./_load.js"
 import { doc, leaf, and, or, not, hasError } from "./_helpers.js"
 

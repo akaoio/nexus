@@ -11,7 +11,7 @@ import { spawnSync } from "child_process"
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, readdirSync, copyFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import Test, { assert } from "../../src/kernel/Test.js"
+import Test, { assert } from "../../src/core/Test.js"
 
 const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 const run = (args, cwd) => {

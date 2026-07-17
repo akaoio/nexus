@@ -10,9 +10,9 @@
 import { existsSync, readdirSync, mkdirSync, writeFileSync } from "fs"
 import { resolve, basename, join } from "path"
 import { createInterface } from "readline/promises"
-import { validate } from "../../model/Model.js"
-import { ENGINES } from "../../data/adapters.js"
-import { MODELS, pull } from "../../app/models.js"
+import { validate } from "../../core/Model.js"
+import { ENGINES } from "../../core/Data/adapters.js"
+import { MODELS, pull } from "../../core/App/models.js"
 
 /** Ask a free-text question with a default (TTY only). */
 async function ask(question, def) {

@@ -17,7 +17,7 @@
  *    policy throws E_UNKNOWN_ACTION; bad permlevel throws E_PERMLEVEL.
  */
 
-import Test, { assert } from "../../../src/kernel/Test.js"
+import Test, { assert } from "../../../src/core/Test.js"
 import Permission from "./_load.js"
 import { policy, ctx, rule } from "./_helpers.js"
 

@@ -7,9 +7,9 @@
 
 import { existsSync, readdirSync, readFileSync } from "fs"
 import { join } from "path"
-import { validate } from "../model/Model.js"
-import * as Manifest from "../app/Manifest.js"
-import { loadPolicies } from "../app/Policies.js"
+import { validate } from "../core/Model.js"
+import * as Manifest from "../core/App/manifest.js"
+import { loadPolicies } from "../core/App/policies.js"
 
 const err = (code, detail) => new Error(detail ? `${code}: ${detail}` : code)
 

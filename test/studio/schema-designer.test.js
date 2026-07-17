@@ -8,11 +8,11 @@
  * with node:sqlite).
  */
 
-import Test, { assert } from "../../src/kernel/Test.js"
-import { renameCandidates, designerPlan, NxSchemaDesigner } from "../../src/studio/schema-designer.js"
-import { applyMigration } from "../../src/data/migrate.js"
-import { tableDDL } from "../../src/data/ddl.js"
-import { createCompiler } from "../../src/data/kysely.js"
+import Test, { assert } from "../../src/core/Test.js"
+import { renameCandidates, designerPlan, NxSchemaDesigner } from "../../src/studio/components/schema-designer/index.js"
+import { applyMigration } from "../../src/core/Data/migrate.js"
+import { tableDDL } from "../../src/core/Data/ddl.js"
+import { createCompiler } from "../../src/core/Data/kysely.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 
 const BASE = () =>

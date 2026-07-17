@@ -21,7 +21,7 @@
  *  - diff is pure and returns [] for identical schemas.
  */
 
-import Test, { assert } from "../../../src/kernel/Test.js"
+import Test, { assert } from "../../../src/core/Test.js"
 import Model from "./_load.js"
 import { schema, field, changeFor } from "./_helpers.js"
 
