@@ -13,10 +13,13 @@
 
 import Test, { assert } from "../../src/kernel/Test.js"
 import { transformersProvider } from "../../src/semantic/transformers.js"
+import { embeddingNLProvider, translate } from "../../src/nl/nl.js"
 import { DataPlane } from "../../src/data/DataPlane.js"
 import { tableDDL } from "../../src/data/ddl.js"
 import { createCompiler } from "../../src/data/kysely.js"
+import * as AST from "../../src/ast/AST.js"
 import { schema, field } from "../conformance/model/_helpers.js"
+import { doc, leaf } from "../conformance/ast/_helpers.js"
 
 const ENGINES_ROOT = new URL("../.engines", import.meta.url).pathname
 
@@ -75,6 +78,28 @@ if (!embedder) {
             const hits = await plane.search("note", { query: "how do I end my subscription", mode: "vector" }, CTX)
             assert.truthy(hits.length >= 1)
             assert.equal(hits[0].row.id, target.id, "the semantically-nearest note ranks first")
+        })
+
+        Test.it("REM-05 REAL NL→AST by embedding retrieval: a synonym-phrased ask hits the right intent", async () => {
+            const TASK = schema({
+                name: "task",
+                fields: [field("title", "text"), field("done", "boolean"), field("priority", "select", { options: ["low", "high"] })]
+            })
+            const provider = embeddingNLProvider({
+                embedder,
+                examples: [
+                    { phrase: "show me open tasks that are not finished", ast: doc(leaf("done", "eq", false)) },
+                    { phrase: "urgent high priority items", ast: doc(leaf("priority", "eq", "high")) }
+                ]
+            })
+            // "which work is still pending" — no keyword overlap with "open/not finished"
+            const document = await translate("which work is still pending", TASK, provider)
+            assert.deepEqual(document.root, { field: "done", operator: "eq", value: false })
+            // a clearly different intent routes to the other example
+            const urgent = await translate("critical things I must do right away", TASK, provider)
+            assert.deepEqual(urgent.root, { field: "priority", operator: "eq", value: "high" })
+            // gibberish matches nothing → no guess
+            await Test.assert.rejects(translate("banana helicopter velvet", TASK, provider), "E_NL_NOMATCH")
         })
 
         Test.it("REM-04 SECURITY holds with the real model: ranking stays inside permission", async () => {

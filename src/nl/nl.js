@@ -14,6 +14,7 @@
  */
 
 import * as AST from "../ast/AST.js"
+import { cosine } from "../semantic/semantic.js"
 
 const err = (code, detail) => new Error(detail ? `${code}: ${detail}` : code)
 
@@ -71,6 +72,41 @@ export async function ruleProvider(query, { schema } = {}) {
 
     const root = leaves.length === 1 ? leaves[0] : { op: connective, children: leaves }
     return { astVersion: 1, root }
+}
+
+/**
+ * A REAL embedding-retrieval NL provider (§4.6f): the app supplies a library
+ * of { phrase, ast } intents; the query is embedded (a real model) and the
+ * nearest intent by cosine wins, above `threshold`. Semantically-phrased
+ * queries with no keyword overlap still match the right intent — this is the
+ * real EmbeddingGemma-powered NL→AST, not a parser. Below threshold throws
+ * E_NL_NOMATCH so an unrecognized ask never guesses. `threshold` is
+ * model-dependent (0.3 suits all-MiniLM: real paraphrases score ~0.35–0.55,
+ * unrelated text ~0.1); tune it per model.
+ * @param {Object} config
+ * @param {Array<{phrase: string, ast: Object}>} config.examples
+ * @param {{embed(texts): Promise<number[][]>}} config.embedder
+ * @param {number} [config.threshold=0.3]
+ * @returns {Function} a provider (query, { schema }) => astDocument
+ */
+export function embeddingNLProvider({ examples, embedder, threshold = 0.3 }) {
+    if (!Array.isArray(examples) || !examples.length) throw err("E_NL_EXAMPLES", "an intent library is required")
+    let indexed = null
+    return async (query) => {
+        if (!indexed) indexed = await embedder.embed(examples.map((e) => e.phrase))
+        const [q] = await embedder.embed([String(query)])
+        let best = -1
+        let bestIndex = -1
+        for (let i = 0; i < indexed.length; i++) {
+            const c = cosine(q, indexed[i])
+            if (c > best) {
+                best = c
+                bestIndex = i
+            }
+        }
+        if (best < threshold) throw err("E_NL_NOMATCH", `no intent matched (nearest ${best.toFixed(2)} < ${threshold})`)
+        return examples[bestIndex].ast
+    }
 }
 
 /**
