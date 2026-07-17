@@ -13,6 +13,7 @@ import "../../components/button/index.js"
 import "../../components/navigator/index.js"
 import "../../components/locales/index.js"
 import "../../components/themes/index.js"
+import "../../components/user/index.js"
 
 export const layoutTemplate = (c, { site, badge }) => html`
     <div class="nx-app" ${({ element }) => (c.app = element)}>
@@ -26,6 +27,7 @@ export const layoutTemplate = (c, { site, badge }) => html`
             </span>
             <span class="nx-spacer"></span>
             <span ${({ element }) => element.replaceWith(badge)}></span>
+            <nx-user ${({ element }) => (c.user = element)}></nx-user>
         </header>
         <div class="nx-scrim" ${({ element }) => element.addEventListener("click", () => c.app.classList.remove("open"))}></div>
         <aside class="nx-side">
@@ -54,7 +56,7 @@ export const drawerTemplate = (c) => html`
     </div>
 `
 
-export const loginTemplate = (c, { site, onSubmit }) => html`
+export const loginTemplate = (c, { site, onSubmit, onPasskey }) => html`
     <div class="nx-login" id="nx-login" hidden ${({ element }) => (c.login = element)}>
         <div class="nx-card" style="width:min(94vw,23.75rem)">
             <h2 style="margin:0 0 0.25rem;display:flex;gap:0.375rem;align-items:center">
@@ -74,6 +76,12 @@ export const loginTemplate = (c, { site, onSubmit }) => html`
                 <nx-button data-variant="primary" style="flex:1"
                     ${({ element }) => element.addEventListener("click", () => onSubmit(c.pass.value, c.loginErr))}>
                     <nx-context data-key="login" data-fallback="Sign in"></nx-context>
+                </nx-button>
+            </div>
+            <div class="nx-actions" hidden ${({ element }) => (c.passkeyRow = element)}>
+                <nx-button style="flex:1" data-icon="shield-lock"
+                    ${({ element }) => element.addEventListener("click", () => onPasskey(c.loginErr))}>
+                    Unlock with passkey
                 </nx-button>
             </div>
             <div class="nx-err" id="nx-login-err" ${({ element }) => (c.loginErr = element)}></div>

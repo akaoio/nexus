@@ -2,6 +2,7 @@
  *  Adding the first identity turns authentication ON immediately. */
 
 import { mountTemplate, button, icon, toast, confirmDialog } from "../../lib.js"
+import "../../../components/identicon/index.js"
 import { usersTemplate } from "./template.js"
 
 export function render(ctx) {
@@ -69,6 +70,10 @@ export function render(ctx) {
         for (const u of ids) {
             const row = document.createElement("div")
             row.className = "nx-row"
+            const face = document.createElement("nx-identicon")
+            face.dataset.seed = u.pub
+            face.style.color = "var(--accent)"
+            face.style.width = "2rem"
             const who = document.createElement("div")
             who.className = "nx-who"
             const name = document.createElement("div")
@@ -98,7 +103,7 @@ export function render(ctx) {
                     load()
                 }
             })
-            row.append(who, roles, del)
+            row.append(face, who, roles, del)
             c.$list.append(row)
         }
     }

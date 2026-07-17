@@ -46,7 +46,12 @@ export const bits = /* css */ `
 .nx-kcard-title { margin-bottom: 0.125rem }
 
 /* orbital navigator planets (light-DOM children of nx-navigator) */
-.nx-orbit { position: fixed; bottom: var(--sp-4); left: 50%; transform: translateX(-50%); z-index: 75 }
+.nx-orbit {
+    position: fixed; bottom: 0; left: 0; width: 100%;
+    display: flex; justify-content: center; align-items: center;
+    padding: var(--sp-2) 0; z-index: 75; pointer-events: none;
+}
+.nx-orbit > * { pointer-events: auto }
 nx-navigator > button {
     font: inherit; color: var(--text); background: none; border: none; cursor: pointer;
     width: 100%; height: 100%; border-radius: 50%;

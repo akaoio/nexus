@@ -37,6 +37,23 @@ export const STYLE = () => css`
         transform: translate(calc(var(--x, 0px) * -1), calc(var(--y, var(--center)) * -1));
     }
     nav:has(#state:checked) #orbit { width: calc(var(--rad, 0px) * 2); opacity: 1 }
+    /* the original readability veil: a blurred disc grows BEHIND the open
+       orbit and softly covers what's underneath (akao #orbit::before) */
+    nav:has(#state:checked) #orbit::before {
+        --glow: calc((var(--rad, 0px) * 2) + var(--size) * 2);
+        position: absolute;
+        border-radius: 50%;
+        content: "";
+        aspect-ratio: 1 / 1;
+        width: var(--glow);
+        top: calc(50% - var(--glow) / 2);
+        left: calc(50% - var(--glow) / 2);
+        background: var(--bg);
+        filter: blur(calc(var(--glow) * 0.125));
+        z-index: -1;
+        transition: var(--transition);
+        opacity: 0.92;
+    }
     #orbit {
         border-radius: 50%;
         border: var(--border-width, 1px) solid var(--border);

@@ -24,6 +24,8 @@ import "/_nexus/src/studio/permission-manager.js"
 import "/_nexus/src/studio/list-view.js"
 import "/_nexus/src/studio/search.js"
 import { NxA } from "/_nexus/src/studio/components/a/index.js"
+import { NxUser } from "/_nexus/src/studio/components/user/index.js"
+import { passkeySupported, enroll, enrolled, unlock } from "./webauthn.js"
 
 const boot = JSON.parse(document.getElementById("nx-boot").textContent)
 const schemas = boot.schemas
@@ -106,7 +108,11 @@ embadge.title = embTitle(boot.embedder)
 const layout = buildLayout({ site: boot.site, badge: embadge })
 const { app, main, nav, entNav, drawer, openDrawer, closeDrawer } = layout
 
-const login = buildLogin({ site: boot.site, onSubmit: doLogin })
+const { login, passkeyRow } = buildLogin({ site: boot.site, onSubmit: doLogin, onPasskey: passkeyLogin })
+NxUser.onSignout = () => {
+    api.setToken(null)
+    location.reload()
+}
 
 // the shell's footer is already in the body — the app mounts above it, overlays after
 const foot = document.querySelector("footer.nx-foot")
@@ -204,7 +210,18 @@ document.addEventListener("keydown", (e) => {
 
 // ── auth ───────────────────────────────────────────────────────────────────────
 function showLogin(msg) { login.hidden = false; if (msg) login.querySelector("#nx-login-err").textContent = msg }
-async function checkSession() { const s = await api.session(); const d = s.ok ? s.data : { authRequired: false }; if (d.authRequired && !d.user) showLogin(); else login.hidden = true }
+async function checkSession() {
+    const s = await api.session()
+    const d = s.ok ? s.data : { authRequired: false }
+    if (d.authRequired && !d.user) {
+        showLogin()
+        // a device-locked key offers one-touch unlock (akao WebAuthn PRF)
+        if (passkeySupported() && (await enrolled())) passkeyRow.hidden = false
+    } else {
+        login.hidden = true
+        if (d.user) layout.user.dataset.pub = d.user
+    }
+}
 async function doLogin(pass, err) {
     err.textContent = ""
     if (!pass) return (err.textContent = "Enter a passphrase")
@@ -216,8 +233,34 @@ async function doLogin(pass, err) {
         const v = await (await fetch("/api/v1/_auth/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pub: pair.pub, nonce: ch.data.nonce, signature }) })).json()
         if (!v.ok) return (err.textContent = v.error.code + ": " + (v.error.message || ""))
         if (!v.data.roles.length) return (err.textContent = "This key is not registered. Ask an admin to add: " + pair.pub)
-        api.setToken(v.data.token); location.reload()
+        api.setToken(v.data.token)
+        // offer to LOCK the key to this device: passkey + PRF → AES — the
+        // pair is stored only encrypted; unlocking is one biometric touch
+        if (passkeySupported() && !(await enrolled())) {
+            try {
+                const { confirmDialog } = await import("./lib.js")
+                if (await confirmDialog("Lock your key to this device with a passkey? Next time you sign in with one touch — the key is stored encrypted only.")) await enroll(pair)
+            } catch {}
+        }
+        location.reload()
     } catch (e) { err.textContent = "Login error: " + e.message }
+}
+
+/** Sign in via the device passkey: assert → decrypt pair → ZEN handshake. */
+async function passkeyLogin(err) {
+    err.textContent = ""
+    try {
+        const pair = await unlock()
+        if (!pair) return (err.textContent = "Passkey unlock failed")
+        const ZEN = (await import("/_nexus/vendor/zen/zen.js")).default
+        const ch = await (await fetch("/api/v1/_auth/challenge", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json()
+        if (!ch.ok) return (err.textContent = "Challenge failed")
+        const signature = await ZEN.sign(ch.data.nonce, pair)
+        const v = await (await fetch("/api/v1/_auth/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pub: pair.pub, nonce: ch.data.nonce, signature }) })).json()
+        if (!v.ok) return (err.textContent = v.error.code + ": " + (v.error.message || ""))
+        api.setToken(v.data.token)
+        location.reload()
+    } catch (e) { err.textContent = "Passkey error: " + e.message }
 }
 
 if (location.hash.startsWith("#/")) history.replaceState({}, "", location.hash.slice(1)) // legacy hash links

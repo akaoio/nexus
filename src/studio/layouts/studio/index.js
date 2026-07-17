@@ -32,14 +32,14 @@ export function buildLayout({ site, badge }) {
         c.drawerSlot.querySelector("input, select, textarea, button, nx-button")?.focus?.()
     }
 
-    return { app: c.app, main: c.main, nav: c.nav, entNav: c.entNav, drawer: c.drawer, openDrawer, closeDrawer: c.closeDrawer }
+    return { app: c.app, main: c.main, nav: c.nav, entNav: c.entNav, drawer: c.drawer, user: c.user, openDrawer, closeDrawer: c.closeDrawer }
 }
 
 /** The sign-in panel (ZEN passphrase → keypair; no password ever sent). */
-export function buildLogin({ site, onSubmit }) {
+export function buildLogin({ site, onSubmit, onPasskey }) {
     const c = {}
-    mount(loginTemplate(c, { site, onSubmit }))
-    return c.login
+    mount(loginTemplate(c, { site, onSubmit, onPasskey }))
+    return { login: c.login, passkeyRow: c.passkeyRow }
 }
 
 export default { buildLayout, buildLogin }

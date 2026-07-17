@@ -6,6 +6,7 @@
 
 export const controls = /* css */ `
 button, select, input, textarea { font: inherit; color: inherit }
+[hidden] { display: none !important }
 button { cursor: pointer }
 :focus-visible { outline: 0.125rem solid var(--accent); outline-offset: 1px; border-radius: var(--radius-sm) }
 
