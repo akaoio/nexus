@@ -5,7 +5,7 @@
  * logic in the composition root.
  */
 
-import { el } from "../../app/lib.js"
+import { el, icon } from "../../app/lib.js"
 
 /**
  * Build the shell. `slots` carries the variable pieces; behavior is wired by
@@ -19,8 +19,8 @@ export function buildLayout({ site, badge, localeSel, themeBtn, labels }) {
 
     const app = el("div", { class: "nx-app", id: "nx-app" }, [
         el("header", { class: "nx-top" }, [
-            el("button", { class: "nx-btn icon nx-hamb", text: "☰", title: labels.menu ?? "Menu", onclick: () => app.classList.toggle("open") }),
-            el("span", { class: "nx-brand", html: `<span class="hex">⬡</span> ${site} <small>Studio</small>` }),
+            el("button", { class: "nx-btn icon nx-hamb", title: labels.menu ?? "Menu", onclick: () => app.classList.toggle("open") }, [icon("list")]),
+            el("span", { class: "nx-brand" }, [el("span", { class: "hex" }, [icon("hexagon")]), document.createTextNode(" " + site + " "), el("small", { text: "Studio" })]),
             el("span", { class: "nx-spacer" }),
             badge, localeSel, themeBtn
         ]),
@@ -61,7 +61,7 @@ export function buildLogin({ site, onSubmit }) {
     })
     const login = el("div", { class: "nx-login", id: "nx-login", hidden: true }, [
         el("div", { class: "nx-card", style: "width:min(94vw,380px)" }, [
-            el("h2", { html: `<span style="color:var(--accent)">⬡</span> ` + site, style: "margin:0 0 4px" }),
+            el("h2", { style: "margin:0 0 0.25rem;display:flex;gap:0.375rem;align-items:center" }, [el("span", { style: "color:var(--accent);display:inline-flex" }, [icon("hexagon")]), document.createTextNode(site)]),
             el("p", { class: "nx-muted", text: "Sign in" }),
             el("div", { class: "nx-field" }, [el("label", { class: "nx-label", text: "Passphrase" }), pass]),
             el("div", { class: "nx-actions" }, [el("button", { class: "nx-btn primary", style: "flex:1", text: "Sign in", onclick: () => onSubmit(pass.value, err) })]),

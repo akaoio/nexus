@@ -1,7 +1,7 @@
 /** Users module — identities (ZEN pubkey + roles): who's who, add by key or
  *  "add me as admin", edit roles inline, remove. Changes hot-apply: adding the
  *  first identity turns authentication ON immediately (sign in right after). */
-import { el } from "../lib.js"
+import { el, icon } from "../lib.js"
 
 export function render(ctx) {
     const list = el("div", { class: "nx-card" }, [el("p", { class: "nx-muted", text: "…" })])
@@ -20,8 +20,8 @@ export function render(ctx) {
             }))
         list.replaceChildren()
         if (!ids.length) {
-            const empty = el("div", { class: "nx-empty" }, [el("div", { class: "big", text: "👤" }), el("div", { text: "No identities yet" })])
-            empty.append(el("button", { class: "nx-btn primary", style: "margin-top:12px", text: "＋ Add me as admin", onclick: addMe }))
+            const empty = el("div", { class: "nx-empty" }, [el("div", { style: "--icon:var(--icon-lg);color:var(--muted);margin-bottom:0.375rem" }, [icon("person")]), el("div", { text: "No identities yet" })])
+            empty.append(el("button", { class: "nx-btn primary", style: "margin-top:0.75rem", onclick: addMe }, [icon("plus-lg"), document.createTextNode("Add me as admin")]))
             list.append(empty)
             return
         }
@@ -39,14 +39,14 @@ export function render(ctx) {
                 }
             })
             const del = el("button", {
-                class: "nx-btn icon", text: "✕", title: "Remove",
+                class: "nx-btn icon", title: "Remove",
                 onclick: async () => {
                     if (!confirm("Remove " + (u.name || u.pub.slice(0, 12) + "…") + "?")) return
                     await ctx.api.studio("users", "POST", { action: "remove", pub: u.pub })
                     ctx.toast("Identity removed & applied")
                     load()
                 }
-            })
+            }, [icon("x-lg")])
             list.append(el("div", { class: "nx-row" }, [who, roles, del]))
         }
     }
@@ -81,7 +81,7 @@ export function render(ctx) {
     })
     load()
     return el("div", {}, [
-        el("div", { class: "nx-head" }, [el("h1", { text: ctx.t("users") }), el("span", { class: "nx-spacer" }), el("button", { class: "nx-btn", text: "＋ Add me as admin", onclick: addMe })]),
+        el("div", { class: "nx-head" }, [el("h1", { text: ctx.t("users") }), el("span", { class: "nx-spacer" }), el("button", { class: "nx-btn", onclick: addMe }, [icon("plus-lg"), document.createTextNode("Add me as admin")])]),
         banner,
         list,
         el("div", { class: "nx-card" }, [el("p", { class: "nx-muted", text: "Add an identity by public key — the person signs in with the passphrase that derives it. Roles connect identities to Permissions policies." }), el("div", { class: "nx-toolbar" }, [pub, nm, rl, add])])

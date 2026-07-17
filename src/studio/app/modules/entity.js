@@ -4,7 +4,7 @@ import { el } from "../lib.js"
 
 export function render(ctx) {
     const picker = el("select", { class: "nx-input", style: "max-width:280px" },
-        [el("option", { value: "__new", text: "＋ " + ctx.t("newCollection") }), ...ctx.schemas.map((s) => el("option", { value: s.name, text: s.name }))])
+        [el("option", { value: "__new", text: "+ " + ctx.t("newCollection") }), ...ctx.schemas.map((s) => el("option", { value: s.name, text: s.name }))])
     picker.value = ctx.state.entity || "__new"
     const body = el("div")
 

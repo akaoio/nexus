@@ -31,6 +31,11 @@ export const tokens = /* css */ `
     --text-lg: calc(var(--unit) * 8);
     --text-xl: calc(var(--unit) * 10);
 
+    /* icon + control sizing — same-row elements share one height */
+    --icon: calc(var(--unit) * 8);
+    --icon-lg: calc(var(--unit) * 22);
+    --control-h: calc(var(--unit) * 18);
+
     /* shape */
     --radius-sm: calc(var(--unit) * 3);
     --radius: calc(var(--unit) * 5);

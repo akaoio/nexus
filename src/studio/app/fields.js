@@ -6,7 +6,7 @@
  * entry here — never per-field UI code. `buildForm`/`buildList` compose them.
  */
 
-import { el } from "./lib.js"
+import { el, icon } from "./lib.js"
 
 const label = (field, locale) =>
     (field.label && (field.label[locale] || field.label.en || Object.values(field.label)[0])) || field.name
@@ -28,8 +28,8 @@ const editorFor = (field) => interfaces[field.type] || interfaces.text
 // ── DISPLAYS: type → value → cell content (string or element) ──────────────────
 export const displays = {
     boolean: (v) => (v === true || v === 1
-        ? el("span", { style: "color:var(--ok)", text: "✓" })
-        : v === false || v === 0 ? el("span", { class: "nx-muted", text: "✗" }) : ""),
+        ? el("span", { style: "color:var(--ok);display:inline-flex" }, [icon("check-lg")])
+        : v === false || v === 0 ? el("span", { class: "nx-muted", style: "display:inline-flex;opacity:.6" }, [icon("x")]) : ""),
     select: (v) => (v == null || v === "" ? "" : el("span", { class: "nx-chip", text: String(v) })),
     datetime: (v) => (v ? String(v).replace("T", " ").slice(0, 16) : ""),
     default: (v) => (v == null ? "" : String(v))
@@ -74,69 +74,4 @@ export function buildForm(schema, { data = {}, onSubmit, submitLabel = "Save", l
     }
     form.append(el("div", { class: "nx-actions" }, [el("button", { class: "nx-btn primary", type: "submit", text: submitLabel })]))
     return form
-}
-
-/** Stable sort with strict types and nulls-last (both directions). */
-function sortBy(rows, field, dir) {
-    const factor = dir === "desc" ? -1 : 1
-    return [...rows].sort((a, b) => {
-        const va = a?.[field]
-        const vb = b?.[field]
-        const aNull = va === null || va === undefined
-        const bNull = vb === null || vb === undefined
-        if (aNull && bNull) return 0
-        if (aNull) return 1
-        if (bNull) return -1
-        if (typeof va !== typeof vb) return 0
-        return va < vb ? -factor : va > vb ? factor : 0
-    })
-}
-
-/**
- * Generate a table for an Entity's rows using displays: sortable headers,
- * type-aware cells, clickable rows (`onRow`). The mandatory system fields
- * every Entity carries (id, owner, created_at, updated_at — maintained by the
- * Data Plane, Frappe-style) are first-class columns.
- */
-export function buildList(schema, rows, { onRow } = {}) {
-    const cols = ["id", ...editableFields(schema).map((f) => f.name), "owner", "updated_at"]
-    const typeOf = {
-        owner: "text", created_at: "datetime", updated_at: "datetime",
-        ...Object.fromEntries((schema.fields ?? []).map((f) => [f.name, f.type]))
-    }
-    const sort = { field: null, dir: "asc" }
-    const table = el("table", { class: "nx-table" })
-
-    const head = el("tr", {}, cols.map((c) =>
-        el("th", {
-            class: "sortable",
-            text: c,
-            onclick: () => {
-                if (sort.field === c) sort.dir = sort.dir === "asc" ? "desc" : "asc"
-                else { sort.field = c; sort.dir = "asc" }
-                paint()
-            }
-        })
-    ))
-    table.append(el("thead", {}, [head]))
-    const body = el("tbody")
-    table.append(body)
-
-    function paint() {
-        head.querySelectorAll("th").forEach((th, i) => {
-            th.textContent = cols[i] + (sort.field === cols[i] ? (sort.dir === "asc" ? " ↑" : " ↓") : "")
-        })
-        body.replaceChildren()
-        const view = sort.field ? sortBy(rows, sort.field, sort.dir) : rows
-        for (const row of view) {
-            const tr = el("tr", onRow ? { class: "clickable", onclick: () => onRow(row) } : {})
-            for (const c of cols) {
-                const cell = rendererFor(typeOf[c])(row[c])
-                tr.append(el("td", { class: cellClass(typeOf[c], c) }, [typeof cell === "string" ? document.createTextNode(cell) : cell]))
-            }
-            body.append(tr)
-        }
-    }
-    paint()
-    return table
 }

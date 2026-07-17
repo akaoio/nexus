@@ -5,7 +5,7 @@
  * live in components/ as triads; this file only composes.
  */
 
-import { el, toast, createApi, createI18n, createTheme } from "./lib.js"
+import { el, icon, toast, createApi, createI18n, createTheme } from "./lib.js"
 import { buildLayout, buildLogin } from "../layouts/studio/index.js"
 import * as content from "./modules/content.js"
 import * as entity from "./modules/entity.js"
@@ -22,6 +22,7 @@ import "/_nexus/src/studio/schema-designer.js"
 import "/_nexus/src/studio/permission-manager.js"
 import "/_nexus/src/studio/list-view.js"
 import "/_nexus/src/studio/search.js"
+import "/_nexus/src/studio/components/icon/index.js"
 
 const boot = JSON.parse(document.getElementById("nx-boot").textContent)
 const schemas = boot.schemas
@@ -57,19 +58,19 @@ const deriveKeypair = async (passphrase) => {
 // the module registry (order = sidebar "Build" order)
 const MODULES = {
     content: { render: content.render },
-    entity: { icon: "＋", key: "dataModel", render: entity.render },
-    permissions: { icon: "⚿", key: "permissions", render: permissions.render },
-    users: { icon: "👤", key: "users", render: users.render },
-    ai: { icon: "✦", key: "ai", label: "AI models", render: ai.render },
-    settings: { icon: "⚙", key: "settings", render: settings.render },
-    search: { icon: "⌕", key: "search", render: search.render }
+    entity: { icon: "plus-lg", key: "dataModel", render: entity.render },
+    permissions: { icon: "shield-lock", key: "permissions", render: permissions.render },
+    users: { icon: "person", key: "users", render: users.render },
+    ai: { icon: "stars", key: "ai", label: "AI models", render: ai.render },
+    settings: { icon: "gear", key: "settings", render: settings.render },
+    search: { icon: "search", key: "search", render: search.render }
 }
 const BUILD = ["entity", "permissions", "users", "ai", "settings", "search"]
 
 // ── topbar widgets ─────────────────────────────────────────────────────────────
 const localeSel = el("select", { class: "nx-btn", style: "padding:7px 8px", onchange: (e) => { i18n.set(e.target.value); render() } },
     i18n.locales.map((c) => el("option", { value: c, text: i18n.names[c] || c, selected: c === i18n.locale })))
-const themeBtn = el("button", { class: "nx-btn icon", text: theme.icon(), title: "Theme", onclick: () => { theme.cycle(); themeBtn.textContent = theme.icon() } })
+const themeBtn = el("button", { class: "nx-btn icon", title: "Theme", onclick: () => { theme.cycle(); themeBtn.replaceChildren(icon(theme.icon())) } }, [icon(theme.icon())])
 const shortModel = (id) => (id ? id.split("/").pop().replace(/-ONNX$/i, "") : "model")
 function embLabel(e) {
     if (e.mode === "semantic") return "semantic · " + shortModel(e.name)
@@ -110,13 +111,13 @@ const ctx = {
 function renderNav() {
     entNav.replaceChildren()
     for (const s of schemas) {
-        const a = el("a", { class: state.view === "content" && state.entity === s.name ? "active" : "", onclick: () => navigate("content", s.name) }, [el("span", { class: "ico", text: "▤" }), document.createTextNode(s.name)])
+        const a = el("a", { class: state.view === "content" && state.entity === s.name ? "active" : "", onclick: () => navigate("content", s.name) }, [el("span", { class: "ico" }, [icon("database")]), document.createTextNode(s.name)])
         entNav.append(a)
     }
     nav.replaceChildren()
     for (const name of BUILD) {
         const m = MODULES[name]
-        const a = el("a", { class: state.view === name ? "active" : "", onclick: () => navigate(name) }, [el("span", { class: "ico", text: m.icon }), document.createTextNode(i18n.t(m.key, m.label))])
+        const a = el("a", { class: state.view === name ? "active" : "", onclick: () => navigate(name) }, [el("span", { class: "ico" }, [icon(m.icon)]), document.createTextNode(i18n.t(m.key, m.label))])
         nav.append(a)
     }
 }

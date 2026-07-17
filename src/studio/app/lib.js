@@ -7,6 +7,13 @@
 
 // ── DOM ────────────────────────────────────────────────────────────────────────
 export const $ = (id) => document.getElementById(id)
+/** A Bootstrap icon element (<nx-icon>) — THE way to show an icon, never emoji. */
+export const icon = (name) => {
+    const node = document.createElement("nx-icon")
+    node.setAttribute("name", name)
+    return node
+}
+
 export const el = (tag, props = {}, kids = []) => {
     const node = document.createElement(tag)
     for (const [k, v] of Object.entries(props)) {
@@ -87,7 +94,7 @@ export function createTheme() {
     apply()
     return {
         get value() { return theme },
-        icon: () => (theme === "dark" ? "🌙" : theme === "light" ? "☀️" : "🌗"),
+        icon: () => (theme === "dark" ? "moon" : theme === "light" ? "sun" : "circle-half"),
         cycle() { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]; localStorage.setItem("nexus-theme", theme); apply(); return theme }
     }
 }

@@ -4,7 +4,7 @@
  * NL→AST "Ask" with the parsed filter shown honestly. No per-Entity code.
  */
 
-import { el } from "../lib.js"
+import { el, icon } from "../lib.js"
 import { buildForm, editableFields, interfaces } from "../fields.js"
 import { hexSVG } from "../../css/elements/bits.css.js"
 import { activeFilter } from "../../components/query-builder/index.js"
@@ -36,10 +36,10 @@ export function render(ctx) {
         if (bulkbar.hidden) return
         bulkbar.replaceChildren(
             el("b", { text: selection.size + " selected" }),
-            el("button", { class: "nx-btn", text: ctx.t("edit", "Edit") + "…", onclick: bulkEdit }),
-            el("button", { class: "nx-btn danger", text: ctx.t("delete", "Delete"), onclick: bulkDelete }),
+            el("button", { class: "nx-btn", onclick: bulkEdit }, [icon("pencil"), document.createTextNode(ctx.t("edit", "Edit") + "…")]),
+            el("button", { class: "nx-btn danger", onclick: bulkDelete }, [icon("trash"), document.createTextNode(ctx.t("delete", "Delete"))]),
             el("span", { class: "nx-spacer" }),
-            el("button", { class: "nx-btn icon", text: "✕", title: "Clear selection", onclick: () => selection.clear() })
+            el("button", { class: "nx-btn icon", title: "Clear selection", onclick: () => selection.clear() }, [icon("x-lg")])
         )
     }
 
@@ -138,7 +138,7 @@ export function render(ctx) {
         return el("div", { class: "nx-empty" }, [
             el("div", { html: hexSVG(44) }),
             el("div", { text: "No " + s.name + " records yet" }),
-            el("button", { class: "nx-btn primary", style: "margin-top:12px", text: "＋ " + ctx.t("newRecord"), onclick: openCreate })
+            el("button", { class: "nx-btn primary", style: "margin-top:0.75rem", onclick: openCreate }, [icon("plus-lg"), document.createTextNode(ctx.t("newRecord"))])
         ])
     }
 
@@ -206,9 +206,9 @@ export function render(ctx) {
         onkeydown: (e) => { if (e.key === "Enter") runAsk(e.target.value) }
     })
     const clear = el("button", {
-        class: "nx-btn", text: "✕", title: "Clear",
+        class: "nx-btn icon", title: "Clear",
         onclick: () => { ask.value = ""; builder.value = null; refresh() }
-    })
+    }, [icon("x-lg")])
 
     // The visual Query AST builder — unlimited AND/OR/NOT nesting, the same
     // component that edits permission row rules. Frappe's rule, made recursive:
@@ -226,7 +226,7 @@ export function render(ctx) {
             const active = activeFilter(edited)
             const total = countLeaves(edited)
             const pending = total - countLeaves(active)
-            filterToggle.textContent = "⧩ " + ctx.t("filter", "Filter") + (countLeaves(active) ? " · " + countLeaves(active) : "")
+            filterLabel.textContent = ctx.t("filter", "Filter") + (countLeaves(active) ? " · " + countLeaves(active) : "")
             const document_ = active ? { astVersion: 1, root: active } : null
             const r = await ctx.api.list(s.name, document_)
             if (!r.ok) { error.textContent = r.error.code + ": " + (r.error.message || ""); return }
@@ -236,26 +236,27 @@ export function render(ctx) {
         }, 250)
     })
     const filterCard = el("div", { class: "nx-card", hidden: true }, [builder])
+    const filterLabel = el("span", { text: ctx.t("filter", "Filter") })
     const filterToggle = el("button", {
-        class: "nx-btn", text: "⧩ " + ctx.t("filter", "Filter"),
+        class: "nx-btn",
         onclick: () => { filterCard.hidden = !filterCard.hidden }
-    })
+    }, [icon("funnel"), filterLabel])
 
     // view switcher — every registered view whose availability the schema meets
     const switcher = el("div", { class: "nx-toolbar" }, VIEWS.filter((v) => v.available(s)).map((v) =>
         el("button", {
-            class: "nx-btn icon" + (viewId === v.id ? " primary" : ""), text: v.icon, title: v.label,
+            class: "nx-btn icon" + (viewId === v.id ? " primary" : ""), title: v.label,
             onclick: () => {
                 viewId = v.id
                 localStorage.setItem("nexus-view-" + s.name, viewId)
                 ctx.navigate("content", s.name) // re-render the module with the new view
             }
-        })
+        }, [icon(v.icon)])
     ))
 
     refresh()
     return el("div", {}, [
-        el("div", { class: "nx-head" }, [el("h1", { text: s.name }), count, el("span", { class: "nx-spacer" }), switcher, el("button", { class: "nx-btn primary", text: "＋ " + ctx.t("newRecord"), onclick: openCreate })]),
+        el("div", { class: "nx-head" }, [el("h1", { text: s.name }), count, el("span", { class: "nx-spacer" }), switcher, el("button", { class: "nx-btn primary", onclick: openCreate }, [icon("plus-lg"), document.createTextNode(ctx.t("newRecord"))])]),
         el("div", { class: "nx-card" }, [el("div", { class: "nx-toolbar" }, [ask, filterToggle, clear]), filterInfo]),
         filterCard,
         bulkbar,

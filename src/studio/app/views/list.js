@@ -5,7 +5,7 @@
  * cells, and a scroll container so a wide table never breaks the page.
  */
 
-import { el } from "../lib.js"
+import { el, icon } from "../lib.js"
 import { editableFields, displays } from "../fields.js"
 
 const rendererFor = (type) => displays[type] || displays.default
@@ -83,13 +83,12 @@ export function render({ schema, rows, selection, onRow }) {
             const th = el("th", {
                 class: "sortable",
                 draggable: true,
-                text: c + (sort.field === c ? (sort.dir === "asc" ? " ↑" : " ↓") : ""),
                 onclick: () => {
                     if (sort.field === c) sort.dir = sort.dir === "asc" ? "desc" : "asc"
                     else { sort.field = c; sort.dir = "asc" }
                     paint()
                 }
-            })
+            }, sort.field === c ? [document.createTextNode(c + " "), icon(sort.dir === "asc" ? "arrow-up" : "arrow-down")] : [document.createTextNode(c)])
             th.addEventListener("dragstart", () => (dragFrom = i))
             th.addEventListener("dragover", (e) => e.preventDefault())
             th.addEventListener("drop", (e) => {

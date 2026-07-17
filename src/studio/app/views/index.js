@@ -15,8 +15,8 @@ import * as list from "./list.js"
 import * as kanban from "./kanban.js"
 
 export const VIEWS = [
-    { id: "list", icon: "▤", label: "List", render: list.render, available: () => true },
-    { id: "kanban", icon: "▦", label: "Kanban", render: kanban.render, available: (schema) => kanban.boardField(schema) !== null }
+    { id: "list", icon: "list-ul", label: "List", render: list.render, available: () => true },
+    { id: "kanban", icon: "kanban", label: "Kanban", render: kanban.render, available: (schema) => kanban.boardField(schema) !== null }
 ]
 
 export default { VIEWS }

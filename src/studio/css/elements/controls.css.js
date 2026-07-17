@@ -11,19 +11,19 @@ button { cursor: pointer }
 
 .nx-btn {
     border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-sm);
-    padding: 0.4375rem 0.75rem; display: inline-flex; gap: 0.375rem; align-items: center;
+    padding: 0 0.75rem; min-height: var(--control-h); display: inline-flex; gap: 0.375rem; align-items: center; justify-content: center;
     transition: border-color var(--ease), background var(--ease);
 }
 .nx-btn:hover { border-color: var(--accent) }
 .nx-btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600 }
 .nx-btn.primary:hover { filter: brightness(1.06) }
 .nx-btn.danger { color: var(--danger); border-color: var(--danger) }
-.nx-btn.icon { padding: 0.4375rem 0.5625rem }
+.nx-btn.icon { padding: 0; width: var(--control-h) }
 .nx-btn[disabled] { opacity: .55; cursor: default }
 
 .nx-input {
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
-    padding: 0.5rem 0.625rem; width: 100%; transition: border-color var(--ease);
+    padding: 0 0.625rem; min-height: var(--control-h); width: 100%; transition: border-color var(--ease);
 }
 .nx-input:focus { border-color: var(--accent); outline: none }
 
