@@ -53,7 +53,19 @@ const nav = el("nav", { class: "nx-nav", id: "nx-nav" })
 const localeSel = el("select", { class: "nx-btn", style: "padding:7px 8px", onchange: (e) => { i18n.set(e.target.value); render() } },
     i18n.locales.map((c) => el("option", { value: c, text: i18n.names[c] || c, selected: c === i18n.locale })))
 const themeBtn = el("button", { class: "nx-btn icon", text: theme.icon(), title: "Theme", onclick: () => { theme.cycle(); themeBtn.textContent = theme.icon() } })
-const embadge = el("span", { class: "nx-chip" + (boot.embedder.mode === "semantic" ? " on" : ""), text: boot.embedder.mode === "semantic" ? "semantic" : boot.embedder.mode === "lexical" ? "lexical" : "no embedder" })
+const shortModel = (id) => (id ? id.split("/").pop().replace(/-ONNX$/i, "") : "model")
+function embLabel(e) {
+    if (e.mode === "semantic") return "semantic · " + shortModel(e.name)
+    if (e.mode === "lexical") return e.wanted ? "model not installed" : "lexical"
+    return "no embedder"
+}
+function embTitle(e) {
+    if (e.mode === "semantic") return "Semantic search via " + e.name + (e.indexed === false ? " — but no Entity declares a semantic: block yet" : "")
+    if (e.mode === "lexical" && e.wanted) return e.wanted + " is set but @huggingface/transformers is not installed — run: nexus model pull"
+    if (e.mode === "lexical") return "Keyword search. Set a model in AI models for semantic ranking."
+    return "No model configured and no Entity is indexed for search."
+}
+const embadge = el("span", { class: "nx-chip" + (boot.embedder.mode === "semantic" ? " on" : ""), text: embLabel(boot.embedder), title: embTitle(boot.embedder) })
 const app = el("div", { class: "nx-app", id: "nx-app" }, [
     el("header", { class: "nx-top" }, [
         el("button", { class: "nx-btn icon nx-hamb", text: "☰", onclick: () => app.classList.toggle("open") }),

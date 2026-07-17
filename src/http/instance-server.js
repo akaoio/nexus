@@ -103,15 +103,18 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         } catch {}
         const wantsSemantic = schemas.some((s) => s.semantic)
         const model = config.semantic?.model
+        // Status/badge reflects the CONFIGURED model FIRST — so a model "in use"
+        // never reads "no embedder" (that only means no model and nothing to
+        // embed). `indexed` says whether any Entity actually declares `semantic:`.
+        if (model && semanticAvailable) embedderInfo = { mode: "semantic", name: model, semanticAvailable: true, indexed: wantsSemantic }
+        else if (model) embedderInfo = { mode: "lexical", name: "hash-bow", semanticAvailable, wanted: model }
+        else if (wantsSemantic) embedderInfo = { mode: "lexical", name: "hash-bow", semanticAvailable }
+        else embedderInfo = { mode: "none", semanticAvailable }
+        // The Data Plane embedder exists only when an Entity is indexable
+        // (declares `semantic:`) — nothing to embed otherwise. It uses the real
+        // model when configured + installed, else the lexical fallback.
         let embedder = null
-        if (!wantsSemantic) embedderInfo = { mode: "none", semanticAvailable }
-        else if (model && semanticAvailable) {
-            embedder = lazyTransformers(model, root)
-            embedderInfo = { mode: "semantic", name: model, semanticAvailable: true }
-        } else {
-            embedder = hashProvider()
-            embedderInfo = { mode: "lexical", name: embedder.name, semanticAvailable, wanted: model || null }
-        }
+        if (wantsSemantic) embedder = model && semanticAvailable ? lazyTransformers(model, root) : hashProvider()
         const plane = new DataPlane({ executor, schemas, dialect: executor.dialect, hooks: extensions, embedder })
 
         const keys = Array.isArray(config.api_keys) ? config.api_keys : []
