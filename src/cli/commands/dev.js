@@ -15,14 +15,8 @@ import { createServer } from "http"
 import { existsSync, readFileSync, statSync } from "fs"
 import { join, resolve, extname, sep } from "path"
 import { loadInstance } from "../instance.js"
-import { DataPlane } from "../../data/DataPlane.js"
-import { createApi } from "../../http/api.js"
-import { openInstanceData, ensureTables } from "../data.js"
-import { loadExtensions } from "../../app/Extensions.js"
-import { policiesFor } from "../../app/Policies.js"
-import { verifyChallenge, issueToken, verifyToken } from "../../app/auth.js"
-import { timingSafeStringEqual } from "../output.js"
-import { ACTIONS } from "../../permission/Permission.js"
+import { buildInstanceApi } from "../../http/instance-server.js"
+import { verifyChallenge, issueToken } from "../../app/auth.js"
 import { randomBytes } from "crypto"
 
 const MIME = {
@@ -40,15 +34,6 @@ const MIME = {
 // The Nexus package root — /_nexus/src/* serves the framework's own modules
 // (Studio components, kernel UI) to instance pages
 const NEXUS_ROOT = new URL("../../..", import.meta.url).pathname
-
-/** Wide-open DEV policies: every action at every permlevel, per entity. */
-function devPolicies(schemas) {
-    const policies = []
-    for (const schema of schemas)
-        for (let permlevel = 0; permlevel <= 9; permlevel++)
-            policies.push({ entity: schema.name, actions: [...ACTIONS], rule: null, permlevel, ifOwner: false })
-    return policies
-}
 
 function indexPage(config, schemas) {
     return `<!doctype html><html><head><meta charset="utf-8"><title>${config.site?.name ?? "Nexus"} — Studio</title>
@@ -275,64 +260,9 @@ export async function dev(args, flags, out) {
 
     // Load and validate the instance — broken schemas are refused, not served
     const { config, schemas, apps, policies: appPolicies } = loadInstance(root)
-    const extensions = await loadExtensions(root, apps)
-
-    // Data Plane over the configured engine (nexus.config.json → database),
-    // default: the built-in sqlite engine persisting to .nexus/data.db
-    let api = null
-    let engine = "sqlite"
-    let authMode = "no entities"
-    // ZEN challenge–response state, shared with the request handler below.
-    const authState = { required: false, secret: null, rolesForPub: () => [] }
-    const challenges = new Map() // nonce → expiry (one-time, 60s)
-    if (schemas.length) {
-        const data = await openInstanceData(root, config)
-        engine = data.engine
-        const { executor, kysely } = data
-        await ensureTables(executor, kysely, schemas, executor.dialect)
-        // Semantic (§4.6): the deterministic hash provider is the dev/offline
-        // default when any entity declares a semantic block — real providers
-        // (transformers.js locally, API) plug in with the same interface
-        const { hashProvider } = await import("../../semantic/semantic.js")
-        const embedder = schemas.some((s) => s.semantic) ? hashProvider() : null
-        const plane = new DataPlane({ executor, schemas, dialect: executor.dialect, hooks: extensions, embedder })
-        // Auth (docs/authn-design.md): ZEN session tokens and/or API keys →
-        // auth REQUIRED with app-policy role assignment; otherwise the loud
-        // DEV identity. Configuring either disables DEV — no half-modes.
-        const keys = Array.isArray(config.api_keys) ? config.api_keys : []
-        const identities = Array.isArray(config.identities) ? config.identities : [] // [{ pub, roles }]
-        authState.required = keys.length > 0 || identities.length > 0
-        authState.secret = config.token_secret || randomBytes(32).toString("hex") // ephemeral if unset
-        authState.rolesForPub = (pub) => identities.find((i) => i.pub === pub)?.roles ?? []
-        let context
-        if (authState.required) {
-            context = (req) => {
-                const header = req.headers["authorization"] ?? ""
-                const bearer = header.startsWith("Bearer ") ? header.slice(7) : null
-                // 1) a ZEN session token (issued by /_auth/verify)
-                if (bearer) {
-                    const claims = verifyToken(bearer, authState.secret)
-                    if (claims) return { user: claims.user, roles: claims.roles, policies: policiesFor(appPolicies, claims.roles), shares: [] }
-                }
-                // 2) a static API key (constant-time, SEC-06)
-                const presented = bearer ?? req.headers["x-nexus-key"]
-                let entry = null
-                for (const k of keys) if (k.key && timingSafeStringEqual(k.key, presented ?? "")) entry = k
-                if (entry) {
-                    const roles = entry.roles ?? []
-                    return { user: entry.user, roles, policies: policiesFor(appPolicies, roles), shares: [] }
-                }
-                throw new Error("E_AUTH: a valid session token or API key is required")
-            }
-        } else {
-            const policies = [...devPolicies(schemas), ...appPolicies]
-            context = (req) => ({ user: req.headers["x-nexus-user"] || "dev", roles: ["dev"], policies, shares: [] })
-        }
-        api = createApi({ plane, endpoints: extensions.endpoints, context })
-        authMode = authState.required
-            ? `${[keys.length && `${keys.length} API keys`, identities.length && `${identities.length} ZEN identities`].filter(Boolean).join(" + ")} (E_AUTH without credentials)`
-            : "DEV identity — wide-open policies, user via x-nexus-user header"
-    }
+    // Data Plane + auth + API through the shared wiring. Dev mode falls back to
+    // the loud DEV identity when no auth is configured (production refuses that).
+    const { api, authState, challenges, engine, authMode } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" })
 
     const json = (res, code, obj) => {
         res.writeHead(code, { "content-type": "application/json; charset=utf-8" })

@@ -13,6 +13,7 @@ import { createOutput } from "./output.js"
 import { create } from "./commands/create.js"
 import { test } from "./commands/test.js"
 import { dev } from "./commands/dev.js"
+import { start } from "./commands/start.js"
 import { migrate } from "./commands/migrate.js"
 import { site } from "./commands/site.js"
 import { app } from "./commands/app.js"
@@ -69,6 +70,7 @@ ${out.bold("Usage")}
 ${out.bold("Commands")}
   create <dir>       Scaffold a new Nexus instance     ${out.dim("--site <name>")}
   dev                Serve the current instance        ${out.dim("--port <n>")}
+  start              Production server, self-served TLS ${out.dim("--port <n> [--insecure]")}
   test [filter]      Validate the instance's schemas
   migrate            Preview schema changes            ${out.dim("--apply to execute")}
   site backup        Dump schemas + data + ledger      ${out.dim("[file]")}
@@ -84,7 +86,7 @@ ${out.bold("Global flags")}
   -h, --help         Show help`)
     out.emit({
         ok: true,
-        commands: ["create", "dev", "test", "migrate", "site", "app", "doctor", "version", "help"]
+        commands: ["create", "dev", "start", "test", "migrate", "site", "app", "doctor", "version", "help"]
     })
 }
 
@@ -101,6 +103,8 @@ export async function main(argv) {
                 return await create(args, flags, out)
             case "dev":
                 return await dev(args, flags, out)
+            case "start":
+                return await start(args, flags, out)
             case "test":
                 return await test(args, flags, out)
             case "migrate":

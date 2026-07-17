@@ -202,6 +202,7 @@ identity (never use that facing a network).
 |---|---|
 | `nexus create <dir> --site "<name>"` | scaffold a new instance |
 | `nexus dev [--port N]` | dev server + Studio (DEV identity unless auth configured) |
+| `nexus start [--port N] [--insecure]` | **production server**, self-served TLS — refuses to run without auth or TLS (see §11) |
 | `nexus test` | validate the instance's schemas (CI-ready exit codes) |
 | `nexus migrate` | plan/apply migrations (dry-run by default) |
 | `nexus site` | site operations incl. additive `restore` (never deletes destination data) |
@@ -217,8 +218,24 @@ extension point.
 ## 11. Production notes (read before deploying)
 
 Nexus is **spec-complete and conformance-green**, but it is pre-1.0 (`0.0.0`).
-Before a multi-user production deployment you still need: a configured auth mode
-(never the DEV identity), TLS, the live engine you chose actually provisioned,
-and your own operational hardening. A dedicated production serve mode
-(`nexus start`, self-served HTTPS) is on the roadmap. Treat today's build as a
+
+Use **`nexus start`** for production, not `nexus dev`. It enforces the security
+contract by construction (proven by the START-* clauses):
+
+- **No god-mode.** It refuses to run (`E_NO_AUTH`) unless the instance configures
+  `api_keys` or `identities` — it will never serve the wide-open DEV identity.
+- **TLS required.** It reads a key+cert from `SSL_KEY`/`SSL_CERT` (or
+  `<root>/.certs/{key,cert}.pem`) and serves HTTPS; without certs it refuses
+  (`E_NO_TLS`) unless you pass `--insecure` (for localhost or behind a
+  TLS-terminating proxy).
+- **No Studio, no framework source.** It serves only the API, the auth handshake,
+  `/_health`, and your `public/` assets — never `/_nexus/src` or an admin UI.
+
+```bash
+# provide certs (or use --insecure behind a proxy), configure api_keys, then:
+SSL_KEY=/path/key.pem SSL_CERT=/path/cert.pem nexus start --port 443
+```
+
+You still own the rest of production hardening (the live engine actually
+provisioned, backups, monitoring, secrets management). Treat today's build as a
 strong alpha: excellent for building apps, demos, and local-first tools.
