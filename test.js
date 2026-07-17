@@ -84,6 +84,9 @@ import "./test/http/start.test.js"
 // Studio — dev-only content-type / permission write endpoints (clauses STUDIO-*)
 import "./test/http/studio.test.js"
 
+// Users / identities — pure ops, CLI, dev endpoints (clauses USER-*)
+import "./test/http/users.test.js"
+
 // Sync — event log → SQL projection (clauses SYNC-*)
 import "./test/sync/sync.test.js"
 

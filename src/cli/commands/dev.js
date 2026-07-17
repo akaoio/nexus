@@ -18,7 +18,8 @@ import { buildInstanceApi } from "../../http/instance-server.js"
 import { studioPage } from "../studio-page.js"
 import { validate } from "../../model/Model.js"
 import { loadDictionary, mergeDictionaries, coveredLocales } from "../../i18n/i18n.js"
-import { verifyChallenge, issueToken } from "../../app/auth.js"
+import { verifyChallenge, issueToken, verifyToken } from "../../app/auth.js"
+import { listUsers, addUser, removeUser, setRoles } from "../../app/users.js"
 import { randomBytes } from "crypto"
 
 const MIME = {
@@ -150,6 +151,38 @@ export async function dev(args, flags, out) {
                 return json(res, 200, { ok: true, data: { count: body.policies.length, restart: true } })
             } catch (error) {
                 return json(res, 500, { ok: false, error: { code: "E_WRITE", message: error.message } })
+            }
+        }
+
+        // Studio session (whoami) — tells the UI whether login is required and,
+        // from a Bearer token, who is signed in.
+        if (url.pathname === "/_studio/session" && req.method === "GET") {
+            let signed = null
+            const authz = req.headers["authorization"]
+            if (authz?.startsWith("Bearer ")) signed = verifyToken(authz.slice(7), authState.secret)
+            return json(res, 200, { ok: true, data: { authRequired: authState.required, user: signed?.user ?? null, roles: signed?.roles ?? [] } })
+        }
+        // Studio user management (DEV-ONLY) — list/add/remove/role identities in
+        // nexus.config.json. Applied on restart (which rebuilds auth). Adding an
+        // identity turns on required auth.
+        if (url.pathname === "/_studio/users" && req.method === "GET") {
+            const cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
+            return json(res, 200, { ok: true, data: { identities: listUsers(cfg) } })
+        }
+        if (url.pathname === "/_studio/users" && req.method === "POST") {
+            const body = await readJson(req)
+            if (!body || typeof body.action !== "string") return json(res, 400, { ok: false, error: { code: "E_REQUEST" } })
+            try {
+                const cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
+                let next = listUsers(cfg)
+                if (body.action === "add") next = addUser(next, { pub: body.pub, name: body.name, roles: body.roles ?? [] })
+                else if (body.action === "remove") next = removeUser(next, body.pub)
+                else if (body.action === "role") next = setRoles(next, body.pub, body.roles ?? [])
+                else return json(res, 400, { ok: false, error: { code: "E_ACTION" } })
+                writeFileSync(join(root, "nexus.config.json"), JSON.stringify({ ...cfg, identities: next }, null, 4) + "\n")
+                return json(res, 200, { ok: true, data: { identities: next, restart: true } })
+            } catch (error) {
+                return json(res, 400, { ok: false, error: { code: error.message.split(":")[0], message: error.message } })
             }
         }
 

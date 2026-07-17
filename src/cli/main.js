@@ -17,9 +17,10 @@ import { start } from "./commands/start.js"
 import { migrate } from "./commands/migrate.js"
 import { site } from "./commands/site.js"
 import { app } from "./commands/app.js"
+import { user } from "./commands/user.js"
 import { doctor } from "./commands/doctor.js"
 
-const VALUE_FLAGS = new Set(["port", "site", "engine"])
+const VALUE_FLAGS = new Set(["port", "site", "engine", "name", "role", "roles"])
 
 export function parseArgs(argv) {
     const flags = {}
@@ -76,6 +77,7 @@ ${out.bold("Commands")}
   site backup        Dump schemas + data + ledger      ${out.dim("[file]")}
   site restore       Additive restore — never deletes  ${out.dim("<file> --apply")}
   app new|list       App lifecycle
+  user list|add      Manage identities (ZEN pubkey + roles)  ${out.dim("--roles a,b")}
   doctor             Diagnose the instance
   version            Print the nexus version
   help               Show this message
@@ -86,7 +88,7 @@ ${out.bold("Global flags")}
   -h, --help         Show help`)
     out.emit({
         ok: true,
-        commands: ["create", "dev", "start", "test", "migrate", "site", "app", "doctor", "version", "help"]
+        commands: ["create", "dev", "start", "test", "migrate", "site", "app", "user", "doctor", "version", "help"]
     })
 }
 
@@ -113,6 +115,8 @@ export async function main(argv) {
                 return await site(args, flags, out)
             case "app":
                 return await app(args, flags, out)
+            case "user":
+                return await user(args, flags, out)
             case "doctor":
                 return await doctor(args, flags, out)
             default: {

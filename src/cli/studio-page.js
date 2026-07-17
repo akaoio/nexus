@@ -102,6 +102,13 @@ footer.foot code{background:var(--surface-2);padding:.1em .4em;border-radius:5px
 .drawer .panel{position:absolute;top:0;right:0;bottom:0;width:min(94vw,460px);background:var(--surface);border-left:1px solid var(--border);box-shadow:var(--shadow);padding:18px;overflow-y:auto}
 .drawer .back{position:absolute;inset:0;background:rgba(2,6,23,.45)}
 .drawer .panel h2{margin:0 0 12px;font-size:16px}
+.login{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:20px}
+.login[hidden]{display:none}
+.loginbox{width:min(94vw,380px)}
+.userrow{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--border)}
+.userrow .who{flex:1;min-width:0}
+.userrow .who .pub{font-family:ui-monospace,monospace;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip{font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid var(--border);color:var(--muted)}
 </style>
 </head><body>
 <div class="app" id="app">
@@ -128,6 +135,18 @@ footer.foot code{background:var(--surface-2);padding:.1em .4em;border-radius:5px
 </div>
 
 <footer class="foot" style="padding:16px 26px 40px">Entities: ${schemas.map((s) => `<code>${s.name}</code>`).join(" · ") || "—"} — API: <code>GET/POST /api/v1/:entity</code> · <code>POST /api/v1/:entity/query</code> · <code>/search</code> · <code>/ask</code></footer>
+
+<div class="login" id="login" hidden>
+  <div class="loginbox card">
+    <h2 style="margin:0 0 4px">⬡ ${site}</h2>
+    <p class="muted" id="login-sub">Sign in</p>
+    <div class="field"><label class="muted">Passphrase</label>
+      <input id="login-pass" class="text" type="password" placeholder="your secret passphrase" autocomplete="current-password"></div>
+    <div class="toolbar"><button class="btn primary" id="login-go" style="flex:1">Sign in</button></div>
+    <div class="err" id="login-err"></div>
+    <p class="muted" style="font-size:12px">Your passphrase derives a ZEN keypair in this browser — no password is ever sent. An admin must add your public key first.</p>
+  </div>
+</div>
 
 <script type="application/json" id="boot">${JSON.stringify({ schemas, embedder, appName, i18n: meta.i18n ?? { dict: {}, names: {}, locales: ["en"] } })}</script>
 <script type="module">
@@ -196,10 +215,49 @@ $("hamb").addEventListener("click", () => $("app").classList.toggle("open"))
 $("scrim").addEventListener("click", closeSide)
 
 // ── API helpers ───────────────────────────────────────────────────────────────
+let token = localStorage.getItem("nexus-token") || null
+const authHeaders = (extra) => ({ "content-type": "application/json", ...(token ? { authorization: "Bearer " + token } : {}), ...extra })
 async function post(path, body) {
-  const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+  const r = await fetch(path, { method: "POST", headers: authHeaders(), body: JSON.stringify(body) })
+  if (r.status === 401) showLogin("Your session expired — sign in again")
   return r.json()
 }
+async function get(path) {
+  const r = await fetch(path, { headers: authHeaders() })
+  return r.json()
+}
+
+// ── auth / session (login = prove you hold a registered ZEN key) ──────────────
+async function checkSession() {
+  const s = await get("/_studio/session")
+  const data = s.ok ? s.data : { authRequired: false }
+  if (data.authRequired && !data.user) { showLogin(); return false }
+  $("login").hidden = true
+  return true
+}
+function showLogin(msg) { $("login").hidden = false; if (msg) $("login-err").textContent = msg }
+async function deriveKeypair(passphrase) {
+  const ZEN = (await import("/_nexus/vendor/zen/zen.js")).default
+  return { ZEN, pair: await ZEN.pair(null, { seed: passphrase }) }
+}
+async function doLogin(passphrase) {
+  $("login-err").textContent = ""
+  if (!passphrase) return ($("login-err").textContent = "Enter a passphrase")
+  try {
+    const { ZEN, pair } = await deriveKeypair(passphrase)
+    const ch = await (await fetch("/api/v1/_auth/challenge", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json()
+    if (!ch.ok) return ($("login-err").textContent = "Challenge failed")
+    const signature = await ZEN.sign(ch.data.nonce, pair)
+    const v = await (await fetch("/api/v1/_auth/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pub: pair.pub, nonce: ch.data.nonce, signature }) })).json()
+    if (!v.ok) return ($("login-err").textContent = v.error.code + ": " + (v.error.message || ""))
+    if (!v.data.roles.length) return ($("login-err").textContent = "This key is not registered. Ask an admin to add: " + pair.pub)
+    token = v.data.token
+    localStorage.setItem("nexus-token", token)
+    location.reload()
+  } catch (e) { $("login-err").textContent = "Login error: " + e.message }
+}
+$("login-go").addEventListener("click", () => doLogin($("login-pass").value))
+$("login-pass").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin($("login-pass").value) })
 const apiQuery = (entity, filter) => post("/api/v1/" + entity + "/query", { filter, limit: 100 })
 const apiCreate = (entity, data) => post("/api/v1/" + entity, data)
 const apiAsk = (entity, query) => post("/api/v1/" + entity + "/ask", { query, limit: 100 })
@@ -216,7 +274,7 @@ function renderNav() {
     col.append(a)
   }
   const build = $("nav-build"); build.replaceChildren()
-  const items = [["model", "＋", t("dataModel")], ["permissions", "⚿", t("permissions")], ["search", "⌕", t("search")]]
+  const items = [["model", "＋", t("dataModel")], ["permissions", "⚿", t("permissions")], ["users", "👤", t("users")], ["search", "⌕", t("search")]]
   for (const [view, ico, label] of items) {
     const a = el("a", {})
     a.append(el("span", { className: "ico", textContent: ico }), document.createTextNode(label))
@@ -354,10 +412,57 @@ function viewSearch() {
   main.append(el("div", { className: "viewhead" }, [el("h1", { textContent: t("search") }), el("span", { className: "spacer" }), el("span", { className: "badge", textContent: boot.embedder.mode })]), el("p", { className: "muted", textContent: note }), el("div", { className: "card" }, [search]))
 }
 
-const VIEWS = { content: viewContent, model: viewModel, permissions: viewPermissions, search: viewSearch }
+// ── VIEW: users (identities = ZEN pubkey + roles) ─────────────────────────────
+function viewUsers() {
+  const main = $("main"); main.replaceChildren()
+  const addMe = el("button", { className: "btn", textContent: "＋ Add me as admin" })
+  addMe.addEventListener("click", addMeAsAdmin)
+  const list = el("div", { className: "card", id: "userlist" }, [el("p", { className: "muted", textContent: "…" })])
+  // add-by-pubkey form
+  const pub = el("input", { className: "text", placeholder: "public key (ZEN pub)" })
+  const nm = el("input", { className: "text", placeholder: "name (optional)", style: "max-width:180px" })
+  const rl = el("input", { className: "text", placeholder: "roles (comma) e.g. admin,editor", style: "max-width:220px" })
+  const add = el("button", { className: "btn primary", textContent: "Add user" })
+  add.addEventListener("click", async () => {
+    const r = await post("/_studio/users", { action: "add", pub: pub.value.trim(), name: nm.value.trim() || undefined, roles: rl.value.split(",").map((s) => s.trim()).filter(Boolean) })
+    if (!r.ok) return alert(r.error.code + ": " + (r.error.message || ""))
+    pub.value = nm.value = rl.value = ""; loadUsers()
+  })
+  main.append(
+    el("div", { className: "viewhead" }, [el("h1", { textContent: t("users") }), el("span", { className: "spacer" }), addMe]),
+    list,
+    el("div", { className: "card" }, [el("p", { className: "muted", textContent: "Add an identity by public key:" }), el("div", { className: "toolbar" }, [pub, nm, rl, add])])
+  )
+  loadUsers()
+}
+async function loadUsers() {
+  const r = await get("/_studio/users")
+  const list = $("userlist"); list.replaceChildren()
+  const ids = r.ok ? r.data.identities : []
+  if (!ids.length) { list.append(el("p", { className: "muted", textContent: "No users yet — the site runs in open DEV mode. Add yourself as admin to require login." })); return }
+  for (const u of ids) {
+    const who = el("div", { className: "who" }, [el("div", { textContent: u.name || "(unnamed)" }), el("div", { className: "pub", textContent: u.pub })])
+    const roles = el("span", { className: "chip", textContent: (u.roles || []).join(", ") || "no roles" })
+    const del = el("button", { className: "btn icon", textContent: "✕", title: "Remove" })
+    del.addEventListener("click", async () => { if (confirm("Remove " + (u.name || u.pub.slice(0, 12) + "…") + "?")) { await post("/_studio/users", { action: "remove", pub: u.pub }); loadUsers() } })
+    list.append(el("div", { className: "userrow" }, [who, roles, del]))
+  }
+}
+async function addMeAsAdmin() {
+  const pass = prompt("Choose a passphrase for your admin identity (it derives your key — remember it):")
+  if (!pass) return
+  const { pair } = await deriveKeypair(pass)
+  const r = await post("/_studio/users", { action: "add", pub: pair.pub, name: "admin", roles: ["admin"] })
+  if (r.ok) alert("You are now admin.\\nPublic key:\\n" + pair.pub + "\\n\\nRestart nexus dev, then sign in with this passphrase.")
+  else alert(r.error.code + ": " + (r.error.message || ""))
+  loadUsers()
+}
+
+const VIEWS = { content: viewContent, model: viewModel, permissions: viewPermissions, users: viewUsers, search: viewSearch }
 
 go(state.entity ? "content" : "model", state.entity)
 applyLocale()
+checkSession()
 </script>
 </body></html>`
 }
