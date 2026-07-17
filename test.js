@@ -90,6 +90,9 @@ import "./test/http/users.test.js"
 // AI models — registry, config, CLI, /_studio/ai (clauses MODEL-*)
 import "./test/http/models.test.js"
 
+// Config control-plane — nexus config get/set/unset (clauses CONFIG-*)
+import "./test/http/config.test.js"
+
 // Sync — event log → SQL projection (clauses SYNC-*)
 import "./test/sync/sync.test.js"
 

@@ -19,6 +19,7 @@ import { site } from "./commands/site.js"
 import { app } from "./commands/app.js"
 import { user } from "./commands/user.js"
 import { model } from "./commands/model.js"
+import { config as configCmd } from "./commands/config.js"
 import { doctor } from "./commands/doctor.js"
 
 const VALUE_FLAGS = new Set(["port", "site", "engine", "name", "role", "roles", "model"])
@@ -80,6 +81,7 @@ ${out.bold("Commands")}
   app new|list       App lifecycle
   user list|add      Manage identities (ZEN pubkey + roles)  ${out.dim("--roles a,b")}
   model list|pull    AI (embedding) models — list/use/pull   ${out.dim("EmbeddingGemma default")}
+  config get|set     Read/write nexus.config.json             ${out.dim("dot.path value")}
   doctor             Diagnose the instance
   version            Print the nexus version
   help               Show this message
@@ -90,7 +92,7 @@ ${out.bold("Global flags")}
   -h, --help         Show help`)
     out.emit({
         ok: true,
-        commands: ["create", "dev", "start", "test", "migrate", "site", "app", "user", "model", "doctor", "version", "help"]
+        commands: ["create", "dev", "start", "test", "migrate", "site", "app", "user", "model", "config", "doctor", "version", "help"]
     })
 }
 
@@ -121,6 +123,8 @@ export async function main(argv) {
                 return await user(args, flags, out)
             case "model":
                 return await model(args, flags, out)
+            case "config":
+                return await configCmd(args, flags, out)
             case "doctor":
                 return await doctor(args, flags, out)
             default: {
