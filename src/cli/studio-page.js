@@ -274,7 +274,7 @@ function renderNav() {
     col.append(a)
   }
   const build = $("nav-build"); build.replaceChildren()
-  const items = [["model", "＋", t("dataModel")], ["permissions", "⚿", t("permissions")], ["users", "👤", t("users")], ["search", "⌕", t("search")]]
+  const items = [["model", "＋", t("dataModel")], ["permissions", "⚿", t("permissions")], ["users", "👤", t("users")], ["ai", "✦", t("ai", "AI models")], ["search", "⌕", t("search")]]
   for (const [view, ico, label] of items) {
     const a = el("a", {})
     a.append(el("span", { className: "ico", textContent: ico }), document.createTextNode(label))
@@ -458,7 +458,33 @@ async function addMeAsAdmin() {
   loadUsers()
 }
 
-const VIEWS = { content: viewContent, model: viewModel, permissions: viewPermissions, users: viewUsers, search: viewSearch }
+// ── VIEW: AI models (embedding provider) ──────────────────────────────────────
+function viewAI() {
+  const main = $("main"); main.replaceChildren()
+  const body = el("div", { className: "card", id: "ai-body" }, [el("p", { className: "muted", textContent: "…" })])
+  main.append(el("div", { className: "viewhead" }, [el("h1", { textContent: t("ai", "AI models") })]), body)
+  loadAI()
+}
+async function loadAI() {
+  const r = await get("/_studio/ai"); const d = r.ok ? r.data : {}
+  const body = $("ai-body"); body.replaceChildren()
+  const libNote = d.libInstalled ? "library installed" : "library NOT installed — run: nexus model pull"
+  body.append(el("p", { className: d.libInstalled ? "muted" : "err", textContent: "Mode: " + (d.mode || "?") + " · " + libNote }))
+  for (const m of d.models || []) {
+    const cur = m.id === d.model
+    const use = el("button", { className: cur ? "btn primary" : "btn", textContent: cur ? "In use" : "Use" })
+    use.disabled = cur
+    use.addEventListener("click", async () => { await post("/_studio/ai", { model: m.id }); loadAI() })
+    body.append(el("div", { className: "userrow" }, [el("div", { className: "who" }, [el("div", { textContent: m.name }), el("div", { className: "pub", textContent: m.dims + "d · " + m.langs + " · " + m.size + " · " + m.note })]), use]))
+  }
+  const none = el("button", { className: d.model ? "btn" : "btn primary", textContent: "Keyword only" })
+  none.disabled = !d.model
+  none.addEventListener("click", async () => { await post("/_studio/ai", { model: null }); loadAI() })
+  body.append(el("div", { className: "toolbar", style: "margin-top:12px" }, [none]))
+  body.append(el("p", { className: "muted", style: "font-size:12px", textContent: "Download weights with the nexus model pull command in your terminal. Changes apply after restarting nexus dev." }))
+}
+
+const VIEWS = { content: viewContent, model: viewModel, permissions: viewPermissions, users: viewUsers, ai: viewAI, search: viewSearch }
 
 go(state.entity ? "content" : "model", state.entity)
 applyLocale()

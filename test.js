@@ -87,6 +87,9 @@ import "./test/http/studio.test.js"
 // Users / identities — pure ops, CLI, dev endpoints (clauses USER-*)
 import "./test/http/users.test.js"
 
+// AI models — registry, config, CLI, /_studio/ai (clauses MODEL-*)
+import "./test/http/models.test.js"
+
 // Sync — event log → SQL projection (clauses SYNC-*)
 import "./test/sync/sync.test.js"
 

@@ -12,6 +12,7 @@ import { resolve, basename, join } from "path"
 import { createInterface } from "readline/promises"
 import { validate } from "../../model/Model.js"
 import { ENGINES } from "../../data/adapters.js"
+import { MODELS, pull } from "../../app/models.js"
 
 /** Ask a free-text question with a default (TTY only). */
 async function ask(question, def) {
@@ -78,6 +79,17 @@ export async function create(args, flags, out) {
         engine = await choose("Database engine", ENGINES, "sqlite")
     }
 
+    // AI (embedding) model — first-class in Nexus (§4.6). --model sets it;
+    // interactive picks from the curated list; "none" = keyword search only.
+    let aiModel = null
+    if (flags.model !== undefined) aiModel = flags.model && flags.model !== "none" ? flags.model : null
+    else if (interactive) {
+        const opts = [...MODELS.map((m) => `${m.name} — ${m.note} (${m.size})`), "none — keyword search only"]
+        const picked = await choose("Embedding / AI model", opts, opts[0])
+        const idx = opts.indexOf(picked)
+        aiModel = idx >= 0 && idx < MODELS.length ? MODELS[idx].id : null
+    }
+
     const target = resolve(process.cwd(), dir)
     if (existsSync(target) && readdirSync(target).length > 0) {
         out.error(`Directory not empty, refusing to overwrite: ${dir}`, { code: "E_NOT_EMPTY" })
@@ -103,7 +115,8 @@ export async function create(args, flags, out) {
         "nexus.config.json": {
             configVersion: 1,
             site: { name: site, locale: "en" },
-            database: { engine }
+            database: { engine },
+            ...(aiModel ? { semantic: { model: aiModel } } : {})
         },
         "apps/starter/manifest.json": {
             manifestVersion: 1,
@@ -143,14 +156,30 @@ export default ({ hook, endpoint, command }) => {
         created.push(relative)
     }
 
-    out.print(`${out.green("✓")} Created Nexus instance ${out.bold(site)} in ${out.cyan(dir)} ${out.dim(`· ${engine}`)}`)
+    out.print(`${out.green("✓")} Created Nexus instance ${out.bold(site)} in ${out.cyan(dir)} ${out.dim(`· ${engine}${aiModel ? " · " + aiModel : ""}`)}`)
     out.print("")
     for (const file of created) out.print(`  ${out.dim("+")} ${file}`)
     out.print("")
+
+    // AI model: in a terminal, offer to install + download it right now.
+    if (aiModel && interactive) {
+        const yes = await ask(`Download ${aiModel} now? installs @huggingface/transformers + weights [y/N]`, "N")
+        if (/^y/i.test(yes)) {
+            out.print(`${out.dim("↓")} pulling ${aiModel} — this can take a while…`)
+            try {
+                const pulled = await pull(target, aiModel)
+                out.print(`${out.green("✓")} model ready (${pulled.dims}d)`)
+            } catch (error) {
+                out.print(`${out.yellow("!")} pull failed: ${error.message} — run \`nexus model pull\` later`)
+            }
+        }
+    }
+
     out.print(`${out.bold("Next steps")}`)
     out.print(`  cd ${dir}`)
     if (engine !== "sqlite") out.print(`  npm install ${engine === "turso" ? "@tursodatabase/database" : engine === "postgres" ? "pg" : "mysql2"}   ${out.dim(`driver for ${engine}`)}`)
+    if (aiModel) out.print(`  nexus model pull   ${out.dim(`install + download ${aiModel}`)}`)
     out.print(`  nexus test    ${out.dim("validate the starter schemas")}`)
     out.print(`  nexus dev     ${out.dim("serve the instance")}`)
-    out.emit({ ok: true, site, dir, engine, created })
+    out.emit({ ok: true, site, dir, engine, model: aiModel, created })
 }

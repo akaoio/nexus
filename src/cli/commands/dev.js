@@ -20,6 +20,7 @@ import { validate } from "../../model/Model.js"
 import { loadDictionary, mergeDictionaries, coveredLocales } from "../../i18n/i18n.js"
 import { verifyChallenge, issueToken, verifyToken } from "../../app/auth.js"
 import { listUsers, addUser, removeUser, setRoles } from "../../app/users.js"
+import { MODELS, status as modelStatus, withModel } from "../../app/models.js"
 import { randomBytes } from "crypto"
 
 const MIME = {
@@ -184,6 +185,20 @@ export async function dev(args, flags, out) {
             } catch (error) {
                 return json(res, 400, { ok: false, error: { code: error.message.split(":")[0], message: error.message } })
             }
+        }
+
+        // Studio AI panel (DEV-ONLY): the site's embedding model status, and
+        // switching it. Weights are pulled from the terminal (`nexus model
+        // pull`) — a multi-minute download has no business blocking a request.
+        if (url.pathname === "/_studio/ai" && req.method === "GET") {
+            const cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
+            return json(res, 200, { ok: true, data: { ...modelStatus(cfg, root), models: MODELS } })
+        }
+        if (url.pathname === "/_studio/ai" && req.method === "POST") {
+            const body = await readJson(req)
+            const cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
+            writeFileSync(join(root, "nexus.config.json"), JSON.stringify(withModel(cfg, body?.model || null), null, 4) + "\n")
+            return json(res, 200, { ok: true, data: { model: body?.model || null, restart: true } })
         }
 
         if (api && (await api(req, res))) return
