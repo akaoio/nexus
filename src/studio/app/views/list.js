@@ -5,7 +5,7 @@
  * cells, and a scroll container so a wide table never breaks the page.
  */
 
-import { el, icon } from "../lib.js"
+import { icon } from "../lib.js"
 import { editableFields, displays } from "../fields.js"
 
 const rendererFor = (type) => displays[type] || displays.default
@@ -56,14 +56,16 @@ export function render({ schema, rows, selection, onRow }) {
     const sort = { field: null, dir: "asc" }
     let dragFrom = null
 
-    const table = el("table", { class: "nx-table" })
-    const head = el("tr")
-    const body = el("tbody")
+    const table = document.createElement("table")
+    table.className = "nx-table"
+    const head = document.createElement("tr")
+    const body = document.createElement("tbody")
 
     function paintHead() {
         head.replaceChildren()
         // tri-state master checkbox: none→all, all→none, some→INVERT (Frappe)
-        const master = el("input", { type: "checkbox" })
+        const master = document.createElement("input")
+        master.type = "checkbox"
         const sync = () => {
             const state = selection.stateOf(ids)
             master.checked = state === "all"
@@ -78,17 +80,21 @@ export function render({ schema, rows, selection, onRow }) {
             else selection.invert(ids)
         })
         sync()
-        head.append(el("th", { class: "nx-selcol" }, [master]))
+        const selTh = document.createElement("th")
+        selTh.className = "nx-selcol"
+        selTh.append(master)
+        head.append(selTh)
         cols.forEach((c, i) => {
-            const th = el("th", {
-                class: "sortable",
-                draggable: true,
-                onclick: () => {
-                    if (sort.field === c) sort.dir = sort.dir === "asc" ? "desc" : "asc"
-                    else { sort.field = c; sort.dir = "asc" }
-                    paint()
-                }
-            }, sort.field === c ? [document.createTextNode(c + " "), icon(sort.dir === "asc" ? "arrow-up" : "arrow-down")] : [document.createTextNode(c)])
+            const th = document.createElement("th")
+            th.className = "sortable"
+            th.draggable = true
+            th.addEventListener("click", () => {
+                if (sort.field === c) sort.dir = sort.dir === "asc" ? "desc" : "asc"
+                else { sort.field = c; sort.dir = "asc" }
+                paint()
+            })
+            th.append(document.createTextNode(sort.field === c ? c + " " : c))
+            if (sort.field === c) th.append(icon(sort.dir === "asc" ? "arrow-up" : "arrow-down"))
             th.addEventListener("dragstart", () => (dragFrom = i))
             th.addEventListener("dragover", (e) => e.preventDefault())
             th.addEventListener("drop", (e) => {
@@ -109,26 +115,42 @@ export function render({ schema, rows, selection, onRow }) {
         body.replaceChildren()
         const view = sort.field ? sortBy(rows, sort.field, sort.dir) : rows
         for (const row of view) {
-            const box = el("input", { type: "checkbox", checked: selection.has(row.id) })
+            const box = document.createElement("input")
+            box.type = "checkbox"
+            box.checked = selection.has(row.id)
             box.addEventListener("click", (e) => {
                 e.stopPropagation()
                 selection.toggle(row.id)
             })
-            const tr = el("tr", { class: "clickable" + (selection.has(row.id) ? " selected" : ""), onclick: () => onRow(row) })
-            tr.append(el("td", { class: "nx-selcol", onclick: (e) => { e.stopPropagation(); selection.toggle(row.id) } }, [box]))
+            const tr = document.createElement("tr")
+            tr.className = "clickable" + (selection.has(row.id) ? " selected" : "")
+            tr.addEventListener("click", () => onRow(row))
+            const selTd = document.createElement("td")
+            selTd.className = "nx-selcol"
+            selTd.addEventListener("click", (e) => { e.stopPropagation(); selection.toggle(row.id) })
+            selTd.append(box)
+            tr.append(selTd)
             for (const c of cols) {
                 const cell = rendererFor(typeOf[c])(row[c])
-                tr.append(el("td", { class: cellClass(typeOf[c], c) }, [typeof cell === "string" ? document.createTextNode(cell) : cell]))
+                const td = document.createElement("td")
+                td.className = cellClass(typeOf[c], c)
+                td.append(typeof cell === "string" ? document.createTextNode(cell) : cell)
+                tr.append(td)
             }
             body.append(tr)
         }
     }
 
     selection.repaint = paint // the content screen repaints on selection change
-    table.append(el("thead", {}, [head]), body)
+    const thead = document.createElement("thead")
+    thead.append(head)
+    table.append(thead, body)
     paint()
     // wide tables scroll INSIDE this container — the page never breaks
-    return el("div", { class: "nx-scroll" }, [table])
+    const scroll = document.createElement("div")
+    scroll.className = "nx-scroll"
+    scroll.append(table)
+    return scroll
 }
 
 export default { render }

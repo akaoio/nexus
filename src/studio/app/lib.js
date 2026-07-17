@@ -1,12 +1,17 @@
 /**
- * Studio kit — the shared primitives every module builds on (the akao/Directus
- * principle: separate concerns, reuse everywhere). No framework: small DOM
- * helpers, an authenticated API client, the i18n resolver, and the theme
- * controller. Modules never fetch or build DOM ad-hoc; they use these.
+ * Studio kit — the shared NON-UI primitives: the authenticated API client,
+ * the i18n data store (text renders through <nx-t>, never a t() call), the
+ * theme controller, and thin seams over the UI primitives (toast → the
+ * <nx-notifications> host, confirmDialog → an <nx-modal>). DOM structure
+ * lives in templates and components — never built ad-hoc here.
  */
 
-// ── DOM ────────────────────────────────────────────────────────────────────────
-export const $ = (id) => document.getElementById(id)
+import NxT from "../components/t/index.js"
+import NxNotifications from "../components/notifications/index.js"
+import "../components/modal/index.js"
+import "../components/button/index.js"
+
+// ── component factories (instantiation, the akao `new ITEM()` way) ─────────────
 /** A Bootstrap icon element (<nx-icon>) — THE way to show an icon, never emoji. */
 export const icon = (name) => {
     const node = document.createElement("nx-icon")
@@ -14,27 +19,76 @@ export const icon = (name) => {
     return node
 }
 
-export const el = (tag, props = {}, kids = []) => {
-    const node = document.createElement(tag)
-    for (const [k, v] of Object.entries(props)) {
-        if (k === "class") node.className = v
-        else if (k === "style") node.setAttribute("style", v)
-        else if (k === "html") node.innerHTML = v
-        else if (k.startsWith("on") && typeof v === "function") node.addEventListener(k.slice(2), v)
-        else if (k === "text") node.textContent = v
-        else node[k] = v
-    }
-    for (const kid of [].concat(kids)) if (kid != null) node.append(kid)
+/** A dictionary-bound text element (<nx-t>) — THE way to show a UI string. */
+export const t = (key, fallback) => {
+    const node = document.createElement("nx-t")
+    node.dataset.key = key
+    if (fallback != null) node.dataset.fallback = fallback
     return node
 }
 
-/** Non-blocking toast (replaces alert()). type: "ok" | "err". */
+/** A button primitive (<nx-button>). */
+export const button = ({ variant, iconName, disabled, title, onclick } = {}, children = []) => {
+    const node = document.createElement("nx-button")
+    if (variant) node.dataset.variant = variant
+    if (iconName) node.dataset.icon = iconName
+    if (disabled) node.setAttribute("disabled", "")
+    if (title) node.title = title
+    if (onclick) node.addEventListener("click", onclick)
+    for (const child of [].concat(children)) if (child != null) node.append(typeof child === "string" ? document.createTextNode(child) : child)
+    return node
+}
+
+// ── template mounting (routes/layouts render their template.js with this) ──────
+import { render } from "../../kernel/UI.js"
+
+/** Render a kernel html\`\` template into a fresh host element. */
+export function mountTemplate(template, tag = "div") {
+    const host = document.createElement(tag)
+    render(template, host)
+    return host
+}
+
+// ── notifications ──────────────────────────────────────────────────────────────
+/** Non-blocking toast through the <nx-notifications> primitive. */
 export function toast(message, type = "ok") {
-    let host = $("nx-toasts")
-    if (!host) { host = el("div", { id: "nx-toasts", class: "nx-toasts" }); document.body.append(host) }
-    const node = el("div", { class: "nx-toast " + type, text: message })
-    host.append(node)
-    setTimeout(() => { node.style.opacity = "0"; setTimeout(() => node.remove(), 220) }, 3400)
+    NxNotifications.instance.push(message, type)
+}
+
+// ── confirm (replaces window.confirm) ──────────────────────────────────────────
+/** A modal confirmation — resolves true/false. Message may be a string or node. */
+export function confirmDialog(message) {
+    return new Promise((resolve) => {
+        const modal = document.createElement("nx-modal")
+        modal.dataset.header = "confirm"
+        const body = document.createElement("div")
+        body.style.display = "grid"
+        body.style.gap = "var(--sp-3)"
+        const text = document.createElement("p")
+        text.style.margin = "0"
+        text.append(typeof message === "string" ? document.createTextNode(message) : message)
+        const actions = document.createElement("div")
+        actions.style.display = "flex"
+        actions.style.gap = "var(--sp-2)"
+        actions.style.justifyContent = "flex-end"
+        let verdict = false
+        const done = (value) => {
+            verdict = value
+            modal.close()
+        }
+        actions.append(
+            button({ onclick: () => done(false) }, [t("cancel")]),
+            button({ variant: "primary", onclick: () => done(true) }, [t("confirm")])
+        )
+        body.append(text, actions)
+        modal.append(body)
+        modal.addEventListener("close", () => {
+            modal.remove()
+            resolve(verdict)
+        })
+        document.body.append(modal)
+        modal.showModal()
+    })
 }
 
 // ── API client (carries the session token; 401 → onUnauthorized) ───────────────
@@ -63,23 +117,25 @@ export function createApi({ onUnauthorized } = {}) {
     }
 }
 
-// ── i18n (resolves the served translation memory) ──────────────────────────────
+// ── i18n data store — <nx-t> renders it; this only HOLDS locale + bundle ───────
 export function createI18n(bundle) {
-    const dict = bundle?.dict ?? {}
     const names = bundle?.names ?? {}
     const locales = bundle?.locales ?? ["en"]
     let locale = localStorage.getItem("nexus-locale")
     const guess = (navigator.language || "en").slice(0, 2)
     if (!locales.includes(locale)) locale = locales.includes(guess) ? guess : "en"
-    const t = (key, fallback) => {
-        const entry = dict[key]
-        const v = entry && (entry[locale] != null ? entry[locale] : entry.en)
-        return v != null ? v : fallback != null ? fallback : key
-    }
+    NxT.bundle({ dict: bundle?.dict ?? {}, locale })
     return {
-        t, locales, names,
+        locales, names,
+        /** Programmatic strings (toasts, confirms) resolve through the SAME memory. */
+        resolve: (key, fallback) => NxT.resolve(key, fallback),
         get locale() { return locale },
-        set(next) { locale = next; localStorage.setItem("nexus-locale", next); document.documentElement.lang = next }
+        set(next) {
+            locale = next
+            localStorage.setItem("nexus-locale", next)
+            document.documentElement.lang = next
+            NxT.setLocale(next)
+        }
     }
 }
 

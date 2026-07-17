@@ -1,11 +1,11 @@
 /**
  * Studio shell — the composition root: reads boot data, wires state, auth,
- * i18n and theme, and mounts modules into the layout. The chrome itself
- * (structure + styles) lives in layouts/studio (akao pattern); the widgets
- * live in components/ as triads; this file only composes.
+ * i18n and theme, and mounts routes into the layout. Structure lives in
+ * templates; text in the dictionary (<nx-t>); icons in <nx-icon>; heavy work
+ * in worker threads; the URL in the kernel Router. This file only composes.
  */
 
-import { el, icon, toast, createApi, createI18n, createTheme } from "./lib.js"
+import { icon, t, button, toast, createApi, createI18n, createTheme } from "./lib.js"
 import { buildLayout, buildLogin } from "../layouts/studio/index.js"
 // routes — one FOLDER per route, nested like the URL (the akao routes shape)
 import * as content from "./routes/entity/[entity]/index.js"
@@ -15,15 +15,15 @@ import * as users from "./routes/users/index.js"
 import * as ai from "./routes/ai/index.js"
 import * as settings from "./routes/settings/index.js"
 import * as search from "./routes/search/index.js"
-// widgets the modules compose (register the custom elements) — imported via
-// their STABLE paths (the shims), which is the public component surface
+// widgets the routes compose (register the custom elements) — via their
+// STABLE paths (the shims), which is the public component surface
 import "/_nexus/src/studio/query-builder.js"
 import "/_nexus/src/studio/form-builder.js"
 import "/_nexus/src/studio/schema-designer.js"
 import "/_nexus/src/studio/permission-manager.js"
 import "/_nexus/src/studio/list-view.js"
 import "/_nexus/src/studio/search.js"
-import "/_nexus/src/studio/components/icon/index.js"
+import { NxA } from "/_nexus/src/studio/components/a/index.js"
 
 const boot = JSON.parse(document.getElementById("nx-boot").textContent)
 const schemas = boot.schemas
@@ -31,6 +31,12 @@ const i18n = createI18n(boot.i18n)
 const theme = createTheme()
 const state = { view: schemas[0] ? "content" : "entity", entity: schemas[0] ? schemas[0].name : null }
 const api = createApi({ onUnauthorized: () => showLogin() })
+
+// the akao `a` primitive pre-caches what it points to — wire its fetcher
+NxA.fetchRows = async (name) => {
+    const r = await api.list(name, null)
+    return r.ok ? r.data : null
+}
 
 // ── threads (the akao Launcher discipline) ─────────────────────────────────────
 // This module IS the main thread; heavy work registers as workers so the UI
@@ -57,22 +63,35 @@ const deriveKeypair = async (passphrase) => {
     }
 }
 
-// the module registry (order = sidebar "Build" order)
+// the route registry (order = sidebar "Build" order)
 const MODULES = {
     content: { render: content.render },
     entity: { icon: "plus-lg", key: "dataModel", render: entity.render },
     permissions: { icon: "shield-lock", key: "permissions", render: permissions.render },
     users: { icon: "person", key: "users", render: users.render },
-    ai: { icon: "stars", key: "ai", label: "AI models", render: ai.render },
+    ai: { icon: "stars", key: "ai", render: ai.render },
     settings: { icon: "gear", key: "settings", render: settings.render },
     search: { icon: "search", key: "search", render: search.render }
 }
 const BUILD = ["entity", "permissions", "users", "ai", "settings", "search"]
 
-// ── topbar widgets ─────────────────────────────────────────────────────────────
-const localeSel = el("select", { class: "nx-btn", style: "padding:7px 8px", onchange: (e) => { i18n.set(e.target.value); render() } },
-    i18n.locales.map((c) => el("option", { value: c, text: i18n.names[c] || c, selected: c === i18n.locale })))
-const themeBtn = el("button", { class: "nx-btn icon", title: "Theme", onclick: () => { theme.cycle(); themeBtn.replaceChildren(icon(theme.icon())) } }, [icon(theme.icon())])
+// ── topbar widgets (native primitives + components — no ad-hoc helpers) ────────
+const localeSel = document.createElement("select")
+localeSel.className = "nx-btn"
+for (const code of i18n.locales) {
+    const option = document.createElement("option")
+    option.value = code
+    option.textContent = i18n.names[code] || code
+    option.selected = code === i18n.locale
+    localeSel.append(option)
+}
+localeSel.addEventListener("change", () => {
+    i18n.set(localeSel.value)
+    render()
+})
+
+const themeBtn = button({ variant: "icon", iconName: theme.icon(), title: "Theme", onclick: () => { theme.cycle(); themeBtn.dataset.icon = theme.icon() } })
+
 const shortModel = (id) => (id ? id.split("/").pop().replace(/-ONNX$/i, "") : "model")
 function embLabel(e) {
     if (e.mode === "semantic") return "semantic · " + shortModel(e.name)
@@ -85,16 +104,13 @@ function embTitle(e) {
     if (e.mode === "lexical") return "Keyword search. Set a model in AI models for semantic ranking."
     return "No model configured and no Entity is indexed for search."
 }
-const embadge = el("span", { class: "nx-chip" + (boot.embedder.mode === "semantic" ? " on" : ""), text: embLabel(boot.embedder), title: embTitle(boot.embedder) })
+const embadge = document.createElement("span")
+embadge.className = "nx-chip" + (boot.embedder.mode === "semantic" ? " on" : "")
+embadge.textContent = embLabel(boot.embedder)
+embadge.title = embTitle(boot.embedder)
 
 // ── layout ─────────────────────────────────────────────────────────────────────
-const layout = buildLayout({
-    site: boot.site,
-    badge: embadge,
-    localeSel,
-    themeBtn,
-    labels: { collections: i18n.t("collections"), build: i18n.t("build") }
-})
+const layout = buildLayout({ site: boot.site, badge: embadge, localeSel, themeBtn })
 const { app, main, nav, entNav, drawer, openDrawer, closeDrawer } = layout
 
 const login = buildLogin({ site: boot.site, onSubmit: doLogin })
@@ -105,30 +121,50 @@ if (foot) foot.before(app); else document.body.append(app)
 document.body.append(drawer, login)
 
 const ctx = {
-    api, i18n, t: i18n.t, schemas, state, appName: boot.appName, embedder: boot.embedder, toast,
+    api, i18n, schemas, state, appName: boot.appName, embedder: boot.embedder, toast,
     drawer: openDrawer, closeDrawer, navigate, deriveKeypair
 }
 
 // ── navigation + render ────────────────────────────────────────────────────────
-function renderNav() {
-    entNav.replaceChildren()
-    for (const s of schemas) {
-        const a = el("a", { class: state.view === "content" && state.entity === s.name ? "active" : "", href: "#/entity/" + s.name }, [el("span", { class: "ico" }, [icon("database")]), document.createTextNode(s.name)])
-        entNav.append(a)
-    }
-    nav.replaceChildren()
-    for (const name of BUILD) {
-        const m = MODULES[name]
-        const a = el("a", { class: state.view === name ? "active" : "", href: "#/" + name }, [el("span", { class: "ico" }, [icon(m.icon)]), document.createTextNode(i18n.t(m.key, m.label))])
-        nav.append(a)
-    }
+/** A sidebar link: <a is="nx-a"> — the primitive PRE-CACHES its target. */
+function navLink({ href, active, iconName, label }) {
+    const a = document.createElement("a", { is: "nx-a" })
+    a.setAttribute("is", "nx-a") // serialize for clarity; define() already upgraded it
+    a.href = href
+    a.className = active ? "active" : ""
+    const ico = document.createElement("span")
+    ico.className = "ico"
+    ico.append(icon(iconName))
+    a.append(ico, label)
+    return a
 }
+
+function renderNav() {
+    entNav.replaceChildren(...schemas.map((s) =>
+        navLink({
+            href: "#/entity/" + s.name,
+            active: state.view === "content" && state.entity === s.name,
+            iconName: "database",
+            label: document.createTextNode(s.name)
+        })
+    ))
+    nav.replaceChildren(...BUILD.map((name) =>
+        navLink({
+            href: "#/" + name,
+            active: state.view === name,
+            iconName: MODULES[name].icon,
+            label: t(MODULES[name].key)
+        })
+    ))
+}
+
 function render() {
     document.documentElement.lang = i18n.locale
     localeSel.value = i18n.locale
     renderNav()
     main.replaceChildren(MODULES[state.view].render(ctx))
 }
+
 // ── routing (kernel Router, akao pattern syntax) — the URL is the state ───────
 const ROUTES = ["/entity/[entity]", "/[view]"]
 function applyHash() {

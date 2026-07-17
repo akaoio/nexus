@@ -1,32 +1,66 @@
-/** Entity module — the data model: create a new Entity or edit an existing one
- *  and SAVE (reuses <nx-form-builder> / <nx-schema-designer>). */
-import { el } from "../../lib.js"
+/** /entity (data model) route — logic: create a new Entity or edit an
+ *  existing one and SAVE (reuses <nx-form-builder> / <nx-schema-designer>). */
+
+import { mountTemplate, button, t, toast } from "../../lib.js"
+import { modelTemplate } from "./template.js"
 
 export function render(ctx) {
-    const picker = el("select", { class: "nx-input", style: "max-width:280px" },
-        [el("option", { value: "__new", text: "+ " + ctx.t("newCollection") }), ...ctx.schemas.map((s) => el("option", { value: s.name, text: s.name }))])
-    picker.value = ctx.state.entity || "__new"
-    const body = el("div")
+    const c = {}
+    const host = mountTemplate(modelTemplate(c))
+
+    const newOption = document.createElement("option")
+    newOption.value = "__new"
+    newOption.textContent = "+ " + ctx.i18n.resolve("newCollection")
+    c.$picker.append(newOption, ...ctx.schemas.map((s) => {
+        const option = document.createElement("option")
+        option.value = s.name
+        option.textContent = s.name
+        return option
+    }))
+    c.$picker.value = ctx.state.entity || "__new"
 
     async function save(schema) {
-        if (!schema || !schema.name) return ctx.toast("Entity name is required", "err")
+        if (!schema || !schema.name) return toast("Entity name is required", "err")
         const r = await ctx.api.studio("model", "POST", { ...schema, schemaVersion: 1 })
-        ctx.toast(r.ok ? "Entity saved — restart nexus dev to load it" : r.error.code + ": " + (r.error.message || ""), r.ok ? "ok" : "err")
+        toast(r.ok ? "Entity saved — restart nexus dev to load it" : r.error.code + ": " + (r.error.message || ""), r.ok ? "ok" : "err")
     }
-    function mount() {
-        body.replaceChildren()
-        if (picker.value === "__new") {
-            const name = el("input", { class: "nx-input", placeholder: "Entity name (e.g. customer)" })
-            const builder = el("nx-form-builder")
-            const btn = el("button", { class: "nx-btn primary", text: ctx.t("createCollection"), onclick: () => save({ ...(builder.value || { fields: [] }), name: name.value.trim() }) })
-            body.append(el("div", { class: "nx-card" }, [el("div", { class: "nx-field" }, [el("label", { class: "nx-label", text: ctx.t("name") }), name]), builder, el("div", { class: "nx-actions" }, [btn])]))
+
+    const card = (children) => {
+        const wrap = document.createElement("div")
+        wrap.className = "nx-card"
+        wrap.append(...children)
+        return wrap
+    }
+    const actions = (btn) => {
+        const wrap = document.createElement("div")
+        wrap.className = "nx-actions"
+        wrap.append(btn)
+        return wrap
+    }
+
+    function mountBody() {
+        c.$body.replaceChildren()
+        if (c.$picker.value === "__new") {
+            const name = document.createElement("input")
+            name.className = "nx-input"
+            name.placeholder = "Entity name (e.g. customer)"
+            const fieldWrap = document.createElement("div")
+            fieldWrap.className = "nx-field"
+            const label = document.createElement("label")
+            label.className = "nx-label"
+            label.append(t("name"))
+            fieldWrap.append(label, name)
+            const builder = document.createElement("nx-form-builder")
+            const create = button({ variant: "primary", onclick: () => save({ ...(builder.value || { fields: [] }), name: name.value.trim() }) }, [t("createCollection")])
+            c.$body.append(card([fieldWrap, builder, actions(create)]))
         } else {
-            const designer = el("nx-schema-designer"); designer.baseline = ctx.schemas.find((s) => s.name === picker.value)
-            const btn = el("button", { class: "nx-btn primary", text: ctx.t("saveChanges"), onclick: () => save(designer.value) })
-            body.append(el("div", { class: "nx-card" }, [designer, el("div", { class: "nx-actions" }, [btn])]))
+            const designer = document.createElement("nx-schema-designer")
+            designer.baseline = ctx.schemas.find((s) => s.name === c.$picker.value)
+            const saveBtn = button({ variant: "primary", onclick: () => save(designer.value) }, [t("saveChanges")])
+            c.$body.append(card([designer, actions(saveBtn)]))
         }
     }
-    picker.addEventListener("change", mount)
-    mount()
-    return el("div", {}, [el("div", { class: "nx-head" }, [el("h1", { text: ctx.t("dataModel") }), el("span", { class: "nx-spacer" }), picker]), body])
+    c.$picker.addEventListener("change", mountBody)
+    mountBody()
+    return host
 }

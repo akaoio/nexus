@@ -1,47 +1,83 @@
 /**
  * Field interfaces & displays — the meta-model UI, generated from the Entity
  * schema exactly as the HTTP API is generated from it (Directus interfaces/
- * displays, Frappe controls). An INTERFACE edits a field by its type; a DISPLAY
- * renders a value read-only. Registered by `type`, so a new field type is a new
- * entry here — never per-field UI code. `buildForm`/`buildList` compose them.
+ * displays, Frappe controls). An INTERFACE edits a field by its type; a
+ * DISPLAY renders a value read-only. Registered by `type`, so a new field
+ * type is a new entry here — never per-field UI code. Raw platform elements
+ * + primitives only (the akao dynamic style): no ad-hoc DOM helpers.
  */
 
-import { el, icon } from "./lib.js"
+import { icon, button, t } from "./lib.js"
 
 const label = (field, locale) =>
     (field.label && (field.label[locale] || field.label.en || Object.values(field.label)[0])) || field.name
 
+/** One input element, classed and wired. */
+function control(tag, props, onchange) {
+    const node = document.createElement(tag)
+    node.className = "nx-input"
+    Object.assign(node, props)
+    if (onchange) node.addEventListener("change", onchange)
+    return node
+}
+
 // ── INTERFACES: type → (field, value, onChange) → input element ────────────────
 export const interfaces = {
-    text: (f, v, on) => el("input", { class: "nx-input", type: "text", value: v ?? "", onchange: (e) => on(e.target.value) }),
-    integer: (f, v, on) => el("input", { class: "nx-input", type: "number", step: "1", value: v ?? "", onchange: (e) => on(e.target.value === "" ? null : Math.trunc(Number(e.target.value))) }),
-    number: (f, v, on) => el("input", { class: "nx-input", type: "number", value: v ?? "", onchange: (e) => on(e.target.value === "" ? null : Number(e.target.value)) }),
-    boolean: (f, v, on) => el("label", { class: "nx-check" }, [el("input", { type: "checkbox", checked: !!v, onchange: (e) => on(e.target.checked) }), el("span", { text: label(f) })]),
-    date: (f, v, on) => el("input", { class: "nx-input", type: "date", value: (v ?? "").slice(0, 10), onchange: (e) => on(e.target.value || null) }),
-    datetime: (f, v, on) => el("input", { class: "nx-input", type: "datetime-local", value: (v ?? "").slice(0, 16), onchange: (e) => on(e.target.value || null) }),
-    select: (f, v, on) => el("select", { class: "nx-input", onchange: (e) => on(e.target.value || null) },
-        [el("option", { value: "", text: "—" }), ...(f.options ?? []).map((o) => el("option", { value: o, text: o, selected: v === o }))]),
-    link: (f, v, on) => el("input", { class: "nx-input", type: "text", placeholder: "id of " + (f.target || "linked"), value: v ?? "", onchange: (e) => on(e.target.value || null) })
+    text: (f, v, on) => control("input", { type: "text", value: v ?? "" }, (e) => on(e.target.value)),
+    integer: (f, v, on) => control("input", { type: "number", step: "1", value: v ?? "" }, (e) => on(e.target.value === "" ? null : Math.trunc(Number(e.target.value)))),
+    number: (f, v, on) => control("input", { type: "number", value: v ?? "" }, (e) => on(e.target.value === "" ? null : Number(e.target.value))),
+    boolean: (f, v, on) => {
+        const wrap = document.createElement("label")
+        wrap.className = "nx-check"
+        const box = document.createElement("input")
+        box.type = "checkbox"
+        box.checked = !!v
+        box.addEventListener("change", () => on(box.checked))
+        const text = document.createElement("span")
+        text.textContent = label(f)
+        wrap.append(box, text)
+        return wrap
+    },
+    date: (f, v, on) => control("input", { type: "date", value: (v ?? "").slice(0, 10) }, (e) => on(e.target.value || null)),
+    datetime: (f, v, on) => control("input", { type: "datetime-local", value: (v ?? "").slice(0, 16) }, (e) => on(e.target.value || null)),
+    select: (f, v, on) => {
+        const select = control("select", {}, (e) => on(e.target.value || null))
+        const none = document.createElement("option")
+        none.value = ""
+        none.textContent = "—"
+        select.append(none, ...(f.options ?? []).map((o) => {
+            const option = document.createElement("option")
+            option.value = o
+            option.textContent = o
+            option.selected = v === o
+            return option
+        }))
+        return select
+    },
+    link: (f, v, on) => control("input", { type: "text", placeholder: "id of " + (f.target || "linked"), value: v ?? "" }, (e) => on(e.target.value || null))
 }
 const editorFor = (field) => interfaces[field.type] || interfaces.text
 
 // ── DISPLAYS: type → value → cell content (string or element) ──────────────────
+const mark = (name, style) => {
+    const span = document.createElement("span")
+    span.setAttribute("style", style)
+    span.append(icon(name))
+    return span
+}
 export const displays = {
     boolean: (v) => (v === true || v === 1
-        ? el("span", { style: "color:var(--ok);display:inline-flex" }, [icon("check-lg")])
-        : v === false || v === 0 ? el("span", { class: "nx-muted", style: "display:inline-flex;opacity:.6" }, [icon("x")]) : ""),
-    select: (v) => (v == null || v === "" ? "" : el("span", { class: "nx-chip", text: String(v) })),
+        ? mark("check-lg", "color:var(--ok);display:inline-flex")
+        : v === false || v === 0 ? mark("x", "color:var(--muted);opacity:.6;display:inline-flex") : ""),
+    select: (v) => {
+        if (v == null || v === "") return ""
+        const chip = document.createElement("span")
+        chip.className = "nx-chip"
+        chip.textContent = String(v)
+        return chip
+    },
     datetime: (v) => (v ? String(v).replace("T", " ").slice(0, 16) : ""),
     default: (v) => (v == null ? "" : String(v))
-}
-const rendererFor = (type) => displays[type] || displays.default
-
-/** Column classes by type — data speaks mono, numbers align right. */
-const cellClass = (type, column) => {
-    if (column === "id") return "mono"
-    if (type === "integer" || type === "number") return "num"
-    if (type === "datetime" || type === "date") return "mono"
-    return ""
 }
 
 /** Editable columns of an Entity (system + user fields, minus child tables). */
@@ -56,22 +92,28 @@ export function editableFields(schema) {
  */
 export function buildForm(schema, { data = {}, onSubmit, submitLabel = "Save", locale } = {}) {
     const values = { ...data }
-    const form = el("form", {
-        class: "nx-form",
-        onsubmit: (e) => { e.preventDefault(); onSubmit?.(values) },
-        onkeydown: (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); onSubmit?.(values) } }
-    })
+    const form = document.createElement("form")
+    form.className = "nx-form"
+    form.addEventListener("submit", (e) => { e.preventDefault(); onSubmit?.(values) })
+    form.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); onSubmit?.(values) } })
     for (const field of editableFields(schema)) {
+        const wrap = document.createElement("div")
+        wrap.className = "nx-field"
         if (field.type === "boolean") {
             if (values[field.name] === undefined) values[field.name] = field.default ?? false
-            form.append(el("div", { class: "nx-field" }, [editorFor(field)(field, values[field.name], (val) => (values[field.name] = val))]))
         } else {
-            form.append(el("div", { class: "nx-field" }, [
-                el("label", { class: "nx-label", text: label(field, locale) + (field.required ? " *" : "") }),
-                editorFor(field)(field, values[field.name], (val) => (values[field.name] = val))
-            ]))
+            const l = document.createElement("label")
+            l.className = "nx-label"
+            l.textContent = label(field, locale) + (field.required ? " *" : "")
+            wrap.append(l)
         }
+        wrap.append(editorFor(field)(field, values[field.name], (val) => (values[field.name] = val)))
+        form.append(wrap)
     }
-    form.append(el("div", { class: "nx-actions" }, [el("button", { class: "nx-btn primary", type: "submit", text: submitLabel })]))
+    const actions = document.createElement("div")
+    actions.className = "nx-actions"
+    const submit = button({ variant: "primary", onclick: () => form.requestSubmit() }, [submitLabel === "Save" ? t("save") : submitLabel])
+    actions.append(submit)
+    form.append(actions)
     return form
 }

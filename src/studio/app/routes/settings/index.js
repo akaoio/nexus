@@ -1,29 +1,99 @@
-/** Settings module — edit nexus.config.json from the UI (reuses /_studio/config,
- *  the same safe ops as `nexus config`). */
-import { el } from "../../lib.js"
+/** /settings route — logic: edit nexus.config.json through /_studio/config
+ *  (the same safe ops as `nexus config`). */
 
-const sec = (title, kids) => el("div", { class: "nx-setsec" }, [el("h3", { text: title }), ...[].concat(kids)])
-const fld = (label, input) => el("div", { class: "nx-field", style: "max-width:26.25rem" }, [el("label", { class: "nx-label", text: label }), input])
+import { mountTemplate, button, toast } from "../../lib.js"
+import { settingsTemplate } from "./template.js"
+
+const section = (title, children) => {
+    const wrap = document.createElement("div")
+    wrap.className = "nx-setsec"
+    const h = document.createElement("h3")
+    h.textContent = title
+    wrap.append(h, ...[].concat(children))
+    return wrap
+}
+
+const field = (label, control) => {
+    const wrap = document.createElement("div")
+    wrap.className = "nx-field"
+    wrap.style.maxWidth = "26.25rem"
+    const l = document.createElement("label")
+    l.className = "nx-label"
+    l.textContent = label
+    wrap.append(l, control)
+    return wrap
+}
+
+const input = (props = {}) => {
+    const node = document.createElement("input")
+    node.className = "nx-input"
+    Object.assign(node, props)
+    return node
+}
 
 export function render(ctx) {
-    const body = el("div", { class: "nx-card" }, [el("p", { class: "nx-muted", text: "…" })])
+    const c = {}
+    const host = mountTemplate(settingsTemplate(c))
 
     async function load() {
         const r = await ctx.api.studio("config", "GET")
         const cfg = r.ok ? r.data.config : {}
-        const set = async (key, value) => { const rr = await ctx.api.studio("config", "POST", { key, value }); ctx.toast(rr.ok ? "Saved " + key + " — restart nexus dev to apply" : (rr.error && rr.error.code) || "error", rr.ok ? "ok" : "err") }
-        body.replaceChildren()
-        const name = el("input", { class: "nx-input", value: (cfg.site && cfg.site.name) || "", onchange: (e) => set("site.name", e.target.value) })
-        const loc = el("select", { class: "nx-input", onchange: (e) => set("site.locale", e.target.value) }, ctx.i18n.locales.map((c) => el("option", { value: c, text: ctx.i18n.names[c] || c, selected: ((cfg.site && cfg.site.locale) || "en") === c })))
-        body.append(sec("Site", [fld("Name", name), fld("Default locale", loc)]))
-        const eng = el("select", { class: "nx-input", onchange: (e) => set("database.engine", e.target.value) }, ["sqlite", "turso", "postgres", "mysql"].map((e) => el("option", { value: e, text: e, selected: ((cfg.database && cfg.database.engine) || "sqlite") === e })))
-        body.append(sec("Database", [fld("Engine (restart + install driver to apply)", eng)]))
-        body.append(sec("AI model", [el("p", { class: "nx-muted", text: "Current: " + ((cfg.semantic && cfg.semantic.model) || "none — switch it in the AI models panel") })]))
-        const k = el("input", { class: "nx-input", placeholder: "dot.path e.g. site.locale" })
-        const v = el("input", { class: "nx-input", placeholder: "value (JSON coerced)" })
-        const setb = el("button", { class: "nx-btn primary", text: "Set", onclick: async () => { let val = v.value; try { val = JSON.parse(val) } catch {} await set(k.value.trim(), val); load() } })
-        body.append(sec("Advanced", [el("div", { class: "nx-fields-row" }, [k, v, setb]), el("pre", { class: "nx-out", text: JSON.stringify(cfg, null, 2) })]))
+        const set = async (key, value) => {
+            const rr = await ctx.api.studio("config", "POST", { key, value })
+            toast(rr.ok ? "Saved " + key + " — restart nexus dev to apply" : (rr.error && rr.error.code) || "error", rr.ok ? "ok" : "err")
+        }
+        c.$body.replaceChildren()
+
+        const name = input({ value: cfg.site?.name ?? "" })
+        name.addEventListener("change", () => set("site.name", name.value))
+        const loc = document.createElement("select")
+        loc.className = "nx-input"
+        for (const code of ctx.i18n.locales) {
+            const option = document.createElement("option")
+            option.value = code
+            option.textContent = ctx.i18n.names[code] || code
+            option.selected = (cfg.site?.locale ?? "en") === code
+            loc.append(option)
+        }
+        loc.addEventListener("change", () => set("site.locale", loc.value))
+        c.$body.append(section("Site", [field("Name", name), field("Default locale", loc)]))
+
+        const eng = document.createElement("select")
+        eng.className = "nx-input"
+        for (const e of ["sqlite", "turso", "postgres", "mysql"]) {
+            const option = document.createElement("option")
+            option.value = e
+            option.textContent = e
+            option.selected = (cfg.database?.engine ?? "sqlite") === e
+            eng.append(option)
+        }
+        eng.addEventListener("change", () => set("database.engine", eng.value))
+        c.$body.append(section("Database", [field("Engine (restart + install driver to apply)", eng)]))
+
+        const model = document.createElement("p")
+        model.className = "nx-muted"
+        model.textContent = "Current: " + (cfg.semantic?.model ?? "none — switch it in the AI models panel")
+        c.$body.append(section("AI model", [model]))
+
+        const k = input({ placeholder: "dot.path e.g. site.locale" })
+        const v = input({ placeholder: "value (JSON coerced)" })
+        const apply = button({
+            variant: "primary",
+            onclick: async () => {
+                let value = v.value
+                try { value = JSON.parse(value) } catch {}
+                await set(k.value.trim(), value)
+                load()
+            }
+        }, ["Set"])
+        const row = document.createElement("div")
+        row.className = "nx-fields-row"
+        row.append(k, v, apply)
+        const out = document.createElement("pre")
+        out.className = "nx-out"
+        out.textContent = JSON.stringify(cfg, null, 2)
+        c.$body.append(section("Advanced", [row, out]))
     }
     load()
-    return el("div", {}, [el("div", { class: "nx-head" }, [el("h1", { text: ctx.t("settings") })]), body])
+    return host
 }

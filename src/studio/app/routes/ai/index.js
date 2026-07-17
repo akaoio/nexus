@@ -1,24 +1,63 @@
-/** AI models module — the embedding provider: status, and one-click switch.
- *  Weights are pulled from the terminal (nexus model pull). */
-import { el } from "../../lib.js"
+/** /ai route — logic: embedding model status and one-click switch. Weights
+ *  are pulled from the terminal (nexus model pull). */
+
+import { mountTemplate, button, toast } from "../../lib.js"
+import { aiTemplate } from "./template.js"
 
 export function render(ctx) {
-    const body = el("div", { class: "nx-card" }, [el("p", { class: "nx-muted", text: "…" })])
+    const c = {}
+    const host = mountTemplate(aiTemplate(c))
+
+    const p = (text, cls = "nx-muted") => {
+        const node = document.createElement("p")
+        node.className = cls
+        node.textContent = text
+        return node
+    }
 
     async function load() {
         const r = await ctx.api.studio("ai", "GET")
         const d = r.ok ? r.data : {}
-        body.replaceChildren()
-        body.append(el("p", { class: d.libInstalled ? "nx-muted" : "nx-err", text: "Mode: " + (d.mode || "?") + " · " + (d.libInstalled ? "library installed" : "library NOT installed — run: nexus model pull") }))
+        c.$body.replaceChildren(
+            p("Mode: " + (d.mode || "?") + " · " + (d.libInstalled ? "library installed" : "library NOT installed — run: nexus model pull"), d.libInstalled ? "nx-muted" : "nx-err")
+        )
         for (const m of d.models || []) {
-            const cur = m.id === d.model
-            const use = el("button", { class: cur ? "nx-btn primary" : "nx-btn", text: cur ? "In use" : "Use", disabled: cur, onclick: async () => { await ctx.api.studio("ai", "POST", { model: m.id }); ctx.toast("Model set — restart nexus dev to apply"); load() } })
-            body.append(el("div", { class: "nx-row" }, [el("div", { class: "nx-who" }, [el("div", { text: m.name }), el("div", { class: "nx-pub", text: m.dims + "d · " + m.langs + " · " + m.size + " · " + m.note })]), use]))
+            const current = m.id === d.model
+            const row = document.createElement("div")
+            row.className = "nx-row"
+            const who = document.createElement("div")
+            who.className = "nx-who"
+            const name = document.createElement("div")
+            name.textContent = m.name
+            const spec = document.createElement("div")
+            spec.className = "nx-pub"
+            spec.textContent = m.dims + "d · " + m.langs + " · " + m.size + " · " + m.note
+            who.append(name, spec)
+            const use = button({
+                variant: current ? "primary" : undefined, disabled: current,
+                onclick: async () => {
+                    await ctx.api.studio("ai", "POST", { model: m.id })
+                    toast("Model set — restart nexus dev to apply")
+                    load()
+                }
+            }, [current ? "In use" : "Use"])
+            row.append(who, use)
+            c.$body.append(row)
         }
-        const none = el("button", { class: d.model ? "nx-btn" : "nx-btn primary", text: "Keyword only", disabled: !d.model, onclick: async () => { await ctx.api.studio("ai", "POST", { model: null }); ctx.toast("Switched to keyword search"); load() } })
-        body.append(el("div", { class: "nx-toolbar", style: "margin-top:12px" }, [none]))
-        body.append(el("p", { class: "nx-muted", style: "font-size:12px", text: "Download weights with the nexus model pull command (shows % + MB). Restart nexus dev to apply." }))
+        const none = button({
+            variant: d.model ? undefined : "primary", disabled: !d.model,
+            onclick: async () => {
+                await ctx.api.studio("ai", "POST", { model: null })
+                toast("Switched to keyword search")
+                load()
+            }
+        }, ["Keyword only"])
+        const toolbar = document.createElement("div")
+        toolbar.className = "nx-toolbar"
+        toolbar.style.marginTop = "var(--sp-3)"
+        toolbar.append(none)
+        c.$body.append(toolbar, p("Download weights with the nexus model pull command (shows % + MB). Restart nexus dev to apply."))
     }
     load()
-    return el("div", {}, [el("div", { class: "nx-head" }, [el("h1", { text: ctx.t("ai", "AI models") })]), body])
+    return host
 }
