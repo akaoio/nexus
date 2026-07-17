@@ -1,6 +1,6 @@
 /** Settings module — edit nexus.config.json from the UI (reuses /_studio/config,
  *  the same safe ops as `nexus config`). */
-import { el } from "../lib.js"
+import { el } from "../../lib.js"
 
 const sec = (title, kids) => el("div", { class: "nx-setsec" }, [el("h3", { text: title }), ...[].concat(kids)])
 const fld = (label, input) => el("div", { class: "nx-field", style: "max-width:26.25rem" }, [el("label", { class: "nx-label", text: label }), input])

@@ -1,6 +1,6 @@
 /** Search module — global text/vector/hybrid search across readable Entities
  *  (<nx-search>), ranking inside permission. */
-import { el } from "../lib.js"
+import { el } from "../../lib.js"
 
 export function render(ctx) {
     const search = el("nx-search")

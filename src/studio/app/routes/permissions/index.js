@@ -2,7 +2,7 @@
  *  which embeds <nx-query-builder> for row rules). Loads the CURRENT policy
  *  set, saves it back and hot-applies — no restart. In DEV mode (no
  *  identities) it says, honestly, that policies are not enforced yet. */
-import { el } from "../lib.js"
+import { el } from "../../lib.js"
 
 export function render(ctx) {
     const mgr = el("nx-permission-manager")

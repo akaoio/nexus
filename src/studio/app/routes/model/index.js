@@ -1,6 +1,6 @@
 /** Entity module — the data model: create a new Entity or edit an existing one
  *  and SAVE (reuses <nx-form-builder> / <nx-schema-designer>). */
-import { el } from "../lib.js"
+import { el } from "../../lib.js"
 
 export function render(ctx) {
     const picker = el("select", { class: "nx-input", style: "max-width:280px" },

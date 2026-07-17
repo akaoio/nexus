@@ -1,6 +1,6 @@
 /** AI models module — the embedding provider: status, and one-click switch.
  *  Weights are pulled from the terminal (nexus model pull). */
-import { el } from "../lib.js"
+import { el } from "../../lib.js"
 
 export function render(ctx) {
     const body = el("div", { class: "nx-card" }, [el("p", { class: "nx-muted", text: "…" })])

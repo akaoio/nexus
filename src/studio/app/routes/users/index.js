@@ -1,7 +1,7 @@
 /** Users module — identities (ZEN pubkey + roles): who's who, add by key or
  *  "add me as admin", edit roles inline, remove. Changes hot-apply: adding the
  *  first identity turns authentication ON immediately (sign in right after). */
-import { el, icon } from "../lib.js"
+import { el, icon } from "../../lib.js"
 
 export function render(ctx) {
     const list = el("div", { class: "nx-card" }, [el("p", { class: "nx-muted", text: "…" })])

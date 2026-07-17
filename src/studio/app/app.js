@@ -7,13 +7,14 @@
 
 import { el, icon, toast, createApi, createI18n, createTheme } from "./lib.js"
 import { buildLayout, buildLogin } from "../layouts/studio/index.js"
-import * as content from "./modules/content.js"
-import * as entity from "./modules/entity.js"
-import * as permissions from "./modules/permissions.js"
-import * as users from "./modules/users.js"
-import * as ai from "./modules/ai.js"
-import * as settings from "./modules/settings.js"
-import * as search from "./modules/search.js"
+// routes — one FOLDER per route, nested like the URL (the akao routes shape)
+import * as content from "./routes/entity/[entity]/index.js"
+import * as entity from "./routes/model/index.js"
+import * as permissions from "./routes/permissions/index.js"
+import * as users from "./routes/users/index.js"
+import * as ai from "./routes/ai/index.js"
+import * as settings from "./routes/settings/index.js"
+import * as search from "./routes/search/index.js"
 // widgets the modules compose (register the custom elements) — imported via
 // their STABLE paths (the shims), which is the public component surface
 import "/_nexus/src/studio/query-builder.js"
@@ -112,13 +113,13 @@ const ctx = {
 function renderNav() {
     entNav.replaceChildren()
     for (const s of schemas) {
-        const a = el("a", { class: state.view === "content" && state.entity === s.name ? "active" : "", onclick: () => navigate("content", s.name) }, [el("span", { class: "ico" }, [icon("database")]), document.createTextNode(s.name)])
+        const a = el("a", { class: state.view === "content" && state.entity === s.name ? "active" : "", href: "#/entity/" + s.name }, [el("span", { class: "ico" }, [icon("database")]), document.createTextNode(s.name)])
         entNav.append(a)
     }
     nav.replaceChildren()
     for (const name of BUILD) {
         const m = MODULES[name]
-        const a = el("a", { class: state.view === name ? "active" : "", onclick: () => navigate(name) }, [el("span", { class: "ico" }, [icon(m.icon)]), document.createTextNode(i18n.t(m.key, m.label))])
+        const a = el("a", { class: state.view === name ? "active" : "", href: "#/" + name }, [el("span", { class: "ico" }, [icon(m.icon)]), document.createTextNode(i18n.t(m.key, m.label))])
         nav.append(a)
     }
 }

@@ -266,7 +266,8 @@ export async function dev(args, flags, out) {
         // needed because Studio components (e.g. the schema designer) import
         // the data layer, which imports the vendored Kysely.
         if (url.pathname.startsWith("/_nexus/")) {
-            const path = resolve(NEXUS_ROOT, "." + url.pathname.slice("/_nexus".length))
+            // decode %5B…%5D — akao-style [param] route folders live on disk
+            const path = resolve(NEXUS_ROOT, "." + decodeURIComponent(url.pathname).slice("/_nexus".length))
             const allowed = path.startsWith(join(NEXUS_ROOT, "src")) || path.startsWith(join(NEXUS_ROOT, "vendor"))
             if (!allowed || !existsSync(path) || !statSync(path).isFile()) {
                 res.writeHead(404, { "content-type": "text/plain" })
