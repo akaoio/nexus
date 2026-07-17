@@ -1,11 +1,12 @@
 /**
- * Studio shell — composes the modules into a themed, localized, mobile-first
- * admin. Reads boot data, builds the header + sidebar + router, and mounts a
- * module into <main> on navigation. All chrome text goes through i18n; the API
- * carries the session token; login gates when auth is required.
+ * Studio shell — the composition root: reads boot data, wires state, auth,
+ * i18n and theme, and mounts modules into the layout. The chrome itself
+ * (structure + styles) lives in layouts/studio (akao pattern); the widgets
+ * live in components/ as triads; this file only composes.
  */
 
 import { el, toast, createApi, createI18n, createTheme } from "./lib.js"
+import { buildLayout, buildLogin } from "../layouts/studio/index.js"
 import * as content from "./modules/content.js"
 import * as entity from "./modules/entity.js"
 import * as permissions from "./modules/permissions.js"
@@ -13,7 +14,8 @@ import * as users from "./modules/users.js"
 import * as ai from "./modules/ai.js"
 import * as settings from "./modules/settings.js"
 import * as search from "./modules/search.js"
-// widgets the modules compose (register the custom elements)
+// widgets the modules compose (register the custom elements) — imported via
+// their STABLE paths (the shims), which is the public component surface
 import "/_nexus/src/studio/query-builder.js"
 import "/_nexus/src/studio/form-builder.js"
 import "/_nexus/src/studio/schema-designer.js"
@@ -42,14 +44,7 @@ const MODULES = {
 }
 const BUILD = ["entity", "permissions", "users", "ai", "settings", "search"]
 
-const ctx = {
-    api, i18n, t: i18n.t, schemas, state, appName: boot.appName, embedder: boot.embedder, toast,
-    drawer: openDrawer, closeDrawer, navigate, deriveKeypair
-}
-
-// ── layout ─────────────────────────────────────────────────────────────────────
-const main = el("main", { class: "nx-main", id: "nx-main" })
-const nav = el("nav", { class: "nx-nav", id: "nx-nav" })
+// ── topbar widgets ─────────────────────────────────────────────────────────────
 const localeSel = el("select", { class: "nx-btn", style: "padding:7px 8px", onchange: (e) => { i18n.set(e.target.value); render() } },
     i18n.locales.map((c) => el("option", { value: c, text: i18n.names[c] || c, selected: c === i18n.locale })))
 const themeBtn = el("button", { class: "nx-btn icon", text: theme.icon(), title: "Theme", onclick: () => { theme.cycle(); themeBtn.textContent = theme.icon() } })
@@ -66,35 +61,32 @@ function embTitle(e) {
     return "No model configured and no Entity is indexed for search."
 }
 const embadge = el("span", { class: "nx-chip" + (boot.embedder.mode === "semantic" ? " on" : ""), text: embLabel(boot.embedder), title: embTitle(boot.embedder) })
-const app = el("div", { class: "nx-app", id: "nx-app" }, [
-    el("header", { class: "nx-top" }, [
-        el("button", { class: "nx-btn icon nx-hamb", text: "☰", onclick: () => app.classList.toggle("open") }),
-        el("span", { class: "nx-brand", html: "⬡ " + boot.site + " <small>Studio</small>" }),
-        el("span", { class: "nx-spacer" }), embadge, localeSel, themeBtn
-    ]),
-    el("div", { class: "nx-scrim", onclick: () => app.classList.remove("open") }),
-    el("aside", { class: "nx-side" }, [el("div", { class: "nx-grouplabel", text: i18n.t("collections") }), el("nav", { class: "nx-nav", id: "nx-nav-ent" }), el("div", { class: "nx-grouplabel", text: i18n.t("build") }), nav]),
-    main
-])
-const drawer = el("div", { class: "nx-drawer", id: "nx-drawer" }, [
-    el("div", { class: "nx-drawer-back", onclick: closeDrawer }),
-    el("div", { class: "nx-drawer-panel" }, [el("h2", { id: "nx-drawer-title" }), el("div", { id: "nx-drawer-slot" })])
-])
-const login = el("div", { class: "nx-login", id: "nx-login", hidden: true }, [
-    el("div", { class: "nx-card", style: "width:min(94vw,380px)" }, [
-        el("h2", { html: "⬡ " + boot.site, style: "margin:0 0 4px" }),
-        el("p", { class: "nx-muted", text: "Sign in" }),
-        el("div", { class: "nx-field" }, [el("label", { class: "nx-label", text: "Passphrase" }), el("input", { id: "nx-pass", class: "nx-input", type: "password", placeholder: "your secret passphrase", onkeydown: (e) => { if (e.key === "Enter") doLogin() } })]),
-        el("div", { class: "nx-actions" }, [el("button", { class: "nx-btn primary", style: "flex:1", text: "Sign in", onclick: doLogin })]),
-        el("div", { class: "nx-err", id: "nx-login-err" }),
-        el("p", { class: "nx-muted", style: "font-size:12px", text: "Your passphrase derives a ZEN keypair in this browser — no password is sent. An admin must add your public key first." })
-    ])
-])
-document.body.append(app, drawer, login)
 
-// ── navigation + render ─────────────────────────────────────────────────────────
+// ── layout ─────────────────────────────────────────────────────────────────────
+const layout = buildLayout({
+    site: boot.site,
+    badge: embadge,
+    localeSel,
+    themeBtn,
+    labels: { collections: i18n.t("collections"), build: i18n.t("build") }
+})
+const { app, main, nav, entNav, drawer, openDrawer, closeDrawer } = layout
+
+const login = buildLogin({ site: boot.site, onSubmit: doLogin })
+
+// the shell's footer is already in the body — the app mounts above it, overlays after
+const foot = document.querySelector("footer.nx-foot")
+if (foot) foot.before(app); else document.body.append(app)
+document.body.append(drawer, login)
+
+const ctx = {
+    api, i18n, t: i18n.t, schemas, state, appName: boot.appName, embedder: boot.embedder, toast,
+    drawer: openDrawer, closeDrawer, navigate, deriveKeypair
+}
+
+// ── navigation + render ────────────────────────────────────────────────────────
 function renderNav() {
-    const entNav = document.getElementById("nx-nav-ent"); entNav.replaceChildren()
+    entNav.replaceChildren()
     for (const s of schemas) {
         const a = el("a", { class: state.view === "content" && state.entity === s.name ? "active" : "", onclick: () => navigate("content", s.name) }, [el("span", { class: "ico", text: "▤" }), document.createTextNode(s.name)])
         entNav.append(a)
@@ -114,17 +106,21 @@ function render() {
 }
 function navigate(view, entity) { state.view = view; if (entity) state.entity = entity; app.classList.remove("open"); render() }
 
-// ── drawer ───────────────────────────────────────────────────────────────────
-function openDrawer(title, node) { document.getElementById("nx-drawer-title").textContent = title; const slot = document.getElementById("nx-drawer-slot"); slot.replaceChildren(node); drawer.classList.add("show") }
-function closeDrawer() { drawer.classList.remove("show") }
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer() })
+// ── keyboard ───────────────────────────────────────────────────────────────────
+document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeDrawer()
+    // "/" focuses the page's primary query box (Frappe's awesomebar habit)
+    if (e.key === "/" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName ?? "")) {
+        const box = main.querySelector("input")
+        if (box) { e.preventDefault(); box.focus() }
+    }
+})
 
-// ── auth ─────────────────────────────────────────────────────────────────────
-function showLogin(msg) { login.hidden = false; if (msg) document.getElementById("nx-login-err").textContent = msg }
+// ── auth ───────────────────────────────────────────────────────────────────────
+function showLogin(msg) { login.hidden = false; if (msg) login.querySelector("#nx-login-err").textContent = msg }
 async function checkSession() { const s = await api.session(); const d = s.ok ? s.data : { authRequired: false }; if (d.authRequired && !d.user) showLogin(); else login.hidden = true }
-async function doLogin() {
-    const err = document.getElementById("nx-login-err"); err.textContent = ""
-    const pass = document.getElementById("nx-pass").value
+async function doLogin(pass, err) {
+    err.textContent = ""
     if (!pass) return (err.textContent = "Enter a passphrase")
     try {
         const { ZEN, pair } = await deriveKeypair(pass)

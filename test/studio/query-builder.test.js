@@ -15,6 +15,7 @@ import {
     OPERATORS_BY_TYPE,
     emptyCondition,
     defaultValue,
+    activeFilter,
     normalize,
     prune,
     NxQueryBuilder
@@ -163,6 +164,26 @@ Test.describe("Studio — <nx-query-builder> (NXQ, browser)", () => {
         assert.equal(lastChange().valid, true)
         assert.deepEqual(lastChange().value.root.children[0], { field: "priority", operator: "isnull" })
         builder.remove()
+    })
+
+    Test.it("NXQ-18 Frappe-informed: dates open as between, numbers empty; activeFilter drops PENDING conditions", () => {
+        // fresh date conditions open as a range; fresh numerics start empty (pending)
+        assert.deepEqual(emptyCondition(schema({ fields: [field("when", "date")] })).operator, "between")
+        assert.equal(emptyCondition(schema({ fields: [field("n", "integer")] })).value, "")
+        // pending (empty-valued) conditions do not constrain the query at all
+        assert.equal(activeFilter({ op: "and", children: [{ field: "title", operator: "like", value: "" }] }), null)
+        // once a value exists the condition bites — and like auto-wraps %…%
+        assert.deepEqual(
+            activeFilter({ op: "and", children: [{ field: "title", operator: "like", value: "ship" }] }),
+            { op: "and", children: [{ field: "title", operator: "like", value: "%ship%" }] }
+        )
+        // between waits for BOTH bounds; in waits for at least one entry
+        assert.equal(activeFilter({ field: "points", operator: "between", value: ["", ""] }), null)
+        assert.equal(activeFilter({ field: "points", operator: "between", value: [1, ""] }), null)
+        assert.deepEqual(activeFilter({ field: "points", operator: "between", value: [1, 5] }), { field: "points", operator: "between", value: [1, 5] })
+        // valueless operators are always active; groups prune bottom-up
+        assert.deepEqual(activeFilter({ field: "title", operator: "isnull" }), { field: "title", operator: "isnull" })
+        assert.equal(activeFilter({ op: "not", children: [{ op: "or", children: [{ field: "title", operator: "like", value: "" }] }] }), null)
     })
 
     Test.it("NXQ-13 groups nest by click and prune cascades on removal", () => {

@@ -23,6 +23,7 @@ import { listUsers, addUser, removeUser, setRoles } from "../../app/users.js"
 import { MODELS, status as modelStatus, withModel } from "../../app/models.js"
 import { redact, setPath, unsetPath } from "../../app/config.js"
 import { randomBytes } from "crypto"
+import { fileURLToPath } from "url"
 
 const MIME = {
     ".html": "text/html; charset=utf-8",
@@ -38,7 +39,8 @@ const MIME = {
 
 // The Nexus package root — /_nexus/src/* serves the framework's own modules
 // (Studio components, kernel UI) to instance pages
-const NEXUS_ROOT = new URL("../../..", import.meta.url).pathname
+// fileURLToPath, not .pathname — the latter yields "/C:/…" on Windows, which resolve() mangles
+const NEXUS_ROOT = fileURLToPath(new URL("../../..", import.meta.url))
 
 export async function dev(args, flags, out) {
     const root = process.cwd()
@@ -70,6 +72,7 @@ export async function dev(args, flags, out) {
     // Data Plane + auth + API through the shared wiring. Dev mode falls back to
     // the loud DEV identity when no auth is configured (production refuses that).
     const { api, authState, challenges, engine, authMode, embedderInfo } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" })
+    const studioAuthAtBoot = authState.required
 
     const json = (res, code, obj) => {
         res.writeHead(code, { "content-type": "application/json; charset=utf-8" })
@@ -125,8 +128,16 @@ export async function dev(args, flags, out) {
 
         // Studio writes (DEV-ONLY): persist a content type or a permission set
         // the admin UI edited. Editing the schema is a dev activity (Strapi
-        // parity) — `nexus start` never exposes these routes. Applied on the
-        // next dev restart, which re-validates the whole instance.
+        // parity) — `nexus start` never exposes these routes.
+        // When the server BOOTED with auth on, every /_studio route except the
+        // whoami probe needs a signed-in identity. A session that booted open
+        // stays open until restart (adding identities flips the DATA API live,
+        // but not the studio surface you are configuring it from).
+        if (url.pathname.startsWith("/_studio/") && url.pathname !== "/_studio/session" && studioAuthAtBoot) {
+            const authz = req.headers["authorization"] ?? ""
+            const claims = authz.startsWith("Bearer ") ? verifyToken(authz.slice(7), authState.secret) : null
+            if (!claims) return json(res, 401, { ok: false, error: { code: "E_AUTH", message: "sign in to use the Studio" } })
+        }
         if (url.pathname === "/_studio/model" && req.method === "POST") {
             const doc = await readJson(req)
             if (!doc || typeof doc.name !== "string" || !/^[a-z][a-z0-9_]*$/.test(doc.name))
@@ -143,6 +154,15 @@ export async function dev(args, flags, out) {
                 return json(res, 500, { ok: false, error: { code: "E_WRITE", message: error.message } })
             }
         }
+        // The Studio-managed policy set: what the editor loads and saves.
+        // devMode tells the UI to say, honestly, that policies only bite once
+        // auth is on (the DEV identity is wide-open by design).
+        if (url.pathname === "/_studio/permissions" && req.method === "GET") {
+            const file = join(root, "apps", appName, "permissions", "studio.json")
+            let policies = []
+            try { policies = JSON.parse(readFileSync(file, "utf8")) } catch {}
+            return json(res, 200, { ok: true, data: { policies, devMode: !authState.required, live: appPolicies.length } })
+        }
         if (url.pathname === "/_studio/permissions" && req.method === "POST") {
             const body = await readJson(req)
             if (!body || !Array.isArray(body.policies)) return json(res, 400, { ok: false, error: { code: "E_REQUEST" } })
@@ -150,7 +170,12 @@ export async function dev(args, flags, out) {
                 const dir = join(root, "apps", appName, "permissions")
                 mkdirSync(dir, { recursive: true })
                 writeFileSync(join(dir, "studio.json"), JSON.stringify(body.policies, null, 4))
-                return json(res, 200, { ok: true, data: { count: body.policies.length, restart: true } })
+                // hot-apply: reload every app's policies into the LIVE array the
+                // request contexts read — no restart, immediately enforced
+                const fresh = loadInstance(root).policies
+                appPolicies.length = 0
+                appPolicies.push(...fresh)
+                return json(res, 200, { ok: true, data: { count: body.policies.length, applied: true } })
             } catch (error) {
                 return json(res, 500, { ok: false, error: { code: "E_WRITE", message: error.message } })
             }
@@ -169,7 +194,7 @@ export async function dev(args, flags, out) {
         // identity turns on required auth.
         if (url.pathname === "/_studio/users" && req.method === "GET") {
             const cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
-            return json(res, 200, { ok: true, data: { identities: listUsers(cfg) } })
+            return json(res, 200, { ok: true, data: { identities: listUsers(cfg), authRequired: authState.required } })
         }
         if (url.pathname === "/_studio/users" && req.method === "POST") {
             const body = await readJson(req)
@@ -182,7 +207,13 @@ export async function dev(args, flags, out) {
                 else if (body.action === "role") next = setRoles(next, body.pub, body.roles ?? [])
                 else return json(res, 400, { ok: false, error: { code: "E_ACTION" } })
                 writeFileSync(join(root, "nexus.config.json"), JSON.stringify({ ...cfg, identities: next }, null, 4) + "\n")
-                return json(res, 200, { ok: true, data: { identities: next, restart: true } })
+                // hot-apply: the auth layer reads this live array per request —
+                // adding the first identity turns required auth ON immediately
+                if (authState.identities) {
+                    authState.identities.length = 0
+                    authState.identities.push(...next)
+                }
+                return json(res, 200, { ok: true, data: { identities: next, applied: true, authRequired: authState.required } })
             } catch (error) {
                 return json(res, 400, { ok: false, error: { code: error.message.split(":")[0], message: error.message } })
             }
@@ -222,6 +253,13 @@ export async function dev(args, flags, out) {
         if (url.pathname === "/") {
             res.writeHead(200, { "content-type": MIME[".html"] })
             return res.end(studioIndex(config, schemas, { embedder: embedderInfo, appName, i18n }))
+        }
+        // The Studio stylesheet is COMPOSED from the css modules (akao triad
+        // layout) at request time — single source of truth, no build step.
+        if (url.pathname === "/_nexus/src/studio/app/studio.css") {
+            const { pageStyles } = await import("../../studio/css/page.css.js")
+            res.writeHead(200, { "content-type": MIME[".css"] })
+            return res.end(pageStyles)
         }
         // Framework modules for instance pages — /_nexus/{src,vendor}/* only,
         // resolved inside the Nexus package, traversal-guarded. vendor/ is

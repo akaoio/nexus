@@ -140,6 +140,9 @@ import "./test/studio/list-view.test.js"
 // Studio — saved views persisted through the Data Plane (clauses VIEW-*)
 import "./test/studio/views.test.js"
 
+// Studio — the selection model under bulk operations (clauses SEL-*)
+import "./test/studio/selection.test.js"
+
 // App system — manifest format (clauses MF-*)
 import "./test/app/manifest.test.js"
 

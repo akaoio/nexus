@@ -47,6 +47,8 @@ export function createApi({ onUnauthorized } = {}) {
         // domain helpers — the auto-generated API, one place
         list: (entity, filter) => req("POST", `/api/v1/${entity}/query`, { filter, limit: 100 }),
         create: (entity, data) => req("POST", `/api/v1/${entity}`, data),
+        update: (entity, id, data) => req("PATCH", `/api/v1/${entity}/${id}`, data),
+        remove: (entity, id) => req("DELETE", `/api/v1/${entity}/${id}`),
         ask: (entity, query) => req("POST", `/api/v1/${entity}/ask`, { query, limit: 100 }),
         search: (entity, query) => req("POST", `/api/v1/${entity}/search`, { query, mode: "hybrid" }),
         session: () => req("GET", "/_studio/session"),
