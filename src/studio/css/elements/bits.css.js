@@ -53,13 +53,16 @@ export const bits = /* css */ `
 }
 .nx-orbit > * { pointer-events: auto }
 nx-navigator .nx-planet {
-    font: inherit; color: var(--text); background: transparent; border: none; cursor: pointer;
+    font: inherit; color: var(--muted); cursor: pointer;
     width: 100%; height: 100%; border-radius: 50%;
+    background: var(--surface); border: var(--border-width, 1px) solid var(--border);
+    box-shadow: var(--shadow);
     display: flex; align-items: center; justify-content: center;
     font-family: var(--mono); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .04em;
+    transition: color var(--speed, 160ms), border-color var(--speed, 160ms);
 }
-nx-navigator .nx-planet:hover { color: var(--accent) }
-nx-navigator .nx-planet.on { color: var(--accent); font-weight: 700 }
+nx-navigator .nx-planet:hover { color: var(--accent); border-color: var(--accent) }
+nx-navigator .nx-planet.on { color: var(--accent); border-color: var(--accent); font-weight: 700 }
 nx-navigator .nx-planet nx-icon { --icon: 1.15rem }
 
 .nx-setsec { margin-bottom: var(--sp-5) }

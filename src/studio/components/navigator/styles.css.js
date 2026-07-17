@@ -92,6 +92,12 @@ export const STYLE = () => css`
                     pointer-events: none;
                 }
 
+                /* a toggle that carries an icon shows the ICON when closed and
+                   the hamburger→X only when open (else the two overlap) */
+                &:has(nx-icon[name]) > div {
+                    visibility: hidden;
+                }
+
                 div {
                     width: 50%;
                     aspect-ratio: 1 / 1;
@@ -125,6 +131,9 @@ export const STYLE = () => css`
                     & ~ #toggle {
                         nx-icon {
                             transform: translate(var(--x, 0px), var(--y, var(--center)));
+                        }
+                        > div {
+                            visibility: visible;
                         }
                         span {
                             display: flex;
