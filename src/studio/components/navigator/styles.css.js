@@ -1,9 +1,13 @@
 /**
- * <nx-navigator> styles — the akao orbital navigator, verbatim mechanics:
- * children sit on a circle by pure CSS trigonometry (--deg = 360°/total × i,
- * x = sin·rad, y = cos·rad), nesting cascades --level through slots, and
- * --active (open depth, counted up the ancestor chain) grows the orbit
- * radius — a solar system that lays itself out as children are added.
+ * <nx-navigator> styles — the akao orbital navigator, faithful mechanics:
+ * planets sit on a circle by pure CSS trigonometry (--deg = 360°/total × i,
+ * x = sin·rad, y = −cos·rad); nesting cascades --level through slots and
+ * --active (open depth up the ancestor chain) widens every ring. Opening
+ * translates the system by (−x, −y): a SUB-orbit recenters onto the
+ * system's heart, the ROOT rises from the bottom to the screen center
+ * (--center, svmin — the original), the hamburger morphs to an X, and a
+ * planet's icon flies back out to its orbit seat. Original spring:
+ * cubic-bezier(0, -2, 1, 2).
  */
 
 import { css } from "../../../kernel/UI/css.js"
@@ -15,7 +19,8 @@ export const STYLE = () => css`
         --level: 0;
         --active: -1;
         --rad: calc(var(--step) * (var(--active) - var(--level) + 1));
-        --transition: var(--speed, 160ms) cubic-bezier(0, -1.2, 1, 1.6);
+        --center: calc(50svmin - var(--size) * 0.5);
+        --transition: var(--speed, 160ms) cubic-bezier(0, -2, 1, 2);
         display: flex;
         justify-content: center;
         align-items: center;
@@ -28,11 +33,8 @@ export const STYLE = () => css`
         transition: var(--transition);
         width: var(--size); aspect-ratio: 1 / 1; border-radius: 50%;
     }
-    /* the akao recentering trick: an opened navigator translates by (-x,-y) —
-       a SUB-orbit slides back onto the system's center; the root (no --x/--y
-       from a parent) lifts diagonally off its corner so rings never clip. */
     nav:has(#state:checked) {
-        transform: translate(calc(var(--x, 22svmin) * -1), calc(var(--y, 22svmin) * -1));
+        transform: translate(calc(var(--x, 0px) * -1), calc(var(--y, var(--center)) * -1));
     }
     nav:has(#state:checked) #orbit { width: calc(var(--rad, 0px) * 2); opacity: 1 }
     #orbit {
@@ -49,12 +51,42 @@ export const STYLE = () => css`
         width: var(--size); height: var(--size); border-radius: 50%;
         display: flex; flex-direction: column; justify-content: center; align-items: center;
         cursor: pointer; position: absolute;
-        z-index: calc(var(--level) - var(--active) + 70);
+        z-index: calc(var(--level) - var(--active) + 75);
     }
-    #toggle:hover { border-color: var(--accent) }
-    #toggle nx-icon { pointer-events: none; color: var(--muted) }
+    #toggle:hover { background: var(--surface-2) }
+    #toggle:hover span { background: var(--accent) }
+    #toggle nx-icon {
+        position: absolute; display: flex; pointer-events: auto;
+        border-radius: 50%; transition: var(--transition); color: var(--muted);
+    }
+    #toggle nx-icon:not([name]) { display: none }
+    #toggle:hover nx-icon { color: var(--accent) }
+    #toggle nx-icon:active, #toggle div { pointer-events: none }
+    #toggle div {
+        width: 50%; aspect-ratio: 1 / 1; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center; position: relative;
+    }
+    #toggle div span {
+        position: absolute; height: 1px; width: 100%;
+        transition: var(--transition); background: var(--text);
+    }
+    #toggle div span:nth-child(1) { transform: translateY(calc(var(--size) * 0.15)) }
+    #toggle div span:nth-child(3) { transform: translateY(calc(var(--size) * -0.15)) }
+    /* an icon-bearing toggle shows its icon, not the hamburger, when closed */
+    nav:has(nx-icon[name]) #toggle div span { opacity: 0 }
     #state { appearance: none; display: none }
-    #state:checked ~ #toggle nx-icon { color: var(--accent) }
+
+    /* ── open ── */
+    #state:checked ~ #toggle nx-icon {
+        transform: translate(var(--x, 0px), var(--y, var(--center)));
+    }
+    #state:checked ~ #toggle div span {
+        opacity: 1; display: flex;
+    }
+    #state:checked ~ #toggle div span:nth-child(1) { transform: translateY(0) rotate(45deg) }
+    #state:checked ~ #toggle div span:nth-child(2) { opacity: 0 }
+    #state:checked ~ #toggle div span:nth-child(3) { transform: translateY(0) rotate(-45deg) }
+
     section {
         aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center;
         position: absolute;

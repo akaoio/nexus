@@ -20,6 +20,7 @@ export class NxNavigator extends HTMLElement {
 
     connectedCallback() {
         if (this.dataset.icon) this.$icon.setAttribute("name", this.dataset.icon)
+        else this.$icon.removeAttribute("name")
 
         // --active: how many levels are open along MY ancestor chain — the
         // outermost navigator carries it so every ring sizes consistently.

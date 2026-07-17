@@ -36,7 +36,7 @@ export const layoutTemplate = (c, { site, badge }) => html`
         </aside>
         <main class="nx-main" id="nx-main" ${({ element }) => (c.main = element)}></main>
         <span class="nx-orbit">
-            <nx-navigator data-icon="sliders">
+            <nx-navigator>
                 <nx-locales></nx-locales>
                 <nx-themes></nx-themes>
             </nx-navigator>
