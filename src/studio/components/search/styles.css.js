@@ -5,8 +5,7 @@ import { css } from "../../../core/UI/css.js"
 export const STYLE = () => css`
     :host { font-family: var(--font, system-ui); font-size: var(--text-md, 0.875rem); display: block }
     input.query {
-        font: inherit; padding: 0.5rem 0.625rem; border: 1px solid var(--border, #94a3b8);
-        border-radius: var(--radius-sm, 0.375rem); background: var(--surface, transparent); color: inherit; width: 100%;
+        font: inherit; padding: 0.5rem 0.625rem; border: none; background: var(--surface-2, #8882); background: var(--surface, transparent); color: inherit; width: 100%;
     }
     input.query:focus { border-color: var(--accent, #0ea5e9); outline: none }
     .entity-head { font-weight: 600; margin: 0.625rem 0 0.125rem; color: var(--accent, #0ea5e9) }

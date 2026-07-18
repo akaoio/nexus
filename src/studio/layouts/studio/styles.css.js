@@ -12,7 +12,7 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
 .nx-top {
     position: sticky; top: 0; z-index: 30; display: flex; gap: var(--sp-3); align-items: center;
     padding: 0.625rem 0.875rem; background: color-mix(in srgb, var(--surface) 92%, transparent);
-    backdrop-filter: saturate(1.4) blur(0.5rem); border-bottom: 1px solid var(--border);
+    backdrop-filter: saturate(1.4) blur(0.5rem);
 }
 .nx-brand { font-weight: 700; letter-spacing: -0.01em }
 .nx-brand .hex { color: var(--accent) }
@@ -21,7 +21,7 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
 .nx-app { display: block }
 .nx-side {
     position: fixed; top: 0; left: 0; bottom: 0; width: min(84vw, 18.75rem); z-index: 50;
-    background: var(--surface); border-right: 1px solid var(--border);
+    background: var(--surface);
     transform: translateX(-100%); transition: transform var(--ease); overflow-y: auto; padding: 0.875rem;
 }
 .nx-app.open .nx-side { transform: none }
@@ -34,12 +34,14 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
 
 .nx-grouplabel { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0.875rem 0.375rem 0.375rem }
 .nx-nav a {
-    display: flex; gap: 0.5625rem; align-items: center; padding: 0.5rem 0.625rem; border-radius: var(--radius-sm);
-    color: inherit; text-decoration: none; cursor: pointer; border-left: 0.125rem solid transparent;
+    display: flex; gap: 0.5625rem; align-items: center; padding: 0.5rem 0.625rem;
+    color: inherit; text-decoration: none; cursor: pointer;
 }
 .nx-nav a:hover { background: var(--surface-2) }
-.nx-nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; border-left-color: var(--accent) }
+.nx-nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: inset 0.125rem 0 0 var(--accent) }
 .nx-nav a .ico { width: 1.125rem; text-align: center }
+/* settings children — indented under their parent, the URL shape made visible */
+.nx-nav a.sub { padding-left: 1.9375rem; font-size: var(--text-sm) }
 
 @media (min-width: 53.75rem) {
     .nx-hamb { display: none }
@@ -56,7 +58,7 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
 .nx-drawer-back { position: absolute; inset: 0; background: hsl(var(--h1) 84% 5% / 0.45) }
 .nx-drawer-panel {
     position: absolute; top: 0; right: 0; bottom: 0; width: min(94vw, 28.75rem);
-    background: var(--surface); border-left: 1px solid var(--border); box-shadow: var(--shadow);
+    background: var(--surface); box-shadow: var(--shadow);
     padding: 1.125rem; overflow-y: auto;
 }
 .nx-drawer-panel h2 { margin: 0 0 0.75rem; font-size: var(--text-lg) }
@@ -66,16 +68,15 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
 .nx-login[hidden] { display: none }
 .nx-toasts { position: fixed; bottom: 1rem; right: 1rem; z-index: 90; display: flex; flex-direction: column; gap: 0.5rem; max-width: min(92vw, 23.75rem) }
 .nx-toast {
-    background: var(--surface); border: 1px solid var(--border); border-left: 0.1875rem solid var(--accent);
-    border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 0.625rem 0.875rem; font-size: var(--text-md);
+    background: var(--surface); box-shadow: inset 0.1875rem 0 0 var(--accent), var(--shadow); padding: 0.625rem 0.875rem; font-size: var(--text-md);
     transition: opacity var(--ease);
 }
-.nx-toast.ok { border-left-color: var(--ok) }
-.nx-toast.err { border-left-color: var(--danger) }
+.nx-toast.ok { box-shadow: inset 0.1875rem 0 0 var(--ok), var(--shadow) }
+.nx-toast.err { box-shadow: inset 0.1875rem 0 0 var(--danger), var(--shadow) }
 
 .nx-form { max-width: 26.25rem }
-footer.nx-foot { color: var(--muted); font-size: var(--text-sm); border-top: 1px solid var(--border); margin: 1.5rem 0.875rem; padding-top: 0.875rem }
-footer.nx-foot code { font-family: var(--mono); background: var(--surface-2); padding: .1em .4em; border-radius: 0.3125rem }
+footer.nx-foot { color: var(--muted); font-size: var(--text-sm); margin: 1.5rem 0.875rem; padding-top: 0.875rem }
+footer.nx-foot code { font-family: var(--mono); background: var(--surface-2); padding: .1em .4em}
 @media (min-width: 53.75rem) { footer.nx-foot { margin-left: 17.125rem } }
 `
 

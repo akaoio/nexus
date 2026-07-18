@@ -10,10 +10,9 @@ import { html } from "../../../core/UI.js"
 import "../../components/icon/index.js"
 import "../../components/context/index.js"
 import "../../components/button/index.js"
-import "../../components/navigator/index.js"
 import "../../components/user/index.js"
 
-export const layoutTemplate = (c, { site, badge }) => html`
+export const layoutTemplate = (c, { site }) => html`
     <div class="nx-app" ${({ element }) => (c.app = element)}>
         <header class="nx-top">
             <nx-button data-variant="icon" class="nx-hamb" data-icon="list"
@@ -24,7 +23,6 @@ export const layoutTemplate = (c, { site, badge }) => html`
                 <small>Studio</small>
             </span>
             <span class="nx-spacer"></span>
-            <span ${({ element }) => element.replaceWith(badge)}></span>
             <nx-user ${({ element }) => (c.user = element)}></nx-user>
         </header>
         <div class="nx-scrim" ${({ element }) => element.addEventListener("click", () => c.app.classList.remove("open"))}></div>
@@ -35,12 +33,6 @@ export const layoutTemplate = (c, { site, badge }) => html`
             <nav class="nx-nav" id="nx-nav" ${({ element }) => (c.nav = element)}></nav>
         </aside>
         <main class="nx-main" id="nx-main" ${({ element }) => (c.main = element)}></main>
-        <span class="nx-orbit">
-            <nx-navigator>
-                <nx-navigator data-icon="translate" ${({ element }) => (c.localesNav = element)}></nx-navigator>
-                <nx-navigator data-icon="circle-half" ${({ element }) => (c.themesNav = element)}></nx-navigator>
-            </nx-navigator>
-        </span>
     </div>
 `
 

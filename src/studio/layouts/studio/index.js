@@ -19,10 +19,10 @@ function mount(template) {
  * caller through the returned refs.
  * @returns {{ app, main, nav, entNav, drawer, openDrawer, closeDrawer }}
  */
-export function buildLayout({ site, badge }) {
+export function buildLayout({ site }) {
     const c = {}
     c.closeDrawer = () => c.drawer.classList.remove("show")
-    mount(layoutTemplate(c, { site, badge }))
+    mount(layoutTemplate(c, { site }))
     mount(drawerTemplate(c))
 
     function openDrawer(title, node) {
@@ -32,7 +32,7 @@ export function buildLayout({ site, badge }) {
         c.drawerSlot.querySelector("input, select, textarea, button, nx-button")?.focus?.()
     }
 
-    return { app: c.app, main: c.main, nav: c.nav, entNav: c.entNav, drawer: c.drawer, user: c.user, localesNav: c.localesNav, themesNav: c.themesNav, openDrawer, closeDrawer: c.closeDrawer }
+    return { app: c.app, main: c.main, nav: c.nav, entNav: c.entNav, drawer: c.drawer, user: c.user, openDrawer, closeDrawer: c.closeDrawer }
 }
 
 /** The sign-in panel (ZEN passphrase → keypair; no password ever sent). */

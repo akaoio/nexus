@@ -8,10 +8,10 @@ export const controls = /* css */ `
 button, select, input, textarea { font: inherit; color: inherit }
 [hidden] { display: none !important }
 button { cursor: pointer }
-:focus-visible { outline: 0.125rem solid var(--accent); outline-offset: 1px; border-radius: var(--radius-sm) }
+:focus-visible { outline: 0.125rem solid var(--accent); outline-offset: 1px}
 
 .nx-btn {
-    border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-sm);
+    border: none; background: var(--surface-2);
     padding: 0 0.75rem; min-height: var(--control-h); display: inline-flex; gap: 0.375rem; align-items: center; justify-content: center;
     transition: border-color var(--ease), background var(--ease);
 }
@@ -23,7 +23,7 @@ button { cursor: pointer }
 .nx-btn[disabled] { opacity: .55; cursor: default }
 
 .nx-input {
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    border: none; background: var(--surface-2);
     padding: 0 0.625rem; min-height: var(--control-h); width: 100%; transition: border-color var(--ease);
 }
 .nx-input:focus { border-color: var(--accent); outline: none }

@@ -7,7 +7,7 @@
  * is the spec; this file merely earns it.
  *
  * Envelope: { schemaVersion: 1, name, fields: [...] } plus optional label,
- * indexes, semantic, permissions. The format is frozen (N4): unknown keys are
+ * indexes, semantic, permissions, views. The format is frozen (N4): unknown keys are
  * errors; evolution happens in a new schemaVersion. Every entity implicitly
  * carries the system fields id, owner, created_at, updated_at.
  *
@@ -31,7 +31,7 @@ export const SYSTEM_FIELDS = Object.freeze(["id", "owner", "created_at", "update
 const NAME_RE = /^[a-z][a-z0-9_]*$/
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/
-const SCHEMA_KEYS = ["schemaVersion", "name", "label", "fields", "indexes", "semantic", "permissions"]
+const SCHEMA_KEYS = ["schemaVersion", "name", "label", "fields", "indexes", "semantic", "permissions", "views"]
 const FIELD_KEYS = ["name", "type", "label", "required", "unique", "default", "options", "target", "permlevel"]
 const OVERRIDABLE = ["label", "default", "options"]
 const REINDEX_MODES = ["on_update", "manual"]
@@ -74,6 +74,14 @@ export function validate(schema) {
 
     if ("indexes" in schema) validateIndexes(schema.indexes, seen, errors)
     if ("semantic" in schema) validateSemantic(schema.semantic, seen, errors)
+
+    // views are OPT-IN presentation declarations: unique lowercase ids. The
+    // vocabulary stays open here — the Studio registry decides what renders.
+    if ("views" in schema) {
+        const v = schema.views
+        if (!Array.isArray(v) || v.length === 0 || !v.every((x) => typeof x === "string" && NAME_RE.test(x)) || new Set(v).size !== v.length)
+            errors.push({ code: "E_VIEWS", path: "/views" })
+    }
 
     return errors.length ? { valid: false, errors } : { valid: true }
 }

@@ -96,8 +96,9 @@ export async function dev(args, flags, out) {
         })
 
     // The Studio's route table — the same patterns the client router uses.
-    const STUDIO_ROUTES = ["/entity/[entity]", "/[view]"]
-    const STUDIO_VIEWS = new Set(["entity", "permissions", "users", "ai", "settings", "search"])
+    const STUDIO_ROUTES = ["/entity/[entity]", "/settings/[feature]", "/[view]"]
+    const STUDIO_VIEWS = new Set(["entity", "permissions", "users", "settings", "search"])
+    const STUDIO_SETTINGS = new Set(["ai", "locales", "themes"])
     function routeMatches(pathname) {
         if (/\.[^/]+$/.test(pathname) || pathname.includes("/.")) return false // files + dotpaths are never routes
         const locales = i18n.locales.map((code) => ({ code }))
@@ -107,6 +108,7 @@ export async function dev(args, flags, out) {
         if (segments.length && (i18n.locales.includes(segments[0]) || /^[a-z]{2}(-[A-Z]{2})?$/.test(segments[0]))) segments.shift()
         if (!segments.length) return true // "/" or a bare locale prefix
         if (r.route === "/entity/[entity]") return schemas.some((s) => s.name === r.params.entity)
+        if (r.route === "/settings/[feature]") return STUDIO_SETTINGS.has(r.params.feature)
         if (r.route === "/[view]") return STUDIO_VIEWS.has(r.params.view)
         return false
     }

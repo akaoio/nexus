@@ -12,7 +12,6 @@ import * as content from "./routes/entity/[entity]/index.js"
 import * as entity from "./routes/model/index.js"
 import * as permissions from "./routes/permissions/index.js"
 import * as users from "./routes/users/index.js"
-import * as ai from "./routes/ai/index.js"
 import * as settings from "./routes/settings/index.js"
 import * as search from "./routes/search/index.js"
 // widgets the routes compose (register the custom elements) — each component's
@@ -31,7 +30,7 @@ const boot = JSON.parse(document.getElementById("nx-boot").textContent)
 const schemas = boot.schemas
 const i18n = createI18n(boot.i18n)
 const theme = createTheme()
-const state = { view: schemas[0] ? "content" : "entity", entity: schemas[0] ? schemas[0].name : null }
+const state = { view: schemas[0] ? "content" : "entity", entity: schemas[0] ? schemas[0].name : null, feature: null }
 const api = createApi({ onUnauthorized: () => showLogin() })
 
 // the akao `a` primitive pre-caches what it points to — wire its fetcher
@@ -65,39 +64,20 @@ const deriveKeypair = async (passphrase) => {
     }
 }
 
-// the route registry (order = sidebar "Build" order)
+// the route registry (order = sidebar "Build" order); settings carries its
+// feature children (/settings/<feature>) — the hub delegates by state.feature
 const MODULES = {
     content: { render: content.render },
     entity: { icon: "plus-lg", key: "dataModel", render: entity.render },
     permissions: { icon: "shield-lock", key: "permissions", render: permissions.render },
     users: { icon: "person", key: "users", render: users.render },
-    ai: { icon: "stars", key: "ai", render: ai.render },
-    settings: { icon: "gear", key: "settings", render: settings.render },
-    search: { icon: "search", key: "search", render: search.render }
+    search: { icon: "search", key: "search", render: search.render },
+    settings: { icon: "gear", key: "settings", render: settings.render }
 }
-const BUILD = ["entity", "permissions", "users", "ai", "settings", "search"]
-
-import { mountLocales, mountThemes } from "./navigators.js"
-
-const shortModel = (id) => (id ? id.split("/").pop().replace(/-ONNX$/i, "") : "model")
-function embLabel(e) {
-    if (e.mode === "semantic") return "semantic · " + shortModel(e.name)
-    if (e.mode === "lexical") return e.wanted ? "model not installed" : "lexical"
-    return "no embedder"
-}
-function embTitle(e) {
-    if (e.mode === "semantic") return "Semantic search via " + e.name + (e.indexed === false ? " — but no Entity declares a semantic: block yet" : "")
-    if (e.mode === "lexical" && e.wanted) return e.wanted + " is set but @huggingface/transformers is not installed — run: nexus model pull"
-    if (e.mode === "lexical") return "Keyword search. Set a model in AI models for semantic ranking."
-    return "No model configured and no Entity is indexed for search."
-}
-const embadge = document.createElement("span")
-embadge.className = "nx-chip" + (boot.embedder.mode === "semantic" ? " on" : "")
-embadge.textContent = embLabel(boot.embedder)
-embadge.title = embTitle(boot.embedder)
+const BUILD = ["entity", "permissions", "users", "search", "settings"]
 
 // ── layout ─────────────────────────────────────────────────────────────────────
-const layout = buildLayout({ site: boot.site, badge: embadge })
+const layout = buildLayout({ site: boot.site })
 const { app, main, nav, entNav, drawer, openDrawer, closeDrawer } = layout
 
 const { login, passkeyRow } = buildLogin({ site: boot.site, onSubmit: doLogin, onPasskey: passkeyLogin })
@@ -112,7 +92,7 @@ if (foot) foot.before(app); else document.body.append(app)
 document.body.append(drawer, login)
 
 const ctx = {
-    api, i18n, schemas, state, appName: boot.appName, embedder: boot.embedder, toast,
+    api, i18n, theme, schemas, state, appName: boot.appName, embedder: boot.embedder, toast,
     drawer: openDrawer, closeDrawer, navigate, deriveKeypair
 }
 
@@ -139,14 +119,28 @@ function renderNav() {
             label: document.createTextNode(s.name)
         })
     ))
-    nav.replaceChildren(...BUILD.map((name) =>
-        navLink({
+    nav.replaceChildren(...BUILD.flatMap((name) => {
+        const links = [navLink({
             to: "/" + name,
-            active: state.view === name,
+            active: state.view === name && (name !== "settings" || !state.feature),
             iconName: MODULES[name].icon,
             label: text(MODULES[name].key)
-        })
-    ))
+        })]
+        // settings children ride indented under their parent — the URL shape
+        // /settings/<feature> IS the sidebar shape (no orbit, no second nav)
+        if (name === "settings")
+            for (const [id, feature] of Object.entries(settings.FEATURES)) {
+                const link = navLink({
+                    to: "/settings/" + id,
+                    active: state.view === "settings" && state.feature === id,
+                    iconName: feature.icon,
+                    label: text(feature.key, id)
+                })
+                link.classList.add("sub")
+                links.push(link)
+            }
+        return links
+    }))
 }
 
 function render() {
@@ -156,7 +150,7 @@ function render() {
 }
 
 // ── routing — REAL paths, locale-prefixed: /vi/entity/task (the akao shape) ───
-const ROUTES = ["/entity/[entity]", "/[view]"]
+const ROUTES = ["/entity/[entity]", "/settings/[feature]", "/[view]"]
 const LOCALES = i18n.locales.map((code) => ({ code }))
 const hrefFor = (to) => Router.process({ path: to, routes: ROUTES, locales: LOCALES, locale: i18n.locale }).path
 
@@ -167,8 +161,12 @@ function applyRoute() {
     if (r.route === "/entity/[entity]" && schemas.some((s) => s.name === r.params.entity)) {
         state.view = "content"
         state.entity = r.params.entity
+    } else if (r.route === "/settings/[feature]" && settings.FEATURES[r.params.feature]) {
+        state.view = "settings"
+        state.feature = r.params.feature
     } else if (r.route === "/[view]" && MODULES[r.params.view] && r.params.view !== "content") {
         state.view = r.params.view
+        state.feature = null
     }
     // canonicalize (adds the locale prefix and the trailing slash)
     if (location.pathname !== r.path) history.replaceState({}, "", r.path + location.search)
@@ -176,8 +174,10 @@ function applyRoute() {
     render()
 }
 window.addEventListener("popstate", applyRoute)
-function navigate(view, entity) {
-    const to = view === "content" ? "/entity/" + (entity ?? state.entity) : "/" + view
+function navigate(view, entity, feature) {
+    const to = view === "content" ? "/entity/" + (entity ?? state.entity)
+        : view === "settings" && feature ? "/settings/" + feature
+        : "/" + view
     const path = hrefFor(to)
     if (location.pathname !== path) history.pushState({}, "", path)
     applyRoute()
@@ -257,8 +257,4 @@ async function passkeyLogin(err) {
 
 if (location.hash.startsWith("#/")) history.replaceState({}, "", location.hash.slice(1)) // legacy hash links
 applyRoute() // route from the URL (deep links work); falls back to the default state
-// populate the orbit AFTER routing so the active locale/theme marker is
-// correct on load (the URL's locale prefix may differ from the stored one)
-mountLocales(layout.localesNav, { current: i18n.locale, onSelect: (code) => { i18n.set(code); navigate(state.view, state.entity) } })
-mountThemes(layout.themesNav, { current: theme.value, onSelect: (mode) => theme.set(mode) })
 checkSession()

@@ -14,9 +14,13 @@
 import * as list from "./list.js"
 import * as kanban from "./kanban.js"
 
+/** The views an entity DECLARES (Model Schema `views:`); absent = list only.
+ *  A view is never automatic — the schema opts in (the author's rule). */
+export const declaredViews = (schema) => (Array.isArray(schema?.views) ? schema.views : ["list"])
+
 export const VIEWS = [
-    { id: "list", icon: "list-ul", label: "List", render: list.render, available: () => true },
-    { id: "kanban", icon: "kanban", label: "Kanban", render: kanban.render, available: (schema) => kanban.boardField(schema) !== null }
+    { id: "list", icon: "list-ul", label: "List", render: list.render, available: (schema) => declaredViews(schema).includes("list") },
+    { id: "kanban", icon: "kanban", label: "Kanban", render: kanban.render, available: (schema) => declaredViews(schema).includes("kanban") && kanban.boardField(schema) !== null }
 ]
 
 export default { VIEWS }

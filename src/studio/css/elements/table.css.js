@@ -3,7 +3,7 @@
 export const table = /* css */ `
 .nx-table { border-collapse: collapse; width: 100%; font-size: var(--text-md) }
 .nx-table th, .nx-table td {
-    border-bottom: 1px solid var(--border); padding: 0.5rem 0.625rem; text-align: left;
+     padding: 0.5rem 0.625rem; text-align: left;
     max-width: 16.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .nx-table th {

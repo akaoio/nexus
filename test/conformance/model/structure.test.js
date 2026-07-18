@@ -71,6 +71,14 @@ Test.describe("Model Schema v1 — structure (MS-S)", () => {
         assert.truthy(hasError(Model.validate(schema({ fields: [f] })), "E_FIELD_KEYS"))
     })
 
+    Test.it("MS-S12 views are opt-in declarations: unique lowercase ids — else E_VIEWS", () => {
+        assert.equal(Model.validate(schema({ views: ["list", "kanban"] })).valid, true)
+        assert.truthy(hasError(Model.validate(schema({ views: [] })), "E_VIEWS"), "empty array")
+        assert.truthy(hasError(Model.validate(schema({ views: ["list", "list"] })), "E_VIEWS"), "duplicates")
+        assert.truthy(hasError(Model.validate(schema({ views: ["List"] })), "E_VIEWS"), "case rule")
+        assert.truthy(hasError(Model.validate(schema({ views: "kanban" })), "E_VIEWS"), "not an array")
+    })
+
     Test.it("MS-S10 labels are i18n maps of strings — else E_LABEL", () => {
         assert.equal(Model.validate(schema({ label: { en: "Customer", vi: "Khách hàng" } })).valid, true)
         assert.truthy(hasError(Model.validate(schema({ label: "Customer" })), "E_LABEL"))

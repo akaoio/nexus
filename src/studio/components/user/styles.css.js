@@ -7,7 +7,7 @@ export const STYLE = () => css`
     :host([data-pub]) { display: inline-flex }
     button {
         font: inherit; cursor: pointer; background: var(--surface);
-        border: var(--border-width, 1px) solid var(--border); border-radius: var(--radius-sm, 0.375rem);
+        background: var(--surface-2);
         min-height: var(--control-h, 2.25rem); padding: 0 0.5rem;
         display: inline-flex; gap: 0.5rem; align-items: center; color: var(--accent);
     }

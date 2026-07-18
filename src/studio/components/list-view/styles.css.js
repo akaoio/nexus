@@ -6,13 +6,12 @@ export const STYLE = () => css`
     :host { font-family: var(--font, system-ui); font-size: var(--text-md, 0.875rem); display: block }
     .bar { display: flex; gap: 0.5rem; align-items: center; margin: 0.375rem 0 }
     select, button {
-        font: inherit; padding: 0.1875rem 0.5rem; border: 1px solid var(--border, #94a3b8);
-        border-radius: var(--radius-sm, 0.25rem); background: var(--surface, transparent); color: inherit; cursor: pointer;
+        font: inherit; padding: 0.1875rem 0.5rem; border: none; background: var(--surface-2, #8882); background: var(--surface, transparent); color: inherit; cursor: pointer;
     }
     button:hover { border-color: var(--accent, #64748b) }
     table { border-collapse: collapse; width: 100% }
     th, td {
-        border-bottom: 1px solid var(--border, #94a3b833); padding: 0.375rem 0.625rem; text-align: left;
+         padding: 0.375rem 0.625rem; text-align: left;
         max-width: 13.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     th {

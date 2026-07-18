@@ -8,7 +8,9 @@
  * is a new --h2. Custom properties inherit into shadow roots — components
  * consume vars and never hardcode.
  *
- * Identity: amber (--h2: 41) on blue-slate (--h1: 216), mono voice for data.
+ * Identity: limegreen (--h2: 120) on blue-slate (--h1: 216), mono voice for
+ * data. EVERY corner is square (--radius pinned to 0 — nothing rounds), and
+ * separation prefers background tints over border lines.
  */
 
 export const tokens = /* css */ `
@@ -36,9 +38,10 @@ export const tokens = /* css */ `
     --icon-lg: calc(var(--unit) * 22);
     --control-h: calc(var(--unit) * 18);
 
-    /* shape */
-    --radius-sm: calc(var(--unit) * 3);
-    --radius: calc(var(--unit) * 5);
+    /* shape — square is the identity: the radius tokens exist so a component
+       can compose them, and they are ALL zero by design */
+    --radius-sm: 0;
+    --radius: 0;
     --border-width: 1px;
 
     /* motion */
@@ -51,7 +54,7 @@ export const tokens = /* css */ `
 
     /* ── color channels (light) — themes flip NUMBERS, not colors ── */
     --h1: 216; --s1: 18%;                 /* base: blue-slate */
-    --h2: 41;  --s2: 88%;                 /* accent: amber */
+    --h2: 120; --s2: 61%;                 /* accent: limegreen (kit/theme.js overrides per user) */
     --h-ok: 158; --s-ok: 55%;
     --h-danger: 0; --s-danger: 62%;
 

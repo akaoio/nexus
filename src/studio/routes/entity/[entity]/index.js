@@ -288,17 +288,21 @@ export function render(ctx) {
     })
     c.$filterCard.append(builder)
 
-    // view switcher — every registered view whose availability the schema meets
-    c.$switcher.replaceChildren(...VIEWS.filter((v) => v.available(s)).map((v) =>
-        button({
-            variant: v.id === viewId ? "primary" : "icon", iconName: v.icon, title: v.label,
+    // view switcher — only the views the SCHEMA declares (opt-in, never
+    // automatic); the active state is data-on, so the button's geometry
+    // never changes with selection
+    c.$switcher.replaceChildren(...VIEWS.filter((v) => v.available(s)).map((v) => {
+        const node = button({
+            variant: "icon", iconName: v.icon, title: v.label,
             onclick: () => {
                 viewId = v.id
                 localStorage.setItem("nexus-view-" + s.name, viewId)
                 ctx.navigate("content", s.name)
             }
         })
-    ))
+        node.toggleAttribute("data-on", v.id === viewId)
+        return node
+    }))
 
     refresh()
     return host

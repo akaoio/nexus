@@ -1,7 +1,7 @@
 /** /ai route — logic: embedding model status and one-click switch. Weights
  *  are pulled from the terminal (nexus model pull). */
 
-import { mountTemplate, button, toast } from "../../kit/index.js"
+import { mountTemplate, button, toast } from "../../../kit/index.js"
 import { aiTemplate } from "./template.js"
 
 export function render(ctx) {
