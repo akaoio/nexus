@@ -21,6 +21,12 @@ export const STYLE = () => css`
     form label { min-width: 10em }
     .preview { background: var(--surface-2, #8882); margin-top: 0.625rem; padding: 0.5rem }
     :focus-visible { outline: 0.125rem solid var(--accent, #0ea5e9); outline-offset: 1px }
+
+    /* the runtime form is a 3-column grid — a field's span is schema DATA */
+    form { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.625rem; align-items: start }
+    form > .actions, form > button[type=submit] { grid-column: 1 / -1 }
+    .grip { cursor: grab; color: var(--muted, #64748b); user-select: none; padding: 0 0.25rem; font-family: var(--mono, monospace) }
+    .grip:active { cursor: grabbing }
 `
 
 export default STYLE

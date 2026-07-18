@@ -79,6 +79,13 @@ Test.describe("Model Schema v1 — structure (MS-S)", () => {
         assert.truthy(hasError(Model.validate(schema({ views: "kanban" })), "E_VIEWS"), "not an array")
     })
 
+    Test.it("MS-S13 span is 1..3 of the form grid — else E_SPAN", () => {
+        assert.equal(Model.validate(schema({ fields: [field("a", "text", { span: 1 })] })).valid, true)
+        assert.equal(Model.validate(schema({ fields: [field("a", "text", { span: 3 })] })).valid, true)
+        for (const bad of [0, 4, 1.5, "2"])
+            assert.truthy(hasError(Model.validate(schema({ fields: [field("a", "text", { span: bad })] })), "E_SPAN"), `span ${bad}`)
+    })
+
     Test.it("MS-S10 labels are i18n maps of strings — else E_LABEL", () => {
         assert.equal(Model.validate(schema({ label: { en: "Customer", vi: "Khách hàng" } })).valid, true)
         assert.truthy(hasError(Model.validate(schema({ label: "Customer" })), "E_LABEL"))

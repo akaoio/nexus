@@ -137,6 +137,7 @@ import "./test/studio/roles.test.js"
 
 // App — system entities (clauses SYS-*)
 import "./test/app/system.test.js"
+import "./test/app/lifecycle.test.js"
 
 // Studio — nx-schema-designer (clauses NXS-*)
 import "./test/studio/schema-designer.test.js"

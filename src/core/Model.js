@@ -32,7 +32,7 @@ const NAME_RE = /^[a-z][a-z0-9_]*$/
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/
 const SCHEMA_KEYS = ["schemaVersion", "name", "label", "fields", "indexes", "semantic", "permissions", "views"]
-const FIELD_KEYS = ["name", "type", "label", "required", "unique", "default", "options", "target", "permlevel"]
+const FIELD_KEYS = ["name", "type", "label", "required", "unique", "default", "options", "target", "permlevel", "span"]
 const OVERRIDABLE = ["label", "default", "options"]
 const REINDEX_MODES = ["on_update", "manual"]
 
@@ -104,6 +104,13 @@ function validateField(field, path, errors, seen) {
     if ("permlevel" in field) {
         const p = field.permlevel
         if (!Number.isInteger(p) || p < 0 || p > 9) return errors.push({ code: "E_PERMLEVEL", path })
+    }
+
+    // span: how many of the form grid's 3 columns the field occupies (layout
+    // is schema DATA — every renderer honors it, nothing hardcodes rows)
+    if ("span" in field) {
+        const s = field.span
+        if (!Number.isInteger(s) || s < 1 || s > 3) return errors.push({ code: "E_SPAN", path })
     }
 
     // Per-type property rules

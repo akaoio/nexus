@@ -9,7 +9,7 @@ import { icon, text, toast, createApi, createI18n, createTheme } from "./kit/ind
 import { buildLayout, buildLogin } from "./layouts/studio/index.js"
 // routes — one FOLDER per route, nested like the URL (the akao routes shape)
 import * as content from "./routes/entity/[entity]/index.js"
-import * as entity from "./routes/model/index.js"
+import * as entities from "./routes/entities/index.js"
 import * as permissions from "./routes/permissions/index.js"
 import * as users from "./routes/users/index.js"
 import * as settings from "./routes/settings/index.js"
@@ -30,7 +30,7 @@ const boot = JSON.parse(document.getElementById("nx-boot").textContent)
 const schemas = boot.schemas
 const i18n = createI18n(boot.i18n)
 const theme = createTheme()
-const state = { view: schemas[0] ? "content" : "entity", entity: schemas[0] ? schemas[0].name : null, feature: null }
+const state = { view: schemas[0] ? "content" : "entities", entity: schemas[0] ? schemas[0].name : null, feature: null }
 const api = createApi({ onUnauthorized: () => showLogin() })
 
 // the akao `a` primitive pre-caches what it points to — wire its fetcher
@@ -68,13 +68,13 @@ const deriveKeypair = async (passphrase) => {
 // feature children (/settings/<feature>) — the hub delegates by state.feature
 const MODULES = {
     content: { render: content.render },
-    entity: { icon: "plus-lg", key: "dataModel", render: entity.render },
+    entities: { icon: "plus-lg", key: "entities", render: entities.render },
     permissions: { icon: "shield-lock", key: "permissions", render: permissions.render },
     users: { icon: "person", key: "users", render: users.render },
     search: { icon: "search", key: "search", render: search.render },
     settings: { icon: "gear", key: "settings", render: settings.render }
 }
-const BUILD = ["entity", "permissions", "users", "search", "settings"]
+const BUILD = ["entities", "permissions", "users", "search", "settings"]
 
 // ── layout ─────────────────────────────────────────────────────────────────────
 const layout = buildLayout({ site: boot.site })
@@ -164,6 +164,9 @@ function applyRoute() {
     } else if (r.route === "/settings/[feature]" && settings.FEATURES[r.params.feature]) {
         state.view = "settings"
         state.feature = r.params.feature
+    } else if (r.route === "/[view]" && r.params.view === "entity") {
+        state.view = "entities" // legacy singular URL
+        state.feature = null
     } else if (r.route === "/[view]" && MODULES[r.params.view] && r.params.view !== "content") {
         state.view = r.params.view
         state.feature = null

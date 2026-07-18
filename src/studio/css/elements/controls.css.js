@@ -36,6 +36,9 @@ button { cursor: pointer }
 .nx-toolbar { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap }
 .nx-check { display: inline-flex; gap: var(--sp-2); align-items: center; accent-color: var(--accent) }
 input[type="checkbox"] { accent-color: var(--accent) }
+
+/* schema-driven form grid — span is field DATA (Model Schema "span") */
+.nx-form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-3); align-items: start }
 `
 
 export default controls

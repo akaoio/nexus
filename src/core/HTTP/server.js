@@ -81,6 +81,7 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
     const authState = { required: false, secret: null, rolesForPub: () => [] }
     const challenges = new Map() // nonce → expiry (one-time, 60s)
     let api = null
+    let plane = null
     let engine = "sqlite"
     let authMode = "no entities"
     let embedderInfo = { mode: "none", semanticAvailable: false }
@@ -182,7 +183,7 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
                 }
             }
         }
-        const plane = new DataPlane({ executor, schemas: allSchemas, dialect: executor.dialect, hooks: extensions, embedder, nlProvider })
+        plane = new DataPlane({ executor, schemas: allSchemas, dialect: executor.dialect, hooks: extensions, embedder, nlProvider })
 
         // ── the RBAC directory lives in the plane ─────────────────────────────
         // nexus_policy rows are the LIVE policy layer (app files stay shipped
@@ -268,7 +269,7 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             : "DEV identity — wide-open policies, user via x-nexus-user header"
     }
 
-    return { api, authState, challenges, engine, authMode, extensions, embedderInfo }
+    return { api, plane, authState, challenges, engine, authMode, extensions, embedderInfo }
 }
 
 export default { buildInstanceApi }
