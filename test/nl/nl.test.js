@@ -165,7 +165,11 @@ Test.describe("NL→AST (NL-*)", () => {
         const params = tool.function.parameters
         assert.deepEqual(params.required, ["filter"])
         const node = params.properties.filter
-        assert.deepEqual(node.type, ["object", "null"]) // filter:null ("everything") must be structurally admissible
+        // the template renders `type | upper` — every property type is a STRING,
+        // and nullability is the Google-dialect `nullable` key, never a type union
+        assert.equal(node.type, "object")
+        assert.equal(node.nullable, true)
+        for (const [name, p] of Object.entries(node.properties)) assert.equal(typeof p.type, "string", `property ${name} carries a string type`)
         // the field vocabulary is an ENUM — the model cannot be offered a field that doesn't exist
         for (const name of ["title", "done", "priority", "points", "due", "status", "secret", "id", "owner", "created_at", "updated_at"])
             assert.truthy(node.properties.field.enum.includes(name), `field enum carries ${name}`)

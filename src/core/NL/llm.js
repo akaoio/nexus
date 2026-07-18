@@ -46,7 +46,11 @@ export function filterTool(schema) {
                 type: "object",
                 properties: {
                     filter: {
-                        type: ["object", "null"],
+                        // Google declaration dialect, NOT JSON Schema: the chat
+                        // template renders `type | upper` (a string, always) and
+                        // recognizes `nullable` — a type union would crash it.
+                        type: "object",
+                        nullable: true,
                         description:
                             "A filter node — EITHER a leaf {field, operator, value} OR a group {op, children}. " +
                             `Fields: ${lines.join("; ")}. ` +
@@ -54,7 +58,7 @@ export function filterTool(schema) {
                         properties: {
                             field: { type: "string", enum: names, description: "leaf: the field to test" },
                             operator: { type: "string", enum: OPERATORS, description: "leaf: the comparison" },
-                            value: { description: "leaf: a scalar, or an array for in/nin/between" },
+                            value: { type: "string", description: "leaf: a scalar (numbers and booleans bare), or an array for in/nin/between" },
                             op: { type: "string", enum: ["and", "or", "not"], description: "group: the connective" },
                             children: { type: "array", description: "group: nested filter nodes of this same shape", items: { type: "object" } }
                         }
