@@ -53,6 +53,12 @@ export const bits = /* css */ `
 .nx-options nx-button strong { font-family: var(--mono); text-transform: uppercase }
 .nx-swatch { width: var(--icon); height: var(--icon); display: inline-block }
 
+/* role cards — a role is a bundle; the tint IS the border */
+.nx-rolecard { display: inline-flex; flex-direction: column; gap: 0.125rem; background: var(--surface-2); padding: var(--sp-2) var(--sp-3) }
+.nx-rolecard strong { font-family: var(--mono) }
+.nx-rolecard .nx-muted { font-size: var(--text-xs) }
+.nx-note { box-shadow: inset 0.1875rem 0 0 var(--accent) }
+
 .nx-setsec { margin-bottom: var(--sp-5) }
 .nx-setsec h3 {
     font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .07em; color: var(--muted);

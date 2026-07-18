@@ -132,6 +132,9 @@ import "./test/studio/form-builder.test.js"
 // Studio — nx-permission-manager (clauses NXP-*)
 import "./test/studio/permission-manager.test.js"
 
+// Studio — roles as policy bundles (clauses ROLE-*)
+import "./test/studio/roles.test.js"
+
 // Studio — nx-schema-designer (clauses NXS-*)
 import "./test/studio/schema-designer.test.js"
 

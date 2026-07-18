@@ -85,4 +85,24 @@ export function policiesFor(policies, roles = []) {
     return policies.filter((p) => !p.roles || p.roles.some((r) => roles.includes(r)))
 }
 
-export default { validatePolicy, validatePolicies, loadPolicies, policiesFor }
+/**
+ * A ROLE is a name that bundles policies: every policy carrying the name
+ * grants through it, every identity holding the name receives the bundle.
+ * This aggregates that picture — the roles overview the Studio renders.
+ * Pure; roles appear whether they come from policies, identities, or both.
+ * @param {Array} policies - Permission v1 policies (optional roles annotation)
+ * @param {Array} [identities] - [{ pub, name, roles }] from nexus.config.json
+ * @returns {Array<{role: string, policies: number, users: number}>} sorted by name
+ */
+export function rolesIn(policies = [], identities = []) {
+    const map = new Map()
+    const entry = (role) => {
+        if (!map.has(role)) map.set(role, { role, policies: 0, users: 0 })
+        return map.get(role)
+    }
+    for (const p of policies) for (const role of p.roles ?? []) entry(role).policies++
+    for (const u of identities) for (const role of u.roles ?? []) entry(role).users++
+    return [...map.values()].sort((a, b) => (a.role < b.role ? -1 : 1))
+}
+
+export default { validatePolicy, validatePolicies, loadPolicies, policiesFor, rolesIn }

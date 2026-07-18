@@ -13,6 +13,14 @@ export const permissionsTemplate = (c, { onSave }) => html`
         </nx-button>
     </div>
     <div ${({ element }) => (c.$banner = element)}></div>
+    <div class="nx-card">
+        <div class="nx-setsec">
+            <h3><nx-context data-key="roles" data-fallback="Roles"></nx-context></h3>
+            <p class="nx-muted"><nx-context data-key="rolesHint"
+                data-fallback="A role is a named bundle: policies below grant through it, users in Users hold it. Type a role on a policy (or a user) and it exists."></nx-context></p>
+            <div class="nx-options" ${({ element }) => (c.$roles = element)}></div>
+        </div>
+    </div>
     <div class="nx-card" ${({ element }) => (c.$matrix = element)}></div>
     <div class="nx-card" ${({ element }) => (c.$manager = element)}></div>
 `
