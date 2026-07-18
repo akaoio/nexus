@@ -9,17 +9,22 @@ export const shell = /* css */ `
 html, body { margin: 0; padding: 0 }
 body { font-family: var(--font); font-size: var(--text-md); background: var(--bg); color: var(--text); line-height: 1.5; -webkit-text-size-adjust: 100% }
 
-.nx-top {
-    position: sticky; top: 0; z-index: 30; display: flex; align-items: center;
-    background: color-mix(in srgb, var(--surface) 92%, transparent);
-    backdrop-filter: saturate(1.4) blur(0.5rem);
+/* ── the app shell IS a grid: rows auto/1fr, areas top/side/main, the shell
+   locked to the viewport and MAIN scrolling inside its track — no sticky,
+   no calc(), no header-height magic anywhere ─────────────────────────────── */
+.nx-app {
+    display: grid; height: 100dvh;
+    grid-template-rows: auto 1fr;
+    grid-template-columns: 1fr;
+    grid-template-areas: "top" "main";
 }
+.nx-top { grid-area: top; z-index: 30; display: flex; gap: var(--sp-3); align-items: center; padding: 0.625rem 0.875rem; background: var(--surface) }
 .nx-brand { font-weight: 700; letter-spacing: -0.01em }
 .nx-brand .hex { color: var(--accent); display: inline-flex; vertical-align: -0.1875rem; --icon: 1.375rem }
 .nx-login .hex { --icon: 1.5rem }
 .nx-brand small { color: var(--muted); font-weight: 500 }
 
-.nx-app { display: block }
+/* mobile: the side is an off-canvas overlay above the grid */
 .nx-side {
     position: fixed; top: 0; left: 0; bottom: 0; width: min(84vw, 18.75rem); z-index: 50;
     background: var(--surface);
@@ -31,7 +36,7 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
     opacity: 0; pointer-events: none; transition: opacity var(--ease);
 }
 .nx-app.open .nx-scrim { opacity: 1; pointer-events: auto }
-.nx-main { padding: 1rem 0.875rem 3.75rem; min-width: 0 }
+.nx-main { grid-area: main; overflow-y: auto; padding: 1rem 0.875rem 3.75rem; min-width: 0 }
 
 .nx-grouplabel { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0.875rem 0.375rem 0.375rem }
 .nx-nav a {
@@ -56,7 +61,8 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
 @media (min-width: 53.75rem) {
     .nx-hamb { display: none }
     .nx-navtoggle { display: inline-flex }
-    .nx-app { display: grid; grid-template-columns: 15.5rem 1fr }
+    /* the side joins the grid as its own AREA — full height by construction */
+    .nx-app { grid-template-columns: 15.5rem 1fr; grid-template-areas: "top top" "side main" }
     /* two-level sidebar: "icons" keeps the rail, drops the words — pure grid,
        one attribute flips the whole layout */
     .nx-app[data-nav="icons"] { grid-template-columns: 3.5rem 1fr }
@@ -64,10 +70,9 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
     .nx-app[data-nav="icons"] .nx-nav a { justify-content: center; padding: 0.5rem 0 }
     .nx-app[data-nav="icons"] .nx-nav a .lbl { display: none }
     .nx-app[data-nav="icons"] .nx-nav a.sub { padding-left: 0 }
-    .nx-top { grid-column: 1 / -1 }
-    .nx-side { grid-column: 1; position: sticky; top: 3.5625rem; height: calc(100vh - 3.5625rem); transform: none; width: auto; z-index: 1 }
+    .nx-side { grid-area: side; position: static; transform: none; width: auto; z-index: 1 }
     .nx-scrim { display: none }
-    .nx-main { grid-column: 2; padding: 1.375rem 1.625rem 5rem }
+    .nx-main { padding: 1.375rem 1.625rem 5rem }
 }
 
 /* drawer (right panel) */
