@@ -95,7 +95,7 @@ function parseValue(s, i, depth = 0) {
             const key = s.slice(i, colon).trim()
             let v
             ;[v, i] = parseValue(s, colon + 1, depth + 1)
-            value[key] = v
+            if (key !== "__proto__") value[key] = v
             while (s[i] === " " || s[i] === "\n") i++
             if (s[i] === ",") i++
             else if (s[i] !== "}") throw err("E_NL_LLM", "unbalanced object in the call")
@@ -136,7 +136,7 @@ function parseValue(s, i, depth = 0) {
 export function parseCall(text) {
     const s = String(text)
     const start = s.indexOf("<start_function_call>")
-    const end = s.indexOf("<end_function_call>")
+    const end = s.indexOf("<end_function_call>", start)
     if (start === -1 || end === -1 || end < start) throw err("E_NL_LLM", "the model returned no function call")
     const call = s.slice(start + "<start_function_call>".length, end).trim()
     const m = call.match(/^call:([A-Za-z_][\w]*)\s*\{/)
@@ -144,7 +144,7 @@ export function parseCall(text) {
     if (m[1] !== "filter_records") throw err("E_NL_LLM", `unknown function "${m[1]}"`)
     const [args, next] = parseValue(call, call.indexOf("{"))
     if (call.slice(next).trim()) throw err("E_NL_LLM", "trailing content after the call arguments")
-    if (!("filter" in args)) throw err("E_NL_LLM", "the call carries no filter argument")
+    if (!Object.hasOwn(args, "filter")) throw err("E_NL_LLM", "the call carries no filter argument")
     return { astVersion: 1, root: args.filter }
 }
 

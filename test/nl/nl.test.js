@@ -209,6 +209,7 @@ Test.describe("NL→AST (NL-*)", () => {
         await Test.assert.rejects(Promise.resolve().then(() => parseCall(wrap("verbose:true"))), "E_NL_LLM")
         // pathological nesting fails the CONTRACT way — E_NL_LLM, never a stack overflow
         await Test.assert.rejects(Promise.resolve().then(() => parseCall(wrap("filter:" + "[".repeat(100000)))), "E_NL_LLM")
+        await Test.assert.rejects(Promise.resolve().then(() => parseCall("<start_function_call>call:filter_records{filter:null}junk<end_function_call>")), "E_NL_LLM")
         // whatever parses still dies in translate() when it names a ghost field
         const provider = async () => parseCall(wrap("filter:{field:<escape>ghost<escape>,operator:<escape>eq<escape>,value:1}"))
         await Test.assert.rejects(translate("anything", TASK, provider), "E_NL_FIELD")

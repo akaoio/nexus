@@ -1,5 +1,7 @@
 # FunctionGemma NL Tier Implementation Plan
 
+> **Superseded in detail:** the shipped `filterTool` speaks the template's dialect (string types + `nullable`, commit 1afb836) and `parseValue` bounds nesting depth (f2bc161) — the code blocks below predate those review fixes.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the prompt-text Qwen NL→AST tier with FunctionGemma-270M ONNX, passing the entity schema as a structured `tools` declaration through the chat template.
