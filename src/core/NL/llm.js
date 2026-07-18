@@ -69,9 +69,11 @@ export function filterTool(schema) {
 /**
  * Parse ONE FunctionGemma argument value at position i in `s`. The syntax is
  * JSON with bare keys and <escape>-delimited strings (the model's own output
- * contract). Returns [value, nextIndex]; throws on any malformed shape.
+ * contract). Returns [value, nextIndex]; throws E_NL_LLM on any malformed shape, including nesting past depth 32.
  */
-function parseValue(s, i) {
+function parseValue(s, i, depth = 0) {
+    // a filter no schema could produce; past it the input is garbage, not a call
+    if (depth > 32) throw err("E_NL_LLM", "the call nests too deeply")
     while (s[i] === " " || s[i] === "\n") i++
     if (s.startsWith("<escape>", i)) {
         const end = s.indexOf("<escape>", i + 8)
@@ -88,7 +90,7 @@ function parseValue(s, i) {
             if (colon === -1) throw err("E_NL_LLM", "a key without a value in the call")
             const key = s.slice(i, colon).trim()
             let v
-            ;[v, i] = parseValue(s, colon + 1)
+            ;[v, i] = parseValue(s, colon + 1, depth + 1)
             value[key] = v
             while (s[i] === " " || s[i] === "\n") i++
             if (s[i] === ",") i++
@@ -102,7 +104,7 @@ function parseValue(s, i) {
             while (s[i] === " " || s[i] === "\n") i++
             if (s[i] === "]") return [value, i + 1]
             let v
-            ;[v, i] = parseValue(s, i)
+            ;[v, i] = parseValue(s, i, depth + 1)
             value.push(v)
             while (s[i] === " " || s[i] === "\n") i++
             if (s[i] === ",") i++
