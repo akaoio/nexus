@@ -32,47 +32,11 @@ async function importFrom(name, root) {
     }
 }
 
-/**
- * EmbeddingGemma is trained with task-specific prompts: retrieval queries and
- * documents are embedded through DIFFERENT prefixes, and skipping them costs
- * real accuracy. These are Google's published retrieval prompts. Symmetric
- * models (all-MiniLM, …) use empty prefixes, so embed() and embedQuery()
- * coincide and every existing caller is unaffected.
- */
-const GEMMA_PROMPTS = { query: "task: search result | query: ", document: "title: none | text: " }
-
-function promptsFor(model, override) {
-    if (override) return override
-    if (/gemma/i.test(model)) return GEMMA_PROMPTS
-    return { query: "", document: "" }
-}
-
-/**
- * The model's relevance floor — the cosine below which a match is noise, not
- * a result. Dense models score unrelated text well above zero (Gemma ~0.4,
- * e5 ~0.75 — e5's space is compressed), so search without a floor returns
- * everything for any query. Values from observed related/unrelated gaps.
- */
-export function modelFloor(model = "") {
-    if (/gemma/i.test(model)) return 0.5
-    if (/\be5\b|multilingual-e5/i.test(model)) return 0.75
-    if (/minilm/i.test(model)) return 0.3
-    return 0.25
-}
-
-/**
- * The NL-intent threshold — stricter than the search floor, because intent
- * retrieval maps a phrase to an ACTION and a wrong guess is worse than a
- * refusal. Measured on EmbeddingGemma: real paraphrases score 0.71–0.84
- * against the schema intents, out-of-domain asks 0.53–0.57 — 0.65 splits
- * them with margin on both sides.
- */
-export function modelNLThreshold(model = "") {
-    if (/gemma/i.test(model)) return 0.65
-    if (/\be5\b|multilingual-e5/i.test(model)) return 0.85
-    if (/minilm/i.test(model)) return 0.35
-    return 0.35
-}
+// Per-model knowledge (prompts, floor, nlThreshold) lives in the MODEL
+// PROFILES registry (App/models.js) — this file is pure mechanics. The
+// import is one-directional: models.js reaches back only via dynamic
+// import inside pull(), so no cycle exists.
+import { profileFor } from "../App/models.js"
 
 /**
  * @param {Object} config
@@ -87,7 +51,8 @@ export async function transformersProvider({ model = "onnx-community/embeddingge
     // progress_callback streams { status, file, loaded, total, progress } while
     // the weights download — the CLI/Studio turn it into % and MB.
     const extract = await pipeline("feature-extraction", model, { quantized, progress_callback: onProgress })
-    const P = promptsFor(model, prompts)
+    const profile = profileFor(model)
+    const P = prompts ?? profile.prompts
     const one = async (text, prefix = "") =>
         Array.from((await extract(prefix + String(text), { pooling: "mean", normalize: true })).data)
     const probe = await one("dimension probe", P.document)
@@ -101,8 +66,8 @@ export async function transformersProvider({ model = "onnx-community/embeddingge
         version: 1,
         dims: probe.length,
         prompts: P,
-        floor: modelFloor(model),
-        nlThreshold: modelNLThreshold(model),
+        floor: profile.floor,
+        nlThreshold: profile.nlThreshold,
         /** Embed documents (the indexing side). */
         embed: (texts) => many(texts, P.document),
         /** Embed search queries (the retrieval side) — asymmetric for Gemma. */

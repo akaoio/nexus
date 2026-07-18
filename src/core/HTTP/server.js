@@ -12,7 +12,7 @@
  */
 
 import { DataPlane } from "../Data.js"
-import { modelFloor, modelNLThreshold } from "../Semantic/transformers.js"
+import { profileFor } from "../App/models.js"
 import { createApi } from "./api.js"
 import { openInstanceData, ensureTables } from "../../cli/data.js"
 import { loadExtensions } from "../App/extensions.js"
@@ -40,8 +40,8 @@ function lazyTransformers(model, root) {
     return {
         name: model,
         version: 1,
-        floor: modelFloor(model),
-        nlThreshold: modelNLThreshold(model),
+        floor: profileFor(model).floor,
+        nlThreshold: profileFor(model).nlThreshold,
         get dims() {
             return inner?.dims
         },

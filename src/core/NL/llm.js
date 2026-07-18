@@ -156,12 +156,13 @@ export function parseCall(text) {
  * downstream validates format and vocabulary — this function adds no trust.
  * @param {Object} config
  * @param {Function} config.generate - async ({ tools, user }) => text
+ * @param {Function} [config.parse=parseCall] - model-dialect output parser (the OTHER half of a model profile)
  */
-export function llmNLProvider({ generate }) {
+export function llmNLProvider({ generate, parse = parseCall }) {
     if (typeof generate !== "function") throw err("E_NL_GENERATOR", "a generate({tools,user}) function is required")
     return async (query, { schema } = {}) => {
         const text = await generate({ tools: [filterTool(schema)], user: String(query) })
-        return parseCall(text)
+        return parse(text)
     }
 }
 
