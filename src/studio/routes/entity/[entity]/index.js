@@ -5,12 +5,12 @@
  * registry (list, kanban, …). Structure lives in template.js.
  */
 
-import { mountTemplate, button, icon, text, toast, confirmDialog } from "../../../kit.js"
-import { buildForm, editableFields, interfaces } from "../../../fields.js"
+import { mountTemplate, button, icon, text, toast, confirmDialog } from "../../../kit/index.js"
+import { buildForm, editableFields, interfaces } from "../../../kit/fields.js"
 import { hexSVG } from "../../../css/elements/bits.css.js"
 import { activeFilter } from "../../../components/query-builder/index.js"
-import { createSelection } from "../../../selection.js"
-import { cached, remember } from "../../../cache.js"
+import { createSelection } from "../../../kit/selection.js"
+import { cached, remember } from "../../../kit/cache.js"
 import { VIEWS } from "../../../views/index.js"
 import { entityTemplate } from "./template.js"
 

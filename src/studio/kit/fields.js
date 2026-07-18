@@ -7,7 +7,7 @@
  * + primitives only (the akao dynamic style): no ad-hoc DOM helpers.
  */
 
-import { icon, button, text } from "./kit.js"
+import { icon, button, text } from "./index.js"
 
 const label = (field, locale) =>
     (field.label && (field.label[locale] || field.label.en || Object.values(field.label)[0])) || field.name

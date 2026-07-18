@@ -13,8 +13,8 @@
  * repaint (that only happens on reload).
  */
 
-import { icon } from "./kit.js"
-import { cached, remember } from "./cache.js"
+import { icon } from "./kit/index.js"
+import { cached, remember } from "./kit/cache.js"
 
 /** A planet button that claims the .on marker from its siblings on click. */
 const planet = (nav, key, label, title, onSelect, on) => {

@@ -1,7 +1,7 @@
 /** /settings route — logic: edit nexus.config.json through /_studio/config
  *  (the same safe ops as `nexus config`). */
 
-import { mountTemplate, button, toast } from "../../kit.js"
+import { mountTemplate, button, toast } from "../../kit/index.js"
 import { settingsTemplate } from "./template.js"
 
 const section = (title, children) => {

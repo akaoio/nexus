@@ -1,7 +1,7 @@
 /** /users route — logic: identities (ZEN pubkey + roles), hot-applied.
  *  Adding the first identity turns authentication ON immediately. */
 
-import { mountTemplate, button, icon, toast, confirmDialog } from "../../kit.js"
+import { mountTemplate, button, icon, toast, confirmDialog } from "../../kit/index.js"
 import "../../components/identicon/index.js"
 import { usersTemplate } from "./template.js"
 

@@ -15,7 +15,7 @@ import { existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from "fs
 import { join, resolve, extname, sep } from "path"
 import { loadInstance } from "../instance.js"
 import { buildInstanceApi } from "../../core/HTTP/server.js"
-import { studioIndex } from "../../studio/shell.js"
+import { studioIndex } from "../../studio/layouts/studio/shell.js"
 import { validate } from "../../core/Model.js"
 import { loadDictionary, mergeDictionaries, coveredLocales } from "../../i18n/i18n.js"
 import { verifyChallenge, issueToken, verifyToken } from "../../core/App/auth.js"

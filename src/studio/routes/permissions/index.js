@@ -3,7 +3,7 @@
  *  hot-applies (no restart). In DEV mode it says, honestly, that policies
  *  are not enforced yet. */
 
-import { mountTemplate, toast } from "../../kit.js"
+import { mountTemplate, toast } from "../../kit/index.js"
 import "../../components/matrix/index.js"
 import { permissionsTemplate } from "./template.js"
 

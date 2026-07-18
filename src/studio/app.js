@@ -5,7 +5,7 @@
  * in worker threads; the URL in the kernel Router. This file only composes.
  */
 
-import { icon, text, toast, createApi, createI18n, createTheme } from "./kit.js"
+import { icon, text, toast, createApi, createI18n, createTheme } from "./kit/index.js"
 import { buildLayout, buildLogin } from "./layouts/studio/index.js"
 // routes — one FOLDER per route, nested like the URL (the akao routes shape)
 import * as content from "./routes/entity/[entity]/index.js"
@@ -25,7 +25,7 @@ import "/_nexus/src/studio/components/list-view/index.js"
 import "/_nexus/src/studio/components/search/index.js"
 import { NxA } from "/_nexus/src/studio/components/a/index.js"
 import { NxUser } from "/_nexus/src/studio/components/user/index.js"
-import { passkeySupported, enroll, enrolled, unlock } from "./webauthn.js"
+import { passkeySupported, enroll, enrolled, unlock } from "./kit/webauthn.js"
 
 const boot = JSON.parse(document.getElementById("nx-boot").textContent)
 const schemas = boot.schemas

@@ -4,7 +4,7 @@
  */
 
 import Test, { assert } from "../../src/core/Test.js"
-import { createSelection } from "../../src/studio/selection.js"
+import { createSelection } from "../../src/studio/kit/selection.js"
 
 const IDS = ["a", "b", "c", "d"]
 

@@ -7,7 +7,7 @@
 
 import { render } from "../../../core/UI.js"
 import { userTemplate } from "./template.js"
-import { confirmDialog } from "../../kit.js"
+import { confirmDialog } from "../../kit/index.js"
 
 export class NxUser extends HTMLElement {
     static onSignout = null

@@ -10,8 +10,39 @@
  * rows + a view, so a saved view reproduces what the user saw — proven pure.
  */
 
-import { sortRows, groupRows } from "./components/list-view/index.js"
-import * as AST from "../core/AST.js"
+import * as AST from "./AST.js"
+
+// ─── pure list mechanics (shared by <nx-list-view> and applyView) ─────────────
+
+/** Stable sort with strict types and nulls-last (both directions). */
+export function sortRows(rows, field, dir = "asc") {
+    const factor = dir === "desc" ? -1 : 1
+    return [...rows].sort((a, b) => {
+        const va = a?.[field]
+        const vb = b?.[field]
+        const aNull = va === null || va === undefined
+        const bNull = vb === null || vb === undefined
+        if (aNull && bNull) return 0
+        if (aNull) return 1 // nulls last, always
+        if (bNull) return -1
+        if (typeof va !== typeof vb) return 0 // cross-type: no opinion
+        if (va < vb) return -1 * factor
+        if (va > vb) return 1 * factor
+        return 0
+    })
+}
+
+/** Group rows by a field value; null/missing collect under "(none)". */
+export function groupRows(rows, field) {
+    const groups = new Map()
+    for (const row of rows) {
+        const raw = row?.[field]
+        const key = raw === null || raw === undefined ? "(none)" : String(raw)
+        if (!groups.has(key)) groups.set(key, [])
+        groups.get(key).push(row)
+    }
+    return groups
+}
 
 /** The frozen system-entity schema for a saved view (Model Schema v1). */
 export function viewSchema() {
@@ -89,4 +120,4 @@ export async function removeView(plane, id, ctx) {
     return plane.remove("nexus_view", id, ctx)
 }
 
-export default { viewSchema, packView, unpackView, applyView, saveView, updateView, listViews, getView, removeView }
+export default { sortRows, groupRows, viewSchema, packView, unpackView, applyView, saveView, updateView, listViews, getView, removeView }

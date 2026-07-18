@@ -1,7 +1,7 @@
 /** /entity (data model) route — logic: create a new Entity or edit an
  *  existing one and SAVE (reuses <nx-form-builder> / <nx-schema-designer>). */
 
-import { mountTemplate, button, text, toast } from "../../kit.js"
+import { mountTemplate, button, text, toast } from "../../kit/index.js"
 import { modelTemplate } from "./template.js"
 
 export function render(ctx) {
