@@ -52,26 +52,26 @@ export class NxSearch extends Component {
             if (!hits?.length) continue
             const head = document.createElement("div")
             head.className = "entity-head"
-            head.textContent = `${schema.name} (${hits.length})`
+            head.textContent = `${schema.name} · ${hits.length}`
             this.$results.appendChild(head)
             for (const { score, row } of hits) {
                 const line = document.createElement("div")
                 line.className = "hit"
+                const label = document.createElement("span")
+                label.className = "label"
+                const firstText = (schema.fields ?? []).find((f) => f.type === "text")
+                label.textContent = String(row[firstText?.name] ?? row.id)
                 const scoreEl = document.createElement("span")
                 scoreEl.className = "score"
                 scoreEl.textContent = score.toFixed(3)
-                line.appendChild(scoreEl)
-                const label = document.createElement("span")
-                const firstText = (schema.fields ?? []).find((f) => f.type === "text")
-                label.textContent = String(row[firstText?.name] ?? row.id)
-                line.appendChild(label)
+                line.append(label, scoreEl)
                 this.$results.appendChild(line)
             }
         }
         if (!this.$results.childNodes.length) {
             const empty = document.createElement("div")
             empty.className = "muted"
-            empty.textContent = "no matches"
+            empty.textContent = `No matches for “${query}” — semantic search tries meaning too, so a synonym may land.`
             this.$results.appendChild(empty)
         }
     }
