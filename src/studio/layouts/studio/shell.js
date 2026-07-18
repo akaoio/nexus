@@ -12,7 +12,9 @@ export function studioIndex(config, schemas, meta = {}) {
         schemas,
         appName: meta.appName ?? "app",
         embedder: meta.embedder ?? { mode: "none" },
-        i18n: meta.i18n ?? { dict: {}, names: {}, locales: ["en"] }
+        i18n: meta.i18n ?? { dict: {}, names: {}, locales: ["en"] },
+        // the brand SVG rides inline so its fill can follow the accent channels
+        brand: meta.brand ?? null
     }
     return `<!doctype html><html lang="en"><head>
 <meta charset="utf-8">

@@ -19,10 +19,10 @@ function mount(template) {
  * caller through the returned refs.
  * @returns {{ app, main, nav, entNav, drawer, openDrawer, closeDrawer }}
  */
-export function buildLayout({ site }) {
+export function buildLayout({ site, brand }) {
     const c = {}
     c.closeDrawer = () => c.drawer.classList.remove("show")
-    mount(layoutTemplate(c, { site }))
+    mount(layoutTemplate(c, { site, brand }))
     mount(drawerTemplate(c))
 
     function openDrawer(title, node) {
@@ -36,9 +36,9 @@ export function buildLayout({ site }) {
 }
 
 /** The sign-in panel (ZEN passphrase → keypair; no password ever sent). */
-export function buildLogin({ site, onSubmit, onPasskey }) {
+export function buildLogin({ site, brand, onSubmit, onPasskey }) {
     const c = {}
-    mount(loginTemplate(c, { site, onSubmit, onPasskey }))
+    mount(loginTemplate(c, { site, brand, onSubmit, onPasskey }))
     return { login: c.login, passkeyRow: c.passkeyRow }
 }
 

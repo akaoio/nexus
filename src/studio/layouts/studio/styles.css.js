@@ -10,12 +10,13 @@ html, body { margin: 0; padding: 0 }
 body { font-family: var(--font); font-size: var(--text-md); background: var(--bg); color: var(--text); line-height: 1.5; -webkit-text-size-adjust: 100% }
 
 .nx-top {
-    position: sticky; top: 0; z-index: 30; display: flex; gap: var(--sp-3); align-items: center;
-    padding: 0.625rem 0.875rem; background: color-mix(in srgb, var(--surface) 92%, transparent);
+    position: sticky; top: 0; z-index: 30; display: flex; align-items: center;
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
     backdrop-filter: saturate(1.4) blur(0.5rem);
 }
 .nx-brand { font-weight: 700; letter-spacing: -0.01em }
-.nx-brand .hex { color: var(--accent) }
+.nx-brand .hex { color: var(--accent); display: inline-flex; vertical-align: -0.1875rem }
+.nx-brand .hex svg, .nx-login .hex svg { width: 1.25rem; height: 1.4375rem; display: block }
 .nx-brand small { color: var(--muted); font-weight: 500 }
 
 .nx-app { display: block }

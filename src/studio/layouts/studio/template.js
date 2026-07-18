@@ -12,7 +12,16 @@ import "../../components/context/index.js"
 import "../../components/button/index.js"
 import "../../components/user/index.js"
 
-export const layoutTemplate = (c, { site }) => html`
+/** Inline the brand SVG for DOM injection: strip the XML prolog and
+ *  comments, force every fill onto currentColor — the wrapper's color
+ *  (the ACCENT) becomes the mark's fill, live across accent switches. */
+const brandMark = (svg) => svg
+    .replace(/<\?xml[\s\S]*?\?>/, "")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/fill\s*:\s*#[0-9a-fA-F]{3,8}/g, "fill:currentColor")
+    .replace(/fill="(?!none|currentColor)[^"]*"/g, 'fill="currentColor"')
+
+export const layoutTemplate = (c, { site, brand }) => html`
     <div class="nx-app" ${({ element }) => (c.app = element)}>
         <header class="nx-top">
             <nx-button data-variant="icon" class="nx-hamb" data-icon="list"
@@ -20,7 +29,7 @@ export const layoutTemplate = (c, { site }) => html`
             <nx-button data-variant="icon" class="nx-navtoggle" data-icon="list" title="Collapse to icons"
                 ${({ element }) => (c.navToggle = element)}></nx-button>
             <span class="nx-brand">
-                <span class="hex"><nx-icon name="hexagon"></nx-icon></span>
+                <span class="hex" ${({ element }) => { if (brand) element.innerHTML = brandMark(brand) }}><nx-icon name="hexagon"></nx-icon></span>
                 ${site}
                 <small>Studio</small>
             </span>
@@ -51,11 +60,12 @@ export const drawerTemplate = (c) => html`
     </div>
 `
 
-export const loginTemplate = (c, { site, onSubmit, onPasskey }) => html`
+export const loginTemplate = (c, { site, brand, onSubmit, onPasskey }) => html`
     <div class="nx-login" id="nx-login" hidden ${({ element }) => (c.login = element)}>
         <div class="nx-card" style="width:min(94vw,23.75rem)">
             <h2 style="margin:0 0 0.25rem;display:flex;gap:0.375rem;align-items:center">
-                <span style="color:var(--accent);display:inline-flex"><nx-icon name="hexagon"></nx-icon></span>
+                <span class="hex" style="color:var(--accent);display:inline-flex"
+                    ${({ element }) => { if (brand) element.innerHTML = brandMark(brand) }}><nx-icon name="hexagon"></nx-icon></span>
                 ${site}
             </h2>
             <p class="nx-muted"><nx-context data-key="login" data-fallback="Sign in"></nx-context></p>
