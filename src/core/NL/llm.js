@@ -162,12 +162,14 @@ export function llmNLProvider({ generate }) {
 }
 
 /**
- * The REAL local generator — transformers.js text-generation (chat template),
- * resolved from the INSTANCE's node_modules like every provider library (N2).
- * Works in Node and in the browser (WebGPU/WASM); weights cache locally, so
- * it is offline after the first pull.
+ * The REAL local generator — FunctionGemma via transformers.js, resolved from
+ * the INSTANCE's node_modules like every provider library (N2). Tools go
+ * through apply_chat_template({ tools }) — the template renders the
+ * declarations structurally; pipeline() cannot do this, so the tokenizer and
+ * model are driven directly. Decoding keeps special tokens: the
+ * <start_function_call> markers ARE the output contract parseCall reads.
  */
-export async function transformersGenerator({ model = DEFAULT_NL_MODEL, root, onProgress } = {}) {
+export async function functionGemmaGenerator({ model = DEFAULT_NL_MODEL, root, onProgress } = {}) {
     const { createRequire } = await import("module")
     const { pathToFileURL } = await import("url")
     const { join } = await import("path")
@@ -182,18 +184,17 @@ export async function transformersGenerator({ model = DEFAULT_NL_MODEL, root, on
             throw err("E_PROVIDER", "the LLM provider needs its library — run: npm install @huggingface/transformers")
         }
     }
-    const generator = await lib.pipeline("text-generation", model, { dtype: "q4", progress_callback: onProgress })
-    return async ({ system, user }) => {
+    const tokenizer = await lib.AutoTokenizer.from_pretrained(model, { progress_callback: onProgress })
+    const lm = await lib.AutoModelForCausalLM.from_pretrained(model, { progress_callback: onProgress })
+    return async ({ tools, user }) => {
         const messages = [
-            { role: "system", content: system },
-            { role: "user", content: user }
+            { role: "developer", content: "You are a model that can do function calling with the following functions" },
+            { role: "user", content: String(user) }
         ]
-        const out = await generator(messages, { max_new_tokens: 160, do_sample: false, return_full_text: false })
-        // chat inputs may come back as the full message list — the reply is
-        // the LAST assistant message's content; plain string passes through
-        const generated = out[0].generated_text
-        return typeof generated === "string" ? generated : generated.at(-1)?.content ?? ""
+        const inputs = tokenizer.apply_chat_template(messages, { tools, add_generation_prompt: true, return_dict: true })
+        const output = await lm.generate({ ...inputs, max_new_tokens: 256, do_sample: false })
+        return tokenizer.decode(output.slice(0, [inputs.input_ids.dims[1], null]), { skip_special_tokens: false })
     }
 }
 
-export default { DEFAULT_NL_MODEL, filterTool, parseCall, llmNLProvider, transformersGenerator }
+export default { DEFAULT_NL_MODEL, filterTool, parseCall, llmNLProvider, functionGemmaGenerator }
