@@ -8,6 +8,27 @@ Like Frappe, but: installs in one command, runs natively on every OS, has zero r
 [![Conformance: 430 clauses, 0 red](https://img.shields.io/badge/Conformance-430%20clauses%2C%200%20red-success.svg)](test/)
 [![Web Components](https://img.shields.io/badge/Web-Components-29ABE2.svg)](https://www.webcomponents.org/)
 
+## Install (one line, GitHub is the source of truth)
+
+```sh
+# Linux / macOS (POSIX)
+curl -fsSL https://raw.githubusercontent.com/akaoio/nexus/main/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/akaoio/nexus/main/install.ps1 | iex
+```
+
+Needs only Node >= 22. GitHub first, tarball fallback when git is missing —
+npm is never required. Then:
+
+```sh
+nexus create my-app && cd my-app && nexus dev
+nexus update      # self-update (git installs: fetch + hard reset, the access way)
+nexus uninstall   # clean removal — never touches your instances
+```
+
 ## Why
 
 Frappe is the most powerful meta-framework in its class — and nearly impossible to install (Gunicorn + 3 Redis instances + MariaDB-specific + NGINX + Supervisor + patched wkhtmltopdf, no native Windows). Strapi forbids schema editing in production and broke its entire plugin ecosystem between major versions. Directus left open source. Nobody ships local-first.

@@ -21,6 +21,8 @@ import { user } from "./commands/user.js"
 import { model } from "./commands/model.js"
 import { config as configCmd } from "./commands/config.js"
 import { doctor } from "./commands/doctor.js"
+import { update } from "./commands/update.js"
+import { uninstall } from "./commands/uninstall.js"
 
 const VALUE_FLAGS = new Set(["port", "site", "engine", "name", "role", "roles", "model"])
 
@@ -83,6 +85,8 @@ ${out.bold("Commands")}
   model list|pull    AI (embedding) models — list/use/pull   ${out.dim("EmbeddingGemma default")}
   config get|set     Read/write nexus.config.json             ${out.dim("dot.path value")}
   doctor             Diagnose the instance
+  update             Self-update from GitHub (git installs)
+  uninstall          Remove Nexus (never touches instances)  ${out.dim("--yes")}
   version            Print the nexus version
   help               Show this message
 
@@ -92,7 +96,7 @@ ${out.bold("Global flags")}
   -h, --help         Show help`)
     out.emit({
         ok: true,
-        commands: ["create", "dev", "start", "test", "migrate", "site", "app", "user", "model", "config", "doctor", "version", "help"]
+        commands: ["create", "dev", "start", "test", "migrate", "site", "app", "user", "model", "config", "doctor", "update", "uninstall", "version", "help"]
     })
 }
 
@@ -127,6 +131,10 @@ export async function main(argv) {
                 return await configCmd(args, flags, out)
             case "doctor":
                 return await doctor(args, flags, out)
+            case "update":
+                return await update(args, flags, out)
+            case "uninstall":
+                return await uninstall(args, flags, out)
             default: {
                 // App commands (§8.3 "commands"): inside an instance, unknown
                 // commands fall through to the apps' registered subcommands

@@ -28,7 +28,7 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
 .nx-side {
     position: fixed; top: 0; left: 0; bottom: 0; width: min(84vw, 18.75rem); z-index: 50;
     background: var(--surface);
-    transform: translateX(-100%); transition: transform var(--ease); overflow-y: auto;
+    transform: translateX(-100%); transition: transform var(--ease); overflow-y: auto; overflow-x: hidden;
 }
 .nx-app.open .nx-side { transform: none }
 .nx-scrim {
@@ -38,7 +38,7 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
 .nx-app.open .nx-scrim { opacity: 1; pointer-events: auto }
 .nx-main { grid-area: main; overflow-y: auto; padding: 1rem 0.875rem 3.75rem; min-width: 0 }
 
-.nx-grouplabel { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: var(--sp-3) var(--sp-2) var(--sp-1) }
+.nx-grouplabel { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: var(--sp-3) var(--sp-2) var(--sp-1); overflow: hidden; white-space: nowrap }
 .nx-nav nx-navlink { display: block }
 .nx-nav a {
     display: flex; align-items: center; padding: 0;

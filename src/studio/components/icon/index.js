@@ -27,8 +27,12 @@ export class NxIcon extends HTMLElement {
     }
 
     #paint() {
-        const body = ICONS[this.getAttribute("name")] ?? ""
-        if (this.$svg) this.$svg.innerHTML = body
+        if (!this.$svg) return
+        const name = this.getAttribute("name")
+        const body = ICONS[name]
+        // registry first (inline, instant); ANY other bootstrap-icons name
+        // resolves through the vendored sprite — the whole set, dev's choice
+        this.$svg.innerHTML = body ?? (name ? `<use href="/_nexus/vendor/bootstrap-icons/bootstrap-icons.svg#${name}"></use>` : "")
     }
 }
 
