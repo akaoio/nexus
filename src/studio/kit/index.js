@@ -6,10 +6,10 @@
  * lives in templates and components — never built ad-hoc here.
  */
 
-import NxContext from "./components/context/index.js"
-import NxNotifications from "./components/notifications/index.js"
-import "./components/modal/index.js"
-import "./components/button/index.js"
+import NxContext from "../components/context/index.js"
+import NxNotifications from "../components/notifications/index.js"
+import "../components/modal/index.js"
+import "../components/button/index.js"
 
 // ── component factories (instantiation, the akao `new ITEM()` way) ─────────────
 /** A Bootstrap icon element (<nx-icon>) — THE way to show an icon, never emoji. */
@@ -41,7 +41,7 @@ export const button = ({ variant, iconName, disabled, title, onclick } = {}, chi
 }
 
 // ── template mounting (routes/layouts render their template.js with this) ──────
-import { render } from "../core/UI.js"
+import { render } from "../../core/UI.js"
 
 /** Render a kernel html\`\` template into a fresh host element. */
 export function mountTemplate(template, tag = "div") {
@@ -92,69 +92,8 @@ export function confirmDialog(message) {
     })
 }
 
-// ── API client (carries the session token; 401 → onUnauthorized) ───────────────
-export function createApi({ onUnauthorized } = {}) {
-    let token = localStorage.getItem("nexus-token") || null
-    const headers = () => ({ "content-type": "application/json", ...(token ? { authorization: "Bearer " + token } : {}) })
-    async function req(method, path, body) {
-        const res = await fetch(path, { method, headers: headers(), body: body === undefined ? undefined : JSON.stringify(body) })
-        if (res.status === 401 && onUnauthorized) onUnauthorized()
-        return res.json()
-    }
-    return {
-        get token() { return token },
-        setToken(t) { token = t; t ? localStorage.setItem("nexus-token", t) : localStorage.removeItem("nexus-token") },
-        get: (p) => req("GET", p),
-        post: (p, b) => req("POST", p, b),
-        // domain helpers — the auto-generated API, one place
-        list: (entity, filter) => req("POST", `/api/v1/${entity}/query`, { filter, limit: 100 }),
-        create: (entity, data) => req("POST", `/api/v1/${entity}`, data),
-        update: (entity, id, data) => req("PATCH", `/api/v1/${entity}/${id}`, data),
-        remove: (entity, id) => req("DELETE", `/api/v1/${entity}/${id}`),
-        ask: (entity, query) => req("POST", `/api/v1/${entity}/ask`, { query, limit: 100 }),
-        search: (entity, query) => req("POST", `/api/v1/${entity}/search`, { query, mode: "hybrid" }),
-        session: () => req("GET", "/_studio/session"),
-        studio: (name, method, body) => req(method, "/_studio/" + name, body)
-    }
-}
-
-// ── i18n data store — <nx-context> renders it; this only HOLDS locale + bundle ───────
-export function createI18n(bundle) {
-    const names = bundle?.names ?? {}
-    const locales = bundle?.locales ?? ["en"]
-    // "locale" is THE akao key — the kernel Router reads the same one, so a
-    // visit to the bare root reopens in the REMEMBERED language (/ → /vi/).
-    let locale = localStorage.getItem("locale")
-    const guess = (navigator.language || "en").slice(0, 2)
-    if (!locales.includes(locale)) locale = locales.includes(guess) ? guess : "en"
-    NxContext.bundle({ dict: bundle?.dict ?? {}, locale })
-    return {
-        locales, names,
-        /** Programmatic strings (toasts, confirms) resolve through the SAME memory. */
-        resolve: (key, fallback, args) => NxContext.resolve(key, fallback, args),
-        get locale() { return locale },
-        set(next) {
-            locale = next
-            localStorage.setItem("locale", next)
-            document.documentElement.lang = next
-            NxContext.setLocale(next)
-        }
-    }
-}
-
-// ── theme (light / dark / auto) ────────────────────────────────────────────────
-const THEMES = ["auto", "light", "dark"]
-export function createTheme() {
-    let theme = localStorage.getItem("nexus-theme") || "auto"
-    const apply = () => {
-        if (theme === "auto") document.documentElement.removeAttribute("data-theme")
-        else document.documentElement.setAttribute("data-theme", theme)
-    }
-    apply()
-    return {
-        get value() { return theme },
-        icon: () => (theme === "dark" ? "moon" : theme === "light" ? "sun" : "circle-half"),
-        set(mode) { theme = THEMES.includes(mode) ? mode : "auto"; localStorage.setItem("nexus-theme", theme); apply(); return theme },
-        cycle() { return this.set(THEMES[(THEMES.indexOf(theme) + 1) % 3]) }
-    }
-}
+// ── the split kit — api / i18n / theme live in their own files; this index
+// is the kit's public surface (the component-index rule applied to machinery)
+export { createApi } from "./api.js"
+export { createI18n } from "./i18n.js"
+export { createTheme } from "./theme.js"

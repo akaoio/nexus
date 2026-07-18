@@ -106,6 +106,7 @@ export class NxForm extends Component {
         for (const field of this.#schema?.fields ?? []) {
             if (field.type === "table") continue
             const row = document.createElement("div")
+            row.style.gridColumn = "span " + (field.span ?? 3)
             row.className = "field"
             const label = document.createElement("label")
             label.textContent = field.label?.en ?? field.name
@@ -246,6 +247,31 @@ export class NxFormBuilder extends Component {
         const row = document.createElement("div")
         row.className = "row"
 
+        // drag the HANDLE to reorder (whole-row dragging would fight text
+        // selection in the inputs); the arrows stay for keyboards
+        const grip = document.createElement("span")
+        grip.className = "grip"
+        grip.textContent = "⋮⋮"
+        grip.title = "drag to reorder"
+        grip.draggable = true
+        this.listen(grip, "dragstart", (e) => {
+            e.dataTransfer.setData("text/plain", String(index))
+            e.dataTransfer.effectAllowed = "move"
+        })
+        this.listen(row, "dragover", (e) => {
+            e.preventDefault()
+            e.dataTransfer.dropEffect = "move"
+        })
+        this.listen(row, "drop", (e) => {
+            e.preventDefault()
+            const from = Number(e.dataTransfer.getData("text/plain"))
+            if (!Number.isInteger(from) || from === index) return
+            const [moved] = schema.fields.splice(from, 1)
+            schema.fields.splice(index, 0, moved)
+            this.#structural()
+        })
+        row.appendChild(grip)
+
         const name = document.createElement("input")
         name.className = "name"
         name.value = field.name
@@ -318,6 +344,23 @@ export class NxFormBuilder extends Component {
         })
         required.appendChild(box)
         row.appendChild(required)
+
+        const span = document.createElement("select")
+        span.className = "span"
+        span.title = "form width — grid columns of 3"
+        for (const [v, t] of [["3", "3/3"], ["2", "2/3"], ["1", "1/3"]]) {
+            const option = document.createElement("option")
+            option.value = v
+            option.textContent = t
+            span.appendChild(option)
+        }
+        span.value = String(field.span ?? 3)
+        this.listen(span, "change", () => {
+            if (span.value === "3") delete field.span
+            else field.span = Number(span.value)
+            this.#structural()
+        })
+        row.appendChild(span)
 
         const up = document.createElement("button")
         up.className = "up"

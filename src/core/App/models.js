@@ -17,6 +17,42 @@ export const MODELS = Object.freeze([
 ])
 
 export const DEFAULT_MODEL = MODELS[0].id
+
+/** Curated NL (function-calling) models — tier 4 of NL→AST. */
+export const NL_MODELS = Object.freeze([
+    { id: "onnx-community/functiongemma-270m-it-ONNX", name: "FunctionGemma 270M", langs: "en-strong", size: "~300 MB", note: "default — function calling, edge-sized" }
+])
+
+/**
+ * MODEL PROFILES — every piece of per-model-family knowledge in ONE place,
+ * so "use another model" means adding a profile, never editing mechanics.
+ * Families match by id pattern (a fine-tune of Gemma is still Gemma):
+ *   - prompts: asymmetric task prefixes (EmbeddingGemma's published pair;
+ *     symmetric models use empty prefixes so embed()/embedQuery() coincide)
+ *   - floor: the search relevance floor — the cosine below which a match is
+ *     noise (values from observed related/unrelated gaps: Gemma ~0.4 noise,
+ *     e5 ~0.75 — its space is compressed, MiniLM ~0.3)
+ *   - nlThreshold: the intent-retrieval bar, stricter than the floor because
+ *     a wrong ACTION is worse than a refusal (Gemma: paraphrases 0.71–0.84,
+ *     out-of-domain 0.53–0.57 — 0.65 splits with margin)
+ */
+const PROFILES = Object.freeze([
+    Object.freeze({
+        family: "gemma", match: /gemma/i,
+        prompts: Object.freeze({ query: "task: search result | query: ", document: "title: none | text: " }),
+        floor: 0.5, nlThreshold: 0.65
+    }),
+    Object.freeze({ family: "e5", match: /\be5\b|multilingual-e5/i, prompts: Object.freeze({ query: "", document: "" }), floor: 0.75, nlThreshold: 0.85 }),
+    Object.freeze({ family: "minilm", match: /minilm/i, prompts: Object.freeze({ query: "", document: "" }), floor: 0.3, nlThreshold: 0.35 })
+])
+
+/** The conservative defaults an UNKNOWN model gets. */
+const DEFAULT_PROFILE = Object.freeze({ family: "generic", prompts: Object.freeze({ query: "", document: "" }), floor: 0.25, nlThreshold: 0.35 })
+
+/** The profile for a model id — always answers (unknown ids get defaults). */
+export function profileFor(id = "") {
+    return PROFILES.find((p) => p.match.test(id)) ?? DEFAULT_PROFILE
+}
 const LIB = "@huggingface/transformers"
 
 const err = (code, detail) => new Error(detail ? `${code}: ${detail}` : code)

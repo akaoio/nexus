@@ -10,21 +10,24 @@ import { html } from "../../../core/UI.js"
 import "../../components/icon/index.js"
 import "../../components/context/index.js"
 import "../../components/button/index.js"
-import "../../components/navigator/index.js"
 import "../../components/user/index.js"
+import "../../components/svg/index.js"
 
-export const layoutTemplate = (c, { site, badge }) => html`
+export const layoutTemplate = (c, { site }) => html`
     <div class="nx-app" ${({ element }) => (c.app = element)}>
         <header class="nx-top">
             <nx-button data-variant="icon" class="nx-hamb" data-icon="list"
                 ${({ element }) => element.addEventListener("click", () => c.app.classList.toggle("open"))}></nx-button>
+            <nx-button data-variant="icon" class="nx-navtoggle" data-icon="list" title="Collapse to icons"
+                ${({ element }) => (c.navToggle = element)}></nx-button>
             <span class="nx-brand">
-                <span class="hex"><nx-icon name="hexagon"></nx-icon></span>
+                <span class="hex"><nx-svg data-src="/_nexus/src/studio/images/brand.svg"></nx-svg></span>
                 ${site}
                 <small>Studio</small>
             </span>
             <span class="nx-spacer"></span>
-            <span ${({ element }) => element.replaceWith(badge)}></span>
+            <nx-button data-variant="icon" data-icon="search" title="Search everything ( / )"
+                ${({ element }) => (c.searchToggle = element)}></nx-button>
             <nx-user ${({ element }) => (c.user = element)}></nx-user>
         </header>
         <div class="nx-scrim" ${({ element }) => element.addEventListener("click", () => c.app.classList.remove("open"))}></div>
@@ -35,12 +38,7 @@ export const layoutTemplate = (c, { site, badge }) => html`
             <nav class="nx-nav" id="nx-nav" ${({ element }) => (c.nav = element)}></nav>
         </aside>
         <main class="nx-main" id="nx-main" ${({ element }) => (c.main = element)}></main>
-        <span class="nx-orbit">
-            <nx-navigator>
-                <nx-navigator data-icon="translate" ${({ element }) => (c.localesNav = element)}></nx-navigator>
-                <nx-navigator data-icon="circle-half" ${({ element }) => (c.themesNav = element)}></nx-navigator>
-            </nx-navigator>
-        </span>
+        <div class="nx-searchbar" hidden ${({ element }) => (c.searchbar = element)}></div>
     </div>
 `
 
@@ -58,7 +56,7 @@ export const loginTemplate = (c, { site, onSubmit, onPasskey }) => html`
     <div class="nx-login" id="nx-login" hidden ${({ element }) => (c.login = element)}>
         <div class="nx-card" style="width:min(94vw,23.75rem)">
             <h2 style="margin:0 0 0.25rem;display:flex;gap:0.375rem;align-items:center">
-                <span style="color:var(--accent);display:inline-flex"><nx-icon name="hexagon"></nx-icon></span>
+                <span class="hex" style="color:var(--accent);display:inline-flex"><nx-svg data-src="/_nexus/src/studio/images/brand.svg"></nx-svg></span>
                 ${site}
             </h2>
             <p class="nx-muted"><nx-context data-key="login" data-fallback="Sign in"></nx-context></p>

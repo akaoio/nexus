@@ -1,8 +1,19 @@
-/** /settings route — logic: edit nexus.config.json through /_studio/config
- *  (the same safe ops as `nexus config`). */
+/** /settings route — the hub: general config (this file) plus the feature
+ *  children, folders nested like the URL (/settings/ai, /settings/locales,
+ *  /settings/themes — the akao routes shape). */
 
-import { mountTemplate, button, toast } from "../../kit.js"
+import { mountTemplate, button, toast } from "../../kit/index.js"
 import { settingsTemplate } from "./template.js"
+import * as ai from "./ai/index.js"
+import * as locales from "./locales/index.js"
+import * as themes from "./themes/index.js"
+
+/** The settings children — the sidebar renders these under Settings. */
+export const FEATURES = {
+    ai: { icon: "stars", key: "ai", render: ai.render },
+    locales: { icon: "translate", key: "languages", render: locales.render },
+    themes: { icon: "circle-half", key: "themes", render: themes.render }
+}
 
 const section = (title, children) => {
     const wrap = document.createElement("div")
@@ -32,6 +43,10 @@ const input = (props = {}) => {
 }
 
 export function render(ctx) {
+    // a child feature owns the whole page when the URL names it
+    const feature = FEATURES[ctx.state.feature]
+    if (feature) return feature.render(ctx)
+
     const c = {}
     const host = mountTemplate(settingsTemplate(c))
 

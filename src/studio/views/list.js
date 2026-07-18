@@ -5,8 +5,8 @@
  * cells, and a scroll container so a wide table never breaks the page.
  */
 
-import { icon } from "../kit.js"
-import { editableFields, displays } from "../fields.js"
+import { icon } from "../kit/index.js"
+import { editableFields, displays } from "../kit/fields.js"
 
 const rendererFor = (type) => displays[type] || displays.default
 const cellClass = (type, column) => {

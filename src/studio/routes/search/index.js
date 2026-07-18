@@ -1,6 +1,6 @@
 /** /search route — logic: wires <nx-search> to the Data Plane search API. */
 
-import { mountTemplate } from "../../kit.js"
+import { mountTemplate } from "../../kit/index.js"
 import { searchTemplate } from "./template.js"
 
 export function render(ctx) {

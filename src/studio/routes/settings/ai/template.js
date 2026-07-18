@@ -1,7 +1,7 @@
 /** /ai route template — the embedding model panel. */
 
-import { html } from "../../../core/UI.js"
-import "../../components/context/index.js"
+import { html } from "../../../../core/UI.js"
+import "../../../components/context/index.js"
 
 export const aiTemplate = (c) => html`
     <div class="nx-head">

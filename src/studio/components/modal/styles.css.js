@@ -5,13 +5,13 @@ import { css } from "../../../core/UI/css.js"
 export const STYLE = () => css`
     dialog {
         background: var(--surface); color: var(--text);
-        border: var(--border-width, 1px) solid var(--border); border-radius: var(--radius, 0.625rem);
+        
         box-shadow: var(--shadow); padding: 0; min-width: min(92vw, 22rem); max-width: min(94vw, 30rem);
     }
     dialog::backdrop { background: hsl(var(--h1, 216) 84% 5% / 0.45) }
     header {
         display: flex; gap: var(--sp-3, 0.75rem); align-items: center;
-        padding: var(--sp-3, 0.75rem) var(--sp-4, 1rem); border-bottom: var(--border-width, 1px) solid var(--border);
+        padding: var(--sp-3, 0.75rem) var(--sp-4, 1rem); background: var(--surface-2);
         font-weight: 600;
     }
     header .spacer { flex: 1 }

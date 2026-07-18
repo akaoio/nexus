@@ -121,6 +121,7 @@ import "./test/security/security.test.js"
 
 // NL→AST — natural language to Query AST (clauses NL-*)
 import "./test/nl/nl.test.js"
+import "./test/nl/functiongemma.test.js"
 
 // Studio — nx-query-builder (clauses NXQ-*; DOM clauses run in the browser)
 import "./test/studio/query-builder.test.js"
@@ -130,6 +131,13 @@ import "./test/studio/form-builder.test.js"
 
 // Studio — nx-permission-manager (clauses NXP-*)
 import "./test/studio/permission-manager.test.js"
+
+// Studio — roles as policy bundles (clauses ROLE-*)
+import "./test/studio/roles.test.js"
+
+// App — system entities (clauses SYS-*)
+import "./test/app/system.test.js"
+import "./test/app/lifecycle.test.js"
 
 // Studio — nx-schema-designer (clauses NXS-*)
 import "./test/studio/schema-designer.test.js"

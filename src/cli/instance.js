@@ -32,6 +32,7 @@ export function loadInstance(root) {
 
     const schemas = []
     const apps = []
+    const files = {} // entity name -> repo-relative schema file (the delete plan needs it)
     const appsDir = join(root, "apps")
     if (existsSync(appsDir))
         for (const app of readdirSync(appsDir)) {
@@ -59,8 +60,9 @@ export function loadInstance(root) {
                 if (schemas.some((s) => s.name === schema.name))
                     throw err("E_ENTITY_CONFLICT", `entity "${schema.name}" declared by more than one app`)
                 schemas.push(schema)
+                files[schema.name] = file.split("\\").join("/") // repo-relative, forward slashes
             }
         }
     const policies = loadPolicies(root, apps, schemas)
-    return { config, schemas, apps, policies }
+    return { config, schemas, apps, policies, files }
 }

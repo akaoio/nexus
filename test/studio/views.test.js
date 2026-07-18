@@ -6,7 +6,7 @@
  */
 
 import Test, { assert } from "../../src/core/Test.js"
-import { applyView, packView, unpackView, viewSchema, saveView, updateView, listViews, getView, removeView } from "../../src/studio/views.js"
+import { applyView, packView, unpackView, viewSchema, saveView, updateView, listViews, getView, removeView } from "../../src/core/Views.js"
 import { DataPlane } from "../../src/core/Data.js"
 import { tableDDL } from "../../src/core/Data/ddl.js"
 import { createCompiler } from "../../src/core/Data/kysely.js"

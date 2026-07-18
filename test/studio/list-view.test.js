@@ -5,7 +5,8 @@
  */
 
 import Test, { assert } from "../../src/core/Test.js"
-import { sortRows, groupRows, toCSV, columnsFor, NxListView } from "../../src/studio/components/list-view/index.js"
+import { toCSV, columnsFor, NxListView } from "../../src/studio/components/list-view/index.js"
+import { sortRows, groupRows } from "../../src/core/Views.js"
 import { schema, field } from "../conformance/model/_helpers.js"
 
 const TASK = schema({

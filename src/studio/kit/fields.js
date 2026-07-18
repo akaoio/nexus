@@ -7,7 +7,7 @@
  * + primitives only (the akao dynamic style): no ad-hoc DOM helpers.
  */
 
-import { icon, button, text } from "./kit.js"
+import { icon, button, text } from "./index.js"
 
 const label = (field, locale) =>
     (field.label && (field.label[locale] || field.label.en || Object.values(field.label)[0])) || field.name
@@ -93,12 +93,13 @@ export function editableFields(schema) {
 export function buildForm(schema, { data = {}, onSubmit, submitLabel = "Save", locale } = {}) {
     const values = { ...data }
     const form = document.createElement("form")
-    form.className = "nx-form"
+    form.className = "nx-form nx-form-grid"
     form.addEventListener("submit", (e) => { e.preventDefault(); onSubmit?.(values) })
     form.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); onSubmit?.(values) } })
     for (const field of editableFields(schema)) {
         const wrap = document.createElement("div")
         wrap.className = "nx-field"
+        wrap.style.gridColumn = "span " + (field.span ?? 3)
         if (field.type === "boolean") {
             if (values[field.name] === undefined) values[field.name] = field.default ?? false
         } else {
@@ -112,6 +113,7 @@ export function buildForm(schema, { data = {}, onSubmit, submitLabel = "Save", l
     }
     const actions = document.createElement("div")
     actions.className = "nx-actions"
+    actions.style.gridColumn = "1 / -1"
     const submit = button({ variant: "primary", onclick: () => form.requestSubmit() }, [submitLabel === "Save" ? text("save") : submitLabel])
     actions.append(submit)
     form.append(actions)

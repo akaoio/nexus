@@ -12,7 +12,8 @@
  */
 
 import { DataPlane } from "../Data.js"
-import { modelFloor, modelNLThreshold } from "../Semantic/transformers.js"
+import { profileFor } from "../App/models.js"
+import { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, unpackPolicy, importIdentities } from "../App/system.js"
 import { createApi } from "./api.js"
 import { openInstanceData, ensureTables } from "../../cli/data.js"
 import { loadExtensions } from "../App/extensions.js"
@@ -40,8 +41,8 @@ function lazyTransformers(model, root) {
     return {
         name: model,
         version: 1,
-        floor: modelFloor(model),
-        nlThreshold: modelNLThreshold(model),
+        floor: profileFor(model).floor,
+        nlThreshold: profileFor(model).nlThreshold,
         get dims() {
             return inner?.dims
         },
@@ -80,15 +81,20 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
     const authState = { required: false, secret: null, rolesForPub: () => [] }
     const challenges = new Map() // nonce → expiry (one-time, 60s)
     let api = null
+    let plane = null
     let engine = "sqlite"
     let authMode = "no entities"
     let embedderInfo = { mode: "none", semanticAvailable: false }
 
     if (schemas.length) {
+        // System entities join the SAME pipeline as app entities — user, role,
+        // policy and saved views are ordinary documents (the Frappe lesson);
+        // only the registry flag makes them undeletable in the Studio.
+        const allSchemas = [...schemas, ...SYSTEM_ENTITIES]
         const data = await openInstanceData(root, config)
         engine = data.engine
         const { executor, kysely } = data
-        await ensureTables(executor, kysely, schemas, executor.dialect)
+        await ensureTables(executor, kysely, allSchemas, executor.dialect)
 
         // Embeddings (§4.6b). Honest, opt-in, and lazy:
         //  • no entity declares `semantic:` → no embedder (mode "none").
@@ -136,8 +142,8 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             let llm = null
             const llmProvider = async (query, { schema }) => {
                 if (!llm) {
-                    const { llmNLProvider, transformersGenerator } = await import("../NL/llm.js")
-                    llm = llmNLProvider({ generate: await transformersGenerator({ model: nlModel, root }) })
+                    const { llmNLProvider, functionGemmaGenerator } = await import("../NL/llm.js")
+                    llm = llmNLProvider({ generate: await functionGemmaGenerator({ model: nlModel, root }) })
                 }
                 return llm(query, { schema })
             }
@@ -177,16 +183,52 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
                 }
             }
         }
-        const plane = new DataPlane({ executor, schemas, dialect: executor.dialect, hooks: extensions, embedder, nlProvider })
+        plane = new DataPlane({ executor, schemas: allSchemas, dialect: executor.dialect, hooks: extensions, embedder, nlProvider })
+
+        // ── the RBAC directory lives in the plane ─────────────────────────────
+        // nexus_policy rows are the LIVE policy layer (app files stay shipped
+        // baselines); nexus_user rows are the directory (many roles per user).
+        // Both are cached here and refreshed through the SAME hook mechanism
+        // apps use — a Studio write is instantly a live grant, no restart.
+        const NEXUS_CTX = {
+            user: "nexus", roles: [], shares: [],
+            policies: ["nexus_policy", "nexus_user"].map((entity) => ({ entity, actions: ["read", "create"], rule: null, permlevel: 0, ifOwner: false }))
+        }
+        const dbPolicies = []
+        const usersByPub = new Map()
+        const refreshPolicies = async () => {
+            const rows = await plane.list("nexus_policy", {}, NEXUS_CTX)
+            dbPolicies.length = 0
+            for (const row of rows) dbPolicies.push(unpackPolicy(row))
+        }
+        const refreshUsers = async () => {
+            const rows = await plane.list("nexus_user", {}, NEXUS_CTX)
+            usersByPub.clear()
+            for (const row of rows) usersByPub.set(row.pub, { ...row, roles: row.roles ? JSON.parse(row.roles) : [] })
+        }
+        for (const event of ["after:create", "after:update", "after:remove"]) {
+            extensions.hook("nexus_policy", event, () => refreshPolicies())
+            extensions.hook("nexus_user", event, () => refreshUsers())
+        }
 
         const keys = Array.isArray(config.api_keys) ? config.api_keys : []
-        // LIVE auth state: identities is a mutable array and `required` derives
-        // from it, so the Studio can add an identity and flip auth ON without a
-        // restart — the context below re-checks per request.
+        // LIVE auth state: the user DIRECTORY (nexus_user rows) decides roles;
+        // config identities remain the bootstrap seed and the lockout-proof
+        // fallback. `required` derives live, so adding the first user (either
+        // side) flips auth ON without a restart.
         authState.identities = Array.isArray(config.identities) ? [...config.identities] : [] // [{ pub, roles }]
-        Object.defineProperty(authState, "required", { get: () => keys.length > 0 || authState.identities.length > 0 })
+        Object.defineProperty(authState, "required", { get: () => keys.length > 0 || authState.identities.length > 0 || usersByPub.size > 0 })
         authState.secret = config.token_secret || randomBytes(32).toString("hex") // ephemeral if unset
-        authState.rolesForPub = (pub) => authState.identities.find((i) => i.pub === pub)?.roles ?? []
+        authState.rolesForPub = (pub) => usersByPub.get(pub)?.roles ?? authState.identities.find((i) => i.pub === pub)?.roles ?? []
+
+        // bootstrap: an empty directory imports the config identities ONCE —
+        // from then on the table IS the truth the Studio edits
+        await refreshUsers()
+        if (!usersByPub.size && authState.identities.length) {
+            for (const row of importIdentities(authState.identities)) await plane.create("nexus_user", row, NEXUS_CTX)
+            await refreshUsers()
+        }
+        await refreshPolicies()
 
         // The one hard security rule of production mode: never serve god-mode.
         if (mode === "production" && !authState.required)
@@ -195,9 +237,14 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
                 { code: "E_NO_AUTH" }
             )
 
-        const devPols = devPolicies(schemas)
+        const devPols = devPolicies(allSchemas)
+        // effective policy set = app-file baselines + nexus-shipped baselines
+        // (self-service as DATA: $CURRENT_USER rules; the admin bundle over
+        // every loaded entity — Frappe's System Manager) + LIVE nexus_policy rows
+        const shippedAdmin = adminBaselines(allSchemas)
+        const livePolicies = () => [...appPolicies, ...SYSTEM_BASELINES, ...shippedAdmin, ...dbPolicies]
         const context = (req) => {
-            // spread per request: appPolicies mutates live (Studio hot-apply)
+            // spread per request: appPolicies + dbPolicies mutate live
             if (!authState.required)
                 return { user: req.headers["x-nexus-user"] || "dev", roles: ["dev"], policies: [...devPols, ...appPolicies], shares: [] }
             const header = req.headers["authorization"] ?? ""
@@ -205,7 +252,7 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             // 1) a ZEN session token (issued by /_auth/verify)
             if (bearer) {
                 const claims = verifyToken(bearer, authState.secret)
-                if (claims) return { user: claims.user, roles: claims.roles, policies: policiesFor(appPolicies, claims.roles), shares: [] }
+                if (claims) return { user: claims.user, roles: claims.roles, policies: policiesFor(livePolicies(), claims.roles), shares: [] }
             }
             // 2) a static API key (constant-time, SEC-06)
             const presented = bearer ?? req.headers["x-nexus-key"]
@@ -213,7 +260,7 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             for (const k of keys) if (k.key && timingSafeStringEqual(k.key, presented ?? "")) entry = k
             if (entry) {
                 const roles = entry.roles ?? []
-                return { user: entry.user, roles, policies: policiesFor(appPolicies, roles), shares: [] }
+                return { user: entry.user, roles, policies: policiesFor(livePolicies(), roles), shares: [] }
             }
             throw new Error("E_AUTH: a valid session token or API key is required")
         }
@@ -224,7 +271,7 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             : "DEV identity — wide-open policies, user via x-nexus-user header"
     }
 
-    return { api, authState, challenges, engine, authMode, extensions, embedderInfo }
+    return { api, plane, authState, challenges, engine, authMode, extensions, embedderInfo }
 }
 
 export default { buildInstanceApi }

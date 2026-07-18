@@ -52,7 +52,9 @@ const STARTER_MODEL = {
     // A semantic block so search works the moment an AI model is configured
     // (§4.6c). Without this an Entity has nothing to embed — the reason search
     // "didn't work" out of the box.
-    semantic: { embed: [{ field: "title", weight: 2 }], template: { en: "{title}", vi: "{title}" } }
+    semantic: { embed: [{ field: "title", weight: 2 }], template: { en: "{title}", vi: "{title}" } },
+    // Views are OPT-IN per entity (never automatic) — the starter declares both.
+    views: ["list", "kanban"]
 }
 
 export async function create(args, flags, out) {
