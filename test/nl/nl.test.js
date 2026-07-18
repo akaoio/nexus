@@ -139,20 +139,79 @@ Test.describe("NL→AST (NL-*)", () => {
         assert.deepEqual(document.root, { field: "done", operator: "eq", value: false })
     })
 
-    Test.it("NL-12 the LLM tier's pure halves: the schema prompt is complete, extractAST is strict", async () => {
-        const { schemaPrompt, extractAST } = await import("../../src/core/NL/llm.js")
-        const prompt = schemaPrompt(TASK)
-        for (const must of ["priority", "low, medium, high", "Tiêu đề", "$NOW", '"op": "and"|"or"|"not"'])
-            assert.truthy(prompt.includes(must), `prompt carries ${JSON.stringify(must)}`)
-        // fenced, bare, and prose-wrapped JSON all extract; the result is a document
-        const ast = { field: "done", operator: "eq", value: false }
-        for (const text of [JSON.stringify(ast), "```json\n" + JSON.stringify(ast) + "\n```", "Sure! " + JSON.stringify(ast) + " hope that helps"])
-            assert.deepEqual(extractAST(text), { astVersion: 1, root: ast })
-        assert.deepEqual(extractAST("null"), { astVersion: 1, root: null })
-        await Test.assert.rejects(Promise.resolve().then(() => extractAST("I cannot help with that")), "E_NL_LLM")
-        await Test.assert.rejects(Promise.resolve().then(() => extractAST('{"broken": ')), "E_NL_LLM")
-        // an extracted document flows through the SAME choke point as every provider
-        const provider = async () => extractAST(JSON.stringify({ field: "ghost", operator: "eq", value: 1 }))
+    Test.it("NL-12 the provider seam: schema in as TOOLS, call text out, parsed and choke-pointed", async () => {
+        const { llmNLProvider } = await import("../../src/core/NL/llm.js")
+        // the generate seam receives the schema AS a tool declaration — never prose
+        let seen = null
+        const provider = llmNLProvider({
+            generate: async ({ tools, user }) => {
+                seen = { tools, user }
+                return "<start_function_call>call:filter_records{filter:{field:<escape>done<escape>,operator:<escape>eq<escape>,value:false}}<end_function_call>"
+            }
+        })
+        const document = await provider("việc chưa xong", { schema: TASK })
+        assert.deepEqual(document, { astVersion: 1, root: { field: "done", operator: "eq", value: false } })
+        assert.equal(seen.user, "việc chưa xong")
+        assert.equal(seen.tools.length, 1)
+        assert.equal(seen.tools[0].function.name, "filter_records")
+        await Test.assert.rejects(Promise.resolve().then(() => llmNLProvider({})), "E_NL_GENERATOR")
+    })
+
+    Test.it("NL-12a the LLM tier declares the schema AS SCHEMA: filterTool is a complete function declaration", async () => {
+        const { filterTool } = await import("../../src/core/NL/llm.js")
+        const tool = filterTool(TASK)
+        assert.equal(tool.type, "function")
+        assert.equal(tool.function.name, "filter_records")
+        const params = tool.function.parameters
+        assert.deepEqual(params.required, ["filter"])
+        const node = params.properties.filter
+        // the template renders `type | upper` — every property type is a STRING,
+        // and nullability is the Google-dialect `nullable` key, never a type union
+        assert.equal(node.type, "object")
+        assert.equal(node.nullable, true)
+        for (const [name, p] of Object.entries(node.properties)) assert.equal(typeof p.type, "string", `property ${name} carries a string type`)
+        // the field vocabulary is an ENUM — the model cannot be offered a field that doesn't exist
+        for (const name of ["title", "done", "priority", "points", "due", "status", "secret", "id", "owner", "created_at", "updated_at"])
+            assert.truthy(node.properties.field.enum.includes(name), `field enum carries ${name}`)
+        assert.truthy(!node.properties.field.enum.includes("ghost"), "no invented fields")
+        // the closed operator list, verbatim
+        assert.deepEqual(node.properties.operator.enum, ["eq", "ne", "gt", "gte", "lt", "lte", "like", "nlike", "in", "nin", "between", "isnull", "notnull"])
+        // groups: op enum + children of the same shape
+        assert.deepEqual(node.properties.op.enum, ["and", "or", "not"])
+        assert.equal(node.properties.children.type, "array")
+        // types, options, labels and date variables ride in descriptions
+        const prose = JSON.stringify(tool)
+        for (const must of ["low, medium, high", "Tiêu đề", "$NOW", "priority (select)"])
+            assert.truthy(prose.includes(must), `declaration carries ${JSON.stringify(must)}`)
+    })
+
+    Test.it("NL-12b parseCall reads FunctionGemma call syntax strictly — and feeds the SAME choke point", async () => {
+        const { parseCall } = await import("../../src/core/NL/llm.js")
+        const wrap = (args) => `<start_function_call>call:filter_records{${args}}<end_function_call>`
+        // a leaf: escape-delimited strings, bare keys
+        assert.deepEqual(
+            parseCall(wrap("filter:{field:<escape>priority<escape>,operator:<escape>eq<escape>,value:<escape>high<escape>}")),
+            { astVersion: 1, root: { field: "priority", operator: "eq", value: "high" } })
+        // a nested group with an array value and bare literals
+        assert.deepEqual(
+            parseCall(wrap("filter:{op:<escape>and<escape>,children:[{field:<escape>priority<escape>,operator:<escape>in<escape>,value:[<escape>high<escape>,<escape>low<escape>]},{field:<escape>done<escape>,operator:<escape>eq<escape>,value:false}]}")),
+            { astVersion: 1, root: { op: "and", children: [
+                { field: "priority", operator: "in", value: ["high", "low"] },
+                { field: "done", operator: "eq", value: false }
+            ] } })
+        // numbers stay numbers; null filter means "everything"
+        assert.deepEqual(parseCall(wrap("filter:{field:<escape>points<escape>,operator:<escape>gt<escape>,value:3}")).root.value, 3)
+        assert.deepEqual(parseCall(wrap("filter:null")), { astVersion: 1, root: null })
+        // strictness: no call, wrong function, broken args, missing filter — all E_NL_LLM
+        await Test.assert.rejects(Promise.resolve().then(() => parseCall("I cannot help with that")), "E_NL_LLM")
+        await Test.assert.rejects(Promise.resolve().then(() => parseCall("<start_function_call>call:drop_tables{filter:null}<end_function_call>")), "E_NL_LLM")
+        await Test.assert.rejects(Promise.resolve().then(() => parseCall(wrap("filter:{field:<escape>done<escape>"))), "E_NL_LLM")
+        await Test.assert.rejects(Promise.resolve().then(() => parseCall(wrap("verbose:true"))), "E_NL_LLM")
+        // pathological nesting fails the CONTRACT way — E_NL_LLM, never a stack overflow
+        await Test.assert.rejects(Promise.resolve().then(() => parseCall(wrap("filter:" + "[".repeat(100000)))), "E_NL_LLM")
+        await Test.assert.rejects(Promise.resolve().then(() => parseCall("<start_function_call>call:filter_records{filter:null}junk<end_function_call>")), "E_NL_LLM")
+        // whatever parses still dies in translate() when it names a ghost field
+        const provider = async () => parseCall(wrap("filter:{field:<escape>ghost<escape>,operator:<escape>eq<escape>,value:1}"))
         await Test.assert.rejects(translate("anything", TASK, provider), "E_NL_FIELD")
     })
 

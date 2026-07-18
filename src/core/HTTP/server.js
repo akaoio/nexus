@@ -136,8 +136,8 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             let llm = null
             const llmProvider = async (query, { schema }) => {
                 if (!llm) {
-                    const { llmNLProvider, transformersGenerator } = await import("../NL/llm.js")
-                    llm = llmNLProvider({ generate: await transformersGenerator({ model: nlModel, root }) })
+                    const { llmNLProvider, functionGemmaGenerator } = await import("../NL/llm.js")
+                    llm = llmNLProvider({ generate: await functionGemmaGenerator({ model: nlModel, root }) })
                 }
                 return llm(query, { schema })
             }
