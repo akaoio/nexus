@@ -15,8 +15,8 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
     backdrop-filter: saturate(1.4) blur(0.5rem);
 }
 .nx-brand { font-weight: 700; letter-spacing: -0.01em }
-.nx-brand .hex { color: var(--accent); display: inline-flex; vertical-align: -0.1875rem }
-.nx-brand .hex svg, .nx-login .hex svg { width: 1.25rem; height: 1.4375rem; display: block }
+.nx-brand .hex { color: var(--accent); display: inline-flex; vertical-align: -0.1875rem; --icon: 1.375rem }
+.nx-login .hex { --icon: 1.5rem }
 .nx-brand small { color: var(--muted); font-weight: 500 }
 
 .nx-app { display: block }

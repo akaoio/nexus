@@ -94,13 +94,6 @@ export async function dev(args, flags, out) {
     // internal plane context for _studio reads/executions (dev-only surface)
     const nexusCtx = (entity, actions) => ({ user: "nexus", roles: [], shares: [], policies: [{ entity, actions, rule: null, permlevel: 0, ifOwner: false }] })
 
-    // The brand mark — the SVG FILE is the source of truth (redraw the logo,
-    // reload the page); it rides the boot payload and is inlined into the DOM
-    // so `fill: currentColor` follows the user's accent channels live.
-    const brandSvg = () => {
-        try { return readFileSync(join(NEXUS_ROOT, "src/studio/images/brand.svg"), "utf8") } catch { return null }
-    }
-
     const json = (res, code, obj) => {
         res.writeHead(code, { "content-type": "application/json; charset=utf-8" })
         res.end(JSON.stringify(obj))
@@ -367,7 +360,7 @@ export async function dev(args, flags, out) {
         // (SEC-01..04 hold: /nexus.config.json, /.nexus/*, backups stay 404).
         if (routeMatches(url.pathname)) {
             res.writeHead(200, { "content-type": MIME[".html"], "cache-control": "no-cache" })
-            return res.end(studioIndex(config, schemas, { embedder: embedderInfo, appName, i18n, brand: brandSvg() }))
+            return res.end(studioIndex(config, schemas, { embedder: embedderInfo, appName, i18n }))
         }
         // Statics (the akao statics discipline): YAML in src is the human+machine
         // source; what ships is JSON — composed at request time, no build step,

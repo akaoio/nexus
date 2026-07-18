@@ -79,10 +79,10 @@ const MODULES = {
 const BUILD = ["entities", "permissions", "roles", "users", "search", "settings"]
 
 // ── layout ─────────────────────────────────────────────────────────────────────
-const layout = buildLayout({ site: boot.site, brand: boot.brand })
+const layout = buildLayout({ site: boot.site })
 const { app, main, nav, entNav, drawer, openDrawer, closeDrawer } = layout
 
-const { login, passkeyRow } = buildLogin({ site: boot.site, brand: boot.brand, onSubmit: doLogin, onPasskey: passkeyLogin })
+const { login, passkeyRow } = buildLogin({ site: boot.site, onSubmit: doLogin, onPasskey: passkeyLogin })
 NxUser.onSignout = () => {
     api.setToken(null)
     location.reload()
