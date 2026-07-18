@@ -139,21 +139,22 @@ Test.describe("NL→AST (NL-*)", () => {
         assert.deepEqual(document.root, { field: "done", operator: "eq", value: false })
     })
 
-    Test.it("NL-12 the LLM tier's pure halves: the schema prompt is complete, extractAST is strict", async () => {
-        const { schemaPrompt, extractAST } = await import("../../src/core/NL/llm.js")
-        const prompt = schemaPrompt(TASK)
-        for (const must of ["priority", "low, medium, high", "Tiêu đề", "$NOW", '"op": "and"|"or"|"not"'])
-            assert.truthy(prompt.includes(must), `prompt carries ${JSON.stringify(must)}`)
-        // fenced, bare, and prose-wrapped JSON all extract; the result is a document
-        const ast = { field: "done", operator: "eq", value: false }
-        for (const text of [JSON.stringify(ast), "```json\n" + JSON.stringify(ast) + "\n```", "Sure! " + JSON.stringify(ast) + " hope that helps"])
-            assert.deepEqual(extractAST(text), { astVersion: 1, root: ast })
-        assert.deepEqual(extractAST("null"), { astVersion: 1, root: null })
-        await Test.assert.rejects(Promise.resolve().then(() => extractAST("I cannot help with that")), "E_NL_LLM")
-        await Test.assert.rejects(Promise.resolve().then(() => extractAST('{"broken": ')), "E_NL_LLM")
-        // an extracted document flows through the SAME choke point as every provider
-        const provider = async () => extractAST(JSON.stringify({ field: "ghost", operator: "eq", value: 1 }))
-        await Test.assert.rejects(translate("anything", TASK, provider), "E_NL_FIELD")
+    Test.it("NL-12 the provider seam: schema in as TOOLS, call text out, parsed and choke-pointed", async () => {
+        const { llmNLProvider } = await import("../../src/core/NL/llm.js")
+        // the generate seam receives the schema AS a tool declaration — never prose
+        let seen = null
+        const provider = llmNLProvider({
+            generate: async ({ tools, user }) => {
+                seen = { tools, user }
+                return "<start_function_call>call:filter_records{filter:{field:<escape>done<escape>,operator:<escape>eq<escape>,value:false}}<end_function_call>"
+            }
+        })
+        const document = await provider("việc chưa xong", { schema: TASK })
+        assert.deepEqual(document, { astVersion: 1, root: { field: "done", operator: "eq", value: false } })
+        assert.equal(seen.user, "việc chưa xong")
+        assert.equal(seen.tools.length, 1)
+        assert.equal(seen.tools[0].function.name, "filter_records")
+        await Test.assert.rejects(Promise.resolve().then(() => llmNLProvider({})), "E_NL_GENERATOR")
     })
 
     Test.it("NL-12a the LLM tier declares the schema AS SCHEMA: filterTool is a complete function declaration", async () => {
