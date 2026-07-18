@@ -20,6 +20,52 @@ const err = (code, detail) => new Error(detail ? `${code}: ${detail}` : code)
 
 export const DEFAULT_NL_MODEL = "onnx-community/Qwen2.5-0.5B-Instruct"
 
+/** The closed operator vocabulary — mirrors AST validate() exactly. */
+const OPERATORS = ["eq", "ne", "gt", "gte", "lt", "lte", "like", "nlike", "in", "nin", "between", "isnull", "notnull"]
+
+/**
+ * The entity schema AS a function declaration (schema into schema): fields
+ * become an enum, operators are the closed list, types/options/labels ride
+ * in descriptions. FunctionGemma's chat template renders this structurally —
+ * the model never sees a hand-rolled prose prompt. Pure — clause NL-12a.
+ */
+export function filterTool(schema) {
+    const fields = (schema?.fields ?? []).filter((f) => f.type !== "table")
+    const names = [...fields.map((f) => f.name), "id", "owner", "created_at", "updated_at"]
+    const lines = fields.map((f) => {
+        const labels = Object.values(f.label ?? {}).join(" / ")
+        const opts = f.type === "select" ? ` options: [${f.options.join(", ")}]` : ""
+        return `${f.name} (${f.type})${labels ? ` — "${labels}"` : ""}${opts}`
+    })
+    return {
+        type: "function",
+        function: {
+            name: "filter_records",
+            description: `Filter "${schema?.name}" records by the user's request. Pass filter:null for "everything". Include EVERY condition the user states — and/or between different conditions becomes a group.`,
+            parameters: {
+                type: "object",
+                properties: {
+                    filter: {
+                        type: "object",
+                        description:
+                            "A filter node — EITHER a leaf {field, operator, value} OR a group {op, children}. " +
+                            `Fields: ${lines.join("; ")}. ` +
+                            'Dates may use "$NOW", "$NOW(+1 day)", "$NOW(-1 day)". "like" values use % wildcards.',
+                        properties: {
+                            field: { type: "string", enum: names, description: "leaf: the field to test" },
+                            operator: { type: "string", enum: OPERATORS, description: "leaf: the comparison" },
+                            value: { description: "leaf: a scalar, or an array for in/nin/between" },
+                            op: { type: "string", enum: ["and", "or", "not"], description: "group: the connective" },
+                            children: { type: "array", description: "group: nested filter nodes of this same shape", items: { type: "object" } }
+                        }
+                    }
+                },
+                required: ["filter"]
+            }
+        }
+    }
+}
+
 /**
  * The system prompt: the AST grammar as a contract + THIS entity's fields.
  * Pure — clause-tested. Few-shot examples anchor the output shape.
@@ -141,4 +187,4 @@ export async function transformersGenerator({ model = DEFAULT_NL_MODEL, root, on
     }
 }
 
-export default { DEFAULT_NL_MODEL, schemaPrompt, extractAST, llmNLProvider, transformersGenerator }
+export default { DEFAULT_NL_MODEL, filterTool, schemaPrompt, extractAST, llmNLProvider, transformersGenerator }

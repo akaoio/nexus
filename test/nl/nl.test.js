@@ -156,6 +156,29 @@ Test.describe("NL→AST (NL-*)", () => {
         await Test.assert.rejects(translate("anything", TASK, provider), "E_NL_FIELD")
     })
 
+    Test.it("NL-12a the LLM tier declares the schema AS SCHEMA: filterTool is a complete function declaration", async () => {
+        const { filterTool } = await import("../../src/core/NL/llm.js")
+        const tool = filterTool(TASK)
+        assert.equal(tool.type, "function")
+        assert.equal(tool.function.name, "filter_records")
+        const params = tool.function.parameters
+        assert.deepEqual(params.required, ["filter"])
+        const node = params.properties.filter
+        // the field vocabulary is an ENUM — the model cannot be offered a field that doesn't exist
+        for (const name of ["title", "done", "priority", "points", "due", "status", "secret", "id", "owner", "created_at", "updated_at"])
+            assert.truthy(node.properties.field.enum.includes(name), `field enum carries ${name}`)
+        assert.truthy(!node.properties.field.enum.includes("ghost"), "no invented fields")
+        // the closed operator list, verbatim
+        assert.deepEqual(node.properties.operator.enum, ["eq", "ne", "gt", "gte", "lt", "lte", "like", "nlike", "in", "nin", "between", "isnull", "notnull"])
+        // groups: op enum + children of the same shape
+        assert.deepEqual(node.properties.op.enum, ["and", "or", "not"])
+        assert.equal(node.properties.children.type, "array")
+        // types, options, labels and date variables ride in descriptions
+        const prose = JSON.stringify(tool)
+        for (const must of ["low, medium, high", "Tiêu đề", "$NOW", "priority (select)"])
+            assert.truthy(prose.includes(must), `declaration carries ${JSON.stringify(must)}`)
+    })
+
     Test.it("NL-04 SECURITY: DataPlane.ask runs through permission — NL cannot widen access", async () => {
         const { DatabaseSync } = await import("node:sqlite")
         const db = new DatabaseSync(":memory:")
