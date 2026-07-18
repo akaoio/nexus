@@ -46,7 +46,7 @@ export function filterTool(schema) {
                 type: "object",
                 properties: {
                     filter: {
-                        type: "object",
+                        type: ["object", "null"],
                         description:
                             "A filter node — EITHER a leaf {field, operator, value} OR a group {op, children}. " +
                             `Fields: ${lines.join("; ")}. ` +
