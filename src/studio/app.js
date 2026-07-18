@@ -24,6 +24,7 @@ import "/_nexus/src/studio/components/permission-manager/index.js"
 import "/_nexus/src/studio/components/list-view/index.js"
 import "/_nexus/src/studio/components/search/index.js"
 import { NxA } from "/_nexus/src/studio/components/a/index.js"
+import "/_nexus/src/studio/components/navlink/index.js"
 import { NxUser } from "/_nexus/src/studio/components/user/index.js"
 import { passkeySupported, enroll, enrolled, unlock } from "./kit/webauthn.js"
 
@@ -90,11 +91,11 @@ NxUser.onSignout = () => {
 NxUser.onProfile = () => navigate("users")
 
 // ── the two-level sidebar: full ↔ icons, one attribute, remembered ─────────────
-const NAV_MODES = ["full", "icons"]
-let navMode = localStorage.getItem("nexus-nav") || "full"
+const NAV_MODES = ["full", "icons", "off"]
+let navMode = NAV_MODES.includes(localStorage.getItem("nexus-nav")) ? localStorage.getItem("nexus-nav") : "full"
 const applyNav = () => {
     app.dataset.nav = navMode
-    layout.navToggle.title = navMode === "full" ? "Collapse to icons" : "Expand the sidebar"
+    layout.navToggle.title = { full: "Collapse to icons", icons: "Hide the sidebar", off: "Show the sidebar" }[navMode]
 }
 applyNav()
 layout.navToggle.addEventListener("click", () => {
@@ -128,20 +129,16 @@ const ctx = {
 }
 
 // ── navigation + render ────────────────────────────────────────────────────────
-/** A sidebar link: <a is="nx-a"> — localized href, pushState, pre-cache. */
-function navLink({ to, active, iconName, label }) {
-    const a = document.createElement("a", { is: "nx-a" })
-    a.setAttribute("is", "nx-a") // serialize for clarity; define() already upgraded it
-    a.dataset.to = to
-    a.className = active ? "active" : ""
-    const ico = document.createElement("span")
-    ico.className = "ico"
-    ico.append(icon(iconName))
-    const lbl = document.createElement("span")
-    lbl.className = "lbl"
-    lbl.append(label)
-    a.append(ico, lbl)
-    return a
+/** A sidebar entry — <nx-navlink> composes nx-a + nx-icon + nx-context. */
+function navLink({ to, active, iconName, key, label, sub }) {
+    const link = document.createElement("nx-navlink")
+    link.dataset.to = to
+    link.dataset.icon = iconName
+    if (key) link.dataset.key = key
+    if (label != null) link.dataset.label = label
+    if (active) link.setAttribute("data-active", "")
+    if (sub) link.setAttribute("data-sub", "")
+    return link
 }
 
 function renderNav() {
@@ -150,7 +147,7 @@ function renderNav() {
             to: "/entity/" + s.name,
             active: state.view === "content" && state.entity === s.name,
             iconName: "database",
-            label: document.createTextNode(s.name)
+            label: s.name
         })
     ))
     nav.replaceChildren(...BUILD.flatMap((name) => {
@@ -158,21 +155,20 @@ function renderNav() {
             to: "/" + name,
             active: state.view === name && (name !== "settings" || !state.feature),
             iconName: MODULES[name].icon,
-            label: text(MODULES[name].key)
+            key: MODULES[name].key
         })]
         // settings children ride indented under their parent — the URL shape
         // /settings/<feature> IS the sidebar shape (no orbit, no second nav)
         if (name === "settings")
-            for (const [id, feature] of Object.entries(settings.FEATURES)) {
-                const link = navLink({
+            for (const [id, feature] of Object.entries(settings.FEATURES))
+                links.push(navLink({
                     to: "/settings/" + id,
                     active: state.view === "settings" && state.feature === id,
                     iconName: feature.icon,
-                    label: text(feature.key, id)
-                })
-                link.classList.add("sub")
-                links.push(link)
-            }
+                    key: feature.key,
+                    label: id,
+                    sub: true
+                }))
         return links
     }))
 }

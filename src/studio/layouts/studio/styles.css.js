@@ -18,8 +18,8 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
     grid-template-columns: 1fr;
     grid-template-areas: "top" "main";
 }
-.nx-top { grid-area: top; z-index: 30; display: flex; gap: var(--sp-3); align-items: center; padding: 0.625rem 0.875rem; background: var(--surface) }
-.nx-brand { font-weight: 700; letter-spacing: -0.01em }
+.nx-top { grid-area: top; z-index: 30; display: flex; gap: 0; align-items: center; padding: 0; background: var(--surface) }
+.nx-brand { font-weight: 700; letter-spacing: -0.01em; margin-left: var(--sp-3); margin-right: auto }
 .nx-brand .hex { color: var(--accent); display: inline-flex; vertical-align: -0.1875rem; --icon: 1.375rem }
 .nx-login .hex { --icon: 1.5rem }
 .nx-brand small { color: var(--muted); font-weight: 500 }
@@ -38,16 +38,23 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
 .nx-app.open .nx-scrim { opacity: 1; pointer-events: auto }
 .nx-main { grid-area: main; overflow-y: auto; padding: 1rem 0.875rem 3.75rem; min-width: 0 }
 
-.nx-grouplabel { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0.875rem 0.375rem 0.375rem }
+.nx-grouplabel { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: var(--sp-3) var(--sp-2) var(--sp-1) }
+.nx-nav nx-navlink { display: block }
 .nx-nav a {
-    display: flex; gap: 0.5625rem; align-items: center; padding: 0.5rem 0.625rem;
+    display: flex; align-items: center; padding: 0;
     color: inherit; text-decoration: none; cursor: pointer;
 }
 .nx-nav a:hover { background: var(--surface-2) }
 .nx-nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: inset 0.125rem 0 0 var(--accent) }
-.nx-nav a .ico { width: 1.125rem; text-align: center }
-/* settings children — indented under their parent, the URL shape made visible */
-.nx-nav a.sub { padding-left: 1.9375rem; font-size: var(--text-sm) }
+.nx-nav a .ico {
+    width: var(--control-h); height: var(--control-h); flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+}
+.nx-nav a .lbl { padding-right: var(--sp-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+/* settings children — the INDENT lives on the label (the icon cell is
+   sacred: identical in every level and every rail state) */
+.nx-nav a.sub .lbl { padding-left: var(--sp-2); font-size: var(--text-sm) }
+.nx-nav a.sub .ico { opacity: .75 }
 
 .nx-navtoggle { display: none }
 .nx-searchbar {
@@ -61,15 +68,16 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
 @media (min-width: 53.75rem) {
     .nx-hamb { display: none }
     .nx-navtoggle { display: inline-flex }
-    /* the side joins the grid as its own AREA — full height by construction */
+    /* the side joins the grid as its own AREA — full height by construction.
+       THREE levels (full -> icons -> off): only the COLUMN WIDTH changes;
+       the icon cells keep their exact geometry in every state, so the rail
+       always lines up with the square controls in the header */
     .nx-app { grid-template-columns: 15.5rem 1fr; grid-template-areas: "top top" "side main" }
-    /* two-level sidebar: "icons" keeps the rail, drops the words — pure grid,
-       one attribute flips the whole layout */
-    .nx-app[data-nav="icons"] { grid-template-columns: 3.5rem 1fr }
-    .nx-app[data-nav="icons"] .nx-grouplabel { visibility: hidden; height: 0; margin: 0.5rem 0 0 }
-    .nx-app[data-nav="icons"] .nx-nav a { justify-content: center; padding: 0.5rem 0 }
+    .nx-app[data-nav="icons"] { grid-template-columns: var(--control-h) 1fr }
+    .nx-app[data-nav="icons"] .nx-grouplabel { visibility: hidden; height: var(--sp-2); margin: var(--sp-2) 0 0 }
     .nx-app[data-nav="icons"] .nx-nav a .lbl { display: none }
-    .nx-app[data-nav="icons"] .nx-nav a.sub { padding-left: 0 }
+    .nx-app[data-nav="off"] { grid-template-columns: 0 1fr }
+    .nx-app[data-nav="off"] .nx-side { display: none }
     .nx-side { grid-area: side; position: static; transform: none; width: auto; z-index: 1 }
     .nx-scrim { display: none }
     .nx-main { padding: 1.375rem 1.625rem 5rem }
