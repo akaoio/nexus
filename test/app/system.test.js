@@ -8,7 +8,7 @@
  */
 
 import Test, { assert } from "../../src/core/Test.js"
-import { SYSTEM_ENTITIES, SYSTEM_BASELINES, isSystem, packPolicy, unpackPolicy, importIdentities } from "../../src/core/App/system.js"
+import { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, isSystem, packPolicy, unpackPolicy, importIdentities } from "../../src/core/App/system.js"
 import { validate } from "../../src/core/Model.js"
 import { validatePolicy, policiesFor } from "../../src/core/App/policies.js"
 import { resolve } from "../../src/core/Permission.js"
@@ -57,6 +57,19 @@ Test.describe("System entities (SYS-*)", () => {
         }
         // no policy grants a roleless user delete on nexus_policy (deny-by-default holds)
         assert.equal(resolve(mine, { entity: "nexus_policy", action: "delete", user: "P", roles: [] }).allowed, false)
+    })
+
+    Test.it("SYS-05 adminBaselines: the admin bundle covers every LOADED entity — generated data, no wildcard in the engine", () => {
+        const schemas = [{ name: "task" }, { name: "nexus_user" }]
+        const bundle = adminBaselines(schemas)
+        for (const policy of bundle) assert.equal(validatePolicy(policy).valid, true, policy.entity)
+        const grants = policiesFor(bundle, ["admin"])
+        for (const entity of ["task", "nexus_user"]) {
+            const verdict = resolve(grants, { entity, action: "delete", user: "A", roles: ["admin"] })
+            assert.equal(verdict.allowed, true, `admin on ${entity}`)
+        }
+        // without the role, the generated bundle grants NOTHING (deny-by-default)
+        assert.equal(resolve(policiesFor(bundle, []), { entity: "task", action: "read", user: "U", roles: [] }).allowed, false)
     })
 
     Test.it("SYS-04 importIdentities maps config identities to nexus_user rows (bootstrap, one-way)", () => {

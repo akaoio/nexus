@@ -124,6 +124,20 @@ export const SYSTEM_BASELINES = Object.freeze([
     Object.freeze({ entity: "nexus_view", actions: ["read", "write", "create", "delete"], rule: null, permlevel: 0, ifOwner: true })
 ])
 
+/**
+ * The admin bundle over the WHOLE instance — Frappe's System Manager,
+ * expressed as generated policy DATA: one full-access policy per loaded
+ * schema, role-gated to `admin`. Generated at boot from the live schema
+ * list, so a hot-added entity is covered the moment it exists; the engine
+ * itself never learns a wildcard.
+ * @param {Array} schemas - every schema the instance serves (apps + system)
+ */
+export function adminBaselines(schemas = []) {
+    return schemas.map((schema) => ({
+        entity: schema.name, actions: ADMIN_ACTIONS, rule: null, permlevel: 0, ifOwner: false, roles: ["admin"]
+    }))
+}
+
 // ─── bootstrap ────────────────────────────────────────────────────────────────
 
 /**
@@ -139,4 +153,4 @@ export function importIdentities(identities = []) {
     }))
 }
 
-export default { SYSTEM_ENTITIES, SYSTEM_BASELINES, isSystem, packPolicy, unpackPolicy, importIdentities }
+export default { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, isSystem, packPolicy, unpackPolicy, importIdentities }

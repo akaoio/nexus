@@ -43,17 +43,18 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
 /* settings children — indented under their parent, the URL shape made visible */
 .nx-nav a.sub { padding-left: 1.9375rem; font-size: var(--text-sm) }
 
-.nx-navtoggle { display: none; padding: 0.5rem 0.375rem 0 }
+.nx-navtoggle { display: none }
 .nx-searchbar {
     position: fixed; top: 3.4375rem; left: 50%; transform: translateX(-50%);
-    width: min(92vw, 40rem); z-index: 70;
+    width: min(92vw, 40rem); max-height: min(70vh, 30rem); overflow: auto;
+    box-sizing: border-box; z-index: 70;
     background: var(--surface); box-shadow: var(--shadow); padding: var(--sp-3);
 }
 .nx-searchbar[hidden] { display: none }
 
 @media (min-width: 53.75rem) {
     .nx-hamb { display: none }
-    .nx-navtoggle { display: block }
+    .nx-navtoggle { display: inline-flex }
     .nx-app { display: grid; grid-template-columns: 15.5rem 1fr }
     /* two-level sidebar: "icons" keeps the rail, drops the words — pure grid,
        one attribute flips the whole layout */

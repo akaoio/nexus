@@ -13,7 +13,7 @@
 
 import { DataPlane } from "../Data.js"
 import { profileFor } from "../App/models.js"
-import { SYSTEM_ENTITIES, SYSTEM_BASELINES, unpackPolicy, importIdentities } from "../App/system.js"
+import { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, unpackPolicy, importIdentities } from "../App/system.js"
 import { createApi } from "./api.js"
 import { openInstanceData, ensureTables } from "../../cli/data.js"
 import { loadExtensions } from "../App/extensions.js"
@@ -239,8 +239,10 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
 
         const devPols = devPolicies(allSchemas)
         // effective policy set = app-file baselines + nexus-shipped baselines
-        // (self-service as DATA: $CURRENT_USER rules) + LIVE nexus_policy rows
-        const livePolicies = () => [...appPolicies, ...SYSTEM_BASELINES, ...dbPolicies]
+        // (self-service as DATA: $CURRENT_USER rules; the admin bundle over
+        // every loaded entity — Frappe's System Manager) + LIVE nexus_policy rows
+        const shippedAdmin = adminBaselines(allSchemas)
+        const livePolicies = () => [...appPolicies, ...SYSTEM_BASELINES, ...shippedAdmin, ...dbPolicies]
         const context = (req) => {
             // spread per request: appPolicies + dbPolicies mutate live
             if (!authState.required)

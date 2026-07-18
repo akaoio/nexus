@@ -17,6 +17,8 @@ export const layoutTemplate = (c, { site }) => html`
         <header class="nx-top">
             <nx-button data-variant="icon" class="nx-hamb" data-icon="list"
                 ${({ element }) => element.addEventListener("click", () => c.app.classList.toggle("open"))}></nx-button>
+            <nx-button data-variant="icon" class="nx-navtoggle" data-icon="list" title="Collapse to icons"
+                ${({ element }) => (c.navToggle = element)}></nx-button>
             <span class="nx-brand">
                 <span class="hex"><nx-icon name="hexagon"></nx-icon></span>
                 ${site}
@@ -29,10 +31,6 @@ export const layoutTemplate = (c, { site }) => html`
         </header>
         <div class="nx-scrim" ${({ element }) => element.addEventListener("click", () => c.app.classList.remove("open"))}></div>
         <aside class="nx-side">
-            <div class="nx-navtoggle">
-                <nx-button data-variant="icon" data-icon="list" title="Collapse to icons"
-                    ${({ element }) => (c.navToggle = element)}></nx-button>
-            </div>
             <div class="nx-grouplabel"><nx-context data-key="collections"></nx-context></div>
             <nav class="nx-nav" id="nx-nav-ent" ${({ element }) => (c.entNav = element)}></nav>
             <div class="nx-grouplabel"><nx-context data-key="build"></nx-context></div>
