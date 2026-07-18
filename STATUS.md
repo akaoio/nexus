@@ -31,6 +31,8 @@ EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
 | HTTP + serving | auto API (`/query`, `/search`, `/ask`); `/_health`; request logging | API-* |
 | **Production server** | **`nexus start` — refuses god-mode (E_NO_AUTH), TLS-required (E_NO_TLS/--insecure), auth-enforced, no Studio/framework exposure, self-served HTTPS** | **START-*** |
 | Security | pentest findings pinned as clauses (info-disclosure, oracle, static-serve) | SEC-* |
+| **Install/lifecycle** | **one-line installers (install.sh / install.ps1, GitHub-first, tarball fallback, npm never required); `nexus update` (git fetch+hard-reset, the access pattern) and `nexus uninstall --yes`** | CLI-* (help pin) |
+| **Entity identity** | **schema `icon:` (any bootstrap-icons name — vendored 1.1 MB sprite, nx-icon registry-first with sprite fallback); picker in the /entities editor** | MS-S14 |
 
 ## Unfinished / known drift (honest list, 2026-07-18)
 
@@ -70,6 +72,12 @@ EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
   cascade, hot reload, accent switching, sidebar levels. A browser-suite pass over these
   is owed (the harness exists — NX*-* browser clauses).
 - **LF/CRLF warnings** on Windows commits are noisy (no .gitattributes yet).
+- **Installers are untested on clean machines**: install.sh/install.ps1 follow the
+  access pattern and `nexus update`/`uninstall` are exercised only on this dev box
+  (git-install path). A fresh-VM pass (POSIX + Windows), and a decision on npm
+  publishing (name "nexus" is generic), are owed.
+- **bootstrap-icons sprite is vendored whole (~1.1 MB)** and fetched per icon page
+  load; fine for the Studio, but a build step could subset it.
 
 ## The two honest boundaries (need real infra/hardware, not code)
 

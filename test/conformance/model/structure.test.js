@@ -79,6 +79,13 @@ Test.describe("Model Schema v1 — structure (MS-S)", () => {
         assert.truthy(hasError(Model.validate(schema({ views: "kanban" })), "E_VIEWS"), "not an array")
     })
 
+    Test.it("MS-S14 icon is a bootstrap-icons name — else E_ICON", () => {
+        assert.equal(Model.validate(schema({ icon: "cart4" })).valid, true)
+        assert.equal(Model.validate(schema({ icon: "person-badge" })).valid, true)
+        for (const bad of ["", "Cart", "a_b", 7])
+            assert.truthy(hasError(Model.validate(schema({ icon: bad })), "E_ICON"), "icon " + JSON.stringify(bad))
+    })
+
     Test.it("MS-S13 span is 1..3 of the form grid — else E_SPAN", () => {
         assert.equal(Model.validate(schema({ fields: [field("a", "text", { span: 1 })] })).valid, true)
         assert.equal(Model.validate(schema({ fields: [field("a", "text", { span: 3 })] })).valid, true)

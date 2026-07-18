@@ -8,6 +8,7 @@ import { createSelection } from "../../kit/selection.js"
 import { VIEWS } from "../../views/index.js"
 import * as list from "../../views/list.js"
 import { boardField } from "../../views/kanban.js"
+import { ICONS } from "../../components/icon/icons.js"
 import { entitiesTemplate } from "./template.js"
 
 const NEW = Symbol("new")
@@ -79,6 +80,39 @@ export function render(ctx) {
         hint.append(text("viewsHint", "Only the views declared here appear on the entity - nothing is automatic."))
         wrap.append(h, row, hint)
         return { section: wrap, value: () => [...boxes.entries()].filter(([, b]) => b.checked).map(([id]) => id) }
+    }
+
+    /** The entity's mark: any bootstrap-icons name (vendored sprite renders
+     *  the full set); the registry names ride a datalist as suggestions. */
+    function iconSection(schema) {
+        const wrap = document.createElement("div")
+        wrap.className = "nx-setsec"
+        const h = document.createElement("h3")
+        h.append(text("icon", "Icon"))
+        const row = document.createElement("div")
+        row.className = "nx-toolbar"
+        const preview = document.createElement("nx-icon")
+        preview.setAttribute("name", schema?.icon || "database")
+        const input = document.createElement("input")
+        input.className = "nx-input"
+        input.style.maxWidth = "16rem"
+        input.placeholder = "bootstrap icon name, e.g. cart4"
+        input.value = schema?.icon ?? ""
+        input.setAttribute("list", "nx-icon-names")
+        const list = document.createElement("datalist")
+        list.id = "nx-icon-names"
+        for (const name of Object.keys(ICONS).sort()) {
+            const option = document.createElement("option")
+            option.value = name
+            list.append(option)
+        }
+        input.addEventListener("input", () => preview.setAttribute("name", input.value.trim() || (schema?.icon ?? "database")))
+        row.append(preview, input, list)
+        const hint = document.createElement("p")
+        hint.className = "nx-muted"
+        hint.textContent = "Any name from icons.getbootstrap.com — the sidebar and lists wear it."
+        wrap.append(h, row, hint)
+        return { section: wrap, value: () => input.value.trim() }
     }
 
     /** Cascade delete: fetch the DRY-RUN plan, show EVERYTHING it will
@@ -182,6 +216,7 @@ export function render(ctx) {
         const designer = document.createElement("nx-schema-designer")
         designer.baseline = baseline
         const views = viewsSection(baseline)
+        const iconSec = iconSection(baseline)
         const saveBtn = button({
             variant: "primary",
             onclick: () => {
@@ -189,13 +224,16 @@ export function render(ctx) {
                 const next = { ...baseline, ...designer.value }
                 if (declared.length) next.views = declared
                 else delete next.views
+                const mark = iconSec.value()
+                if (mark) next.icon = mark
+                else delete next.icon
                 save(next)
             }
         }, [text("saveChanges")])
         const del = button({ variant: "danger", iconName: "trash", onclick: () => confirmDelete(editing) }, ["Delete"])
         const spread = document.createElement("span")
         spread.className = "nx-spacer"
-        c.$body.replaceChildren(card([designer, views.section, actions(back, del, spread, saveBtn)]))
+        c.$body.replaceChildren(card([designer, iconSec.section, views.section, actions(back, del, spread, saveBtn)]))
     }
 
     function paint() {

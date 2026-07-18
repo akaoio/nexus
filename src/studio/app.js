@@ -146,7 +146,7 @@ function renderNav() {
         navLink({
             to: "/entity/" + s.name,
             active: state.view === "content" && state.entity === s.name,
-            iconName: "database",
+            iconName: s.icon || "database",
             label: s.name
         })
     ))
