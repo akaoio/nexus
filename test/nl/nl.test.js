@@ -180,6 +180,33 @@ Test.describe("NL→AST (NL-*)", () => {
             assert.truthy(prose.includes(must), `declaration carries ${JSON.stringify(must)}`)
     })
 
+    Test.it("NL-12b parseCall reads FunctionGemma call syntax strictly — and feeds the SAME choke point", async () => {
+        const { parseCall } = await import("../../src/core/NL/llm.js")
+        const wrap = (args) => `<start_function_call>call:filter_records{${args}}<end_function_call>`
+        // a leaf: escape-delimited strings, bare keys
+        assert.deepEqual(
+            parseCall(wrap("filter:{field:<escape>priority<escape>,operator:<escape>eq<escape>,value:<escape>high<escape>}")),
+            { astVersion: 1, root: { field: "priority", operator: "eq", value: "high" } })
+        // a nested group with an array value and bare literals
+        assert.deepEqual(
+            parseCall(wrap("filter:{op:<escape>and<escape>,children:[{field:<escape>priority<escape>,operator:<escape>in<escape>,value:[<escape>high<escape>,<escape>low<escape>]},{field:<escape>done<escape>,operator:<escape>eq<escape>,value:false}]}")),
+            { astVersion: 1, root: { op: "and", children: [
+                { field: "priority", operator: "in", value: ["high", "low"] },
+                { field: "done", operator: "eq", value: false }
+            ] } })
+        // numbers stay numbers; null filter means "everything"
+        assert.deepEqual(parseCall(wrap("filter:{field:<escape>points<escape>,operator:<escape>gt<escape>,value:3}")).root.value, 3)
+        assert.deepEqual(parseCall(wrap("filter:null")), { astVersion: 1, root: null })
+        // strictness: no call, wrong function, broken args, missing filter — all E_NL_LLM
+        await Test.assert.rejects(Promise.resolve().then(() => parseCall("I cannot help with that")), "E_NL_LLM")
+        await Test.assert.rejects(Promise.resolve().then(() => parseCall("<start_function_call>call:drop_tables{filter:null}<end_function_call>")), "E_NL_LLM")
+        await Test.assert.rejects(Promise.resolve().then(() => parseCall(wrap("filter:{field:<escape>done<escape>"))), "E_NL_LLM")
+        await Test.assert.rejects(Promise.resolve().then(() => parseCall(wrap("verbose:true"))), "E_NL_LLM")
+        // whatever parses still dies in translate() when it names a ghost field
+        const provider = async () => parseCall(wrap("filter:{field:<escape>ghost<escape>,operator:<escape>eq<escape>,value:1}"))
+        await Test.assert.rejects(translate("anything", TASK, provider), "E_NL_FIELD")
+    })
+
     Test.it("NL-04 SECURITY: DataPlane.ask runs through permission — NL cannot widen access", async () => {
         const { DatabaseSync } = await import("node:sqlite")
         const db = new DatabaseSync(":memory:")

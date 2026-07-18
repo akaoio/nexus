@@ -67,6 +67,82 @@ export function filterTool(schema) {
 }
 
 /**
+ * Parse ONE FunctionGemma argument value at position i in `s`. The syntax is
+ * JSON with bare keys and <escape>-delimited strings (the model's own output
+ * contract). Returns [value, nextIndex]; throws on any malformed shape.
+ */
+function parseValue(s, i) {
+    while (s[i] === " " || s[i] === "\n") i++
+    if (s.startsWith("<escape>", i)) {
+        const end = s.indexOf("<escape>", i + 8)
+        if (end === -1) throw err("E_NL_LLM", "unterminated string in the call")
+        return [s.slice(i + 8, end), end + 8]
+    }
+    if (s[i] === "{") {
+        const value = {}
+        i++
+        while (true) {
+            while (s[i] === " " || s[i] === "\n") i++
+            if (s[i] === "}") return [value, i + 1]
+            const colon = s.indexOf(":", i)
+            if (colon === -1) throw err("E_NL_LLM", "a key without a value in the call")
+            const key = s.slice(i, colon).trim()
+            let v
+            ;[v, i] = parseValue(s, colon + 1)
+            value[key] = v
+            while (s[i] === " " || s[i] === "\n") i++
+            if (s[i] === ",") i++
+            else if (s[i] !== "}") throw err("E_NL_LLM", "unbalanced object in the call")
+        }
+    }
+    if (s[i] === "[") {
+        const value = []
+        i++
+        while (true) {
+            while (s[i] === " " || s[i] === "\n") i++
+            if (s[i] === "]") return [value, i + 1]
+            let v
+            ;[v, i] = parseValue(s, i)
+            value.push(v)
+            while (s[i] === " " || s[i] === "\n") i++
+            if (s[i] === ",") i++
+            else if (s[i] !== "]") throw err("E_NL_LLM", "unbalanced array in the call")
+        }
+    }
+    // a bare literal: null/true/false/number — or a bare word the model
+    // forgot to escape, read as a string (never silently dropped)
+    let j = i
+    while (j < s.length && !",}]".includes(s[j])) j++
+    const raw = s.slice(i, j).trim()
+    if (!raw) throw err("E_NL_LLM", "an empty value in the call")
+    if (raw === "null") return [null, j]
+    if (raw === "true") return [true, j]
+    if (raw === "false") return [false, j]
+    const n = Number(raw)
+    return [Number.isNaN(n) ? raw : n, j]
+}
+
+/**
+ * FunctionGemma's structured output → AST document. STRICT: only a
+ * `call:filter_records{…}` between the call markers is accepted — anything
+ * else is E_NL_LLM (and the tier chain falls back). Pure — clause NL-12b.
+ */
+export function parseCall(text) {
+    const s = String(text)
+    const start = s.indexOf("<start_function_call>")
+    const end = s.indexOf("<end_function_call>")
+    if (start === -1 || end === -1 || end < start) throw err("E_NL_LLM", "the model returned no function call")
+    const call = s.slice(start + "<start_function_call>".length, end).trim()
+    const m = call.match(/^call:([A-Za-z_][\w]*)\s*\{/)
+    if (!m) throw err("E_NL_LLM", "malformed function call")
+    if (m[1] !== "filter_records") throw err("E_NL_LLM", `unknown function "${m[1]}"`)
+    const [args, next] = parseValue(call, call.indexOf("{"))
+    if (call.slice(next).trim()) throw err("E_NL_LLM", "trailing content after the call arguments")
+    if (!("filter" in args)) throw err("E_NL_LLM", "the call carries no filter argument")
+    return { astVersion: 1, root: args.filter }
+}
+
+/**
  * The system prompt: the AST grammar as a contract + THIS entity's fields.
  * Pure — clause-tested. Few-shot examples anchor the output shape.
  */
@@ -187,4 +263,4 @@ export async function transformersGenerator({ model = DEFAULT_NL_MODEL, root, on
     }
 }
 
-export default { DEFAULT_NL_MODEL, filterTool, schemaPrompt, extractAST, llmNLProvider, transformersGenerator }
+export default { DEFAULT_NL_MODEL, filterTool, parseCall, schemaPrompt, extractAST, llmNLProvider, transformersGenerator }
