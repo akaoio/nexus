@@ -23,16 +23,23 @@ export const layoutTemplate = (c, { site }) => html`
                 <small>Studio</small>
             </span>
             <span class="nx-spacer"></span>
+            <nx-button data-variant="icon" data-icon="search" title="Search everything ( / )"
+                ${({ element }) => (c.searchToggle = element)}></nx-button>
             <nx-user ${({ element }) => (c.user = element)}></nx-user>
         </header>
         <div class="nx-scrim" ${({ element }) => element.addEventListener("click", () => c.app.classList.remove("open"))}></div>
         <aside class="nx-side">
+            <div class="nx-navtoggle">
+                <nx-button data-variant="icon" data-icon="list" title="Collapse to icons"
+                    ${({ element }) => (c.navToggle = element)}></nx-button>
+            </div>
             <div class="nx-grouplabel"><nx-context data-key="collections"></nx-context></div>
             <nav class="nx-nav" id="nx-nav-ent" ${({ element }) => (c.entNav = element)}></nav>
             <div class="nx-grouplabel"><nx-context data-key="build"></nx-context></div>
             <nav class="nx-nav" id="nx-nav" ${({ element }) => (c.nav = element)}></nav>
         </aside>
         <main class="nx-main" id="nx-main" ${({ element }) => (c.main = element)}></main>
+        <div class="nx-searchbar" hidden ${({ element }) => (c.searchbar = element)}></div>
     </div>
 `
 

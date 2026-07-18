@@ -116,7 +116,7 @@ export async function dev(args, flags, out) {
 
     // The Studio's route table — the same patterns the client router uses.
     const STUDIO_ROUTES = ["/entity/[entity]", "/settings/[feature]", "/[view]"]
-    const STUDIO_VIEWS = new Set(["entities", "entity", "permissions", "users", "settings", "search"]) // "entity" = legacy redirect
+    const STUDIO_VIEWS = new Set(["entities", "entity", "permissions", "roles", "users", "settings", "search"]) // "entity" = legacy redirect
     const STUDIO_SETTINGS = new Set(["ai", "locales", "themes"])
     function routeMatches(pathname) {
         if (/\.[^/]+$/.test(pathname) || pathname.includes("/.")) return false // files + dotpaths are never routes

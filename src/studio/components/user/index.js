@@ -11,6 +11,7 @@ import { confirmDialog } from "../../kit/index.js"
 
 export class NxUser extends HTMLElement {
     static onSignout = null
+    static onProfile = null
     static observedAttributes = ["data-pub"]
 
     constructor() {
@@ -39,7 +40,17 @@ export class NxUser extends HTMLElement {
         }
     }
 
+    toggleMenu() {
+        this.$menu.hidden = !this.$menu.hidden
+    }
+
+    goProfile() {
+        this.$menu.hidden = true
+        NxUser.onProfile?.(this.dataset.pub)
+    }
+
     async askSignout() {
+        this.$menu.hidden = true
         if (await confirmDialog("Sign out of this session?")) NxUser.onSignout?.()
     }
 }

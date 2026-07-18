@@ -1,22 +1,32 @@
-/** /users route — logic: identities (ZEN pubkey + roles), hot-applied.
- *  Adding the first identity turns authentication ON immediately. */
+/** /users route — the DIRECTORY: nexus_user rows through the ordinary
+ *  entity API (system entities are just entities). Many roles per user
+ *  (checkboxes over nexus_role) — the Frappe Has Role shape. WHO may edit
+ *  WHOM is entirely the seeded policies' business ($CURRENT_USER rule for
+ *  self-service, the admin bundle for everyone) — nothing here branches
+ *  on a role name. */
 
-import { mountTemplate, button, icon, toast, confirmDialog } from "../../kit/index.js"
+import { mountTemplate, button, toast, confirmDialog } from "../../kit/index.js"
 import "../../components/identicon/index.js"
 import { usersTemplate } from "./template.js"
 
+const parseRoles = (row) => (row.roles ? JSON.parse(row.roles) : [])
+
 export function render(ctx) {
     const c = {}
+    let roleNames = []
     const host = mountTemplate(usersTemplate(c, {
         onAddMe: addMe,
         onAdd: async () => {
-            const r = await ctx.api.studio("users", "POST", {
-                action: "add", pub: c.$pub.value.trim(), name: c.$name.value.trim() || undefined,
-                roles: c.$roles.value.split(",").map((s) => s.trim()).filter(Boolean)
+            const pub = c.$pub.value.trim()
+            if (!pub) return toast("A public key is required", "err")
+            const r = await ctx.api.create("nexus_user", {
+                pub,
+                name: c.$name.value.trim() || pub,
+                roles: JSON.stringify(c.$roles.value.split(",").map((s) => s.trim()).filter(Boolean))
             })
             if (!r.ok) return toast(r.error.code + ": " + (r.error.message || ""), "err")
             c.$pub.value = c.$name.value = c.$roles.value = ""
-            toast("User added & applied")
+            toast("User added — live")
             load()
         }
     }))
@@ -25,87 +35,125 @@ export function render(ctx) {
         const pass = prompt("Choose a passphrase for your admin identity (it derives your key — you will sign in with it):")
         if (!pass) return
         const { pair } = await ctx.deriveKeypair(pass)
-        const r = await ctx.api.studio("users", "POST", { action: "add", pub: pair.pub, name: "admin", roles: ["admin"] })
+        const r = await ctx.api.create("nexus_user", { pub: pair.pub, name: "admin", roles: JSON.stringify(["admin"]) })
         if (!r.ok) return toast(r.error.code, "err")
-        if (r.data.authRequired) {
-            toast("Admin added — authentication is now ON. Sign in with your passphrase.")
-            setTimeout(() => location.reload(), 1200)
-        } else {
-            toast("Admin added & applied")
-            load()
+        toast("Admin added — authentication is now ON. Sign in with your passphrase.")
+        setTimeout(() => location.reload(), 1200)
+    }
+
+    /** The edit drawer: profile fields + the multi-role checklist. */
+    function editUser(row) {
+        const wrap = document.createElement("div")
+        wrap.className = "nx-form"
+        const values = { name: row.name ?? "", email: row.email ?? "", bio: row.bio ?? "" }
+        for (const key of ["name", "email", "bio"]) {
+            const field = document.createElement("div")
+            field.className = "nx-field"
+            const label = document.createElement("label")
+            label.className = "nx-label"
+            label.textContent = key
+            const input = document.createElement("input")
+            input.className = "nx-input"
+            input.value = values[key]
+            input.addEventListener("input", () => (values[key] = input.value))
+            field.append(label, input)
+            wrap.append(field)
         }
+        const rolesWrap = document.createElement("div")
+        rolesWrap.className = "nx-field"
+        const rolesLabel = document.createElement("label")
+        rolesLabel.className = "nx-label"
+        rolesLabel.textContent = "roles — many per user"
+        const grid = document.createElement("div")
+        grid.className = "nx-options"
+        const held = new Set(parseRoles(row))
+        const boxFor = (name) => {
+            const label = document.createElement("label")
+            label.className = "nx-check"
+            const box = document.createElement("input")
+            box.type = "checkbox"
+            box.checked = held.has(name)
+            box.addEventListener("change", () => (box.checked ? held.add(name) : held.delete(name)))
+            label.append(box, name)
+            return label
+        }
+        for (const name of roleNames) grid.append(boxFor(name))
+        const extra = document.createElement("input")
+        extra.className = "nx-input"
+        extra.placeholder = "new role name — Enter adds it"
+        extra.addEventListener("keydown", (e) => {
+            if (e.key !== "Enter" || !extra.value.trim()) return
+            const name = extra.value.trim()
+            held.add(name)
+            grid.append(boxFor(name))
+            grid.lastElementChild.querySelector("input").checked = true
+            extra.value = ""
+        })
+        rolesWrap.append(rolesLabel, grid, extra)
+        const actions = document.createElement("div")
+        actions.className = "nx-actions"
+        const remove = button({
+            variant: "danger",
+            onclick: async () => {
+                if (!(await confirmDialog("Remove " + (row.name || row.pub) + "?"))) return
+                const r = await ctx.api.remove("nexus_user", row.id)
+                toast(r.ok ? "Removed" : r.error.code, r.ok ? "ok" : "err")
+                ctx.closeDrawer()
+                load()
+            }
+        }, ["Remove"])
+        const spread = document.createElement("span")
+        spread.className = "nx-spacer"
+        const save = button({
+            variant: "primary",
+            onclick: async () => {
+                const r = await ctx.api.update("nexus_user", row.id, { ...values, roles: JSON.stringify([...held]) })
+                toast(r.ok ? "Saved — live" : r.error.code + ": " + (r.error.message || ""), r.ok ? "ok" : "err")
+                ctx.closeDrawer()
+                load()
+            }
+        }, ["Save"])
+        actions.append(remove, spread, save)
+        wrap.append(rolesWrap, actions)
+        ctx.drawer(row.name || row.pub, wrap)
     }
 
     async function load() {
-        const r = await ctx.api.studio("users", "GET")
-        const ids = r.ok ? r.data.identities : []
+        const [users, roles] = await Promise.all([ctx.api.list("nexus_user", null), ctx.api.list("nexus_role", null)])
+        const rows = users.ok ? users.data : []
+        roleNames = [...new Set([
+            ...(roles.ok ? roles.data.map((r) => r.name) : []),
+            ...rows.flatMap(parseRoles)
+        ])].sort()
         c.$banner.replaceChildren()
-        if (r.ok && !r.data.authRequired) {
+        if (!rows.length) {
             const card = document.createElement("div")
-            card.className = "nx-card"
-            card.style.borderLeft = "0.1875rem solid var(--accent)"
-            const b = document.createElement("b")
-            b.textContent = "DEV mode — no authentication."
-            const span = document.createElement("span")
-            span.className = "nx-muted"
-            span.textContent = " Anyone on this port is the all-powerful DEV admin. Adding the first identity turns authentication ON immediately: you sign in with your passphrase, and Permissions start deciding who can do what."
-            card.append(b, document.createElement("br"), span)
+            card.className = "nx-card nx-note"
+            card.textContent = "No users yet — every request runs as the wide-open DEV identity. Add yourself as admin to turn authentication on."
             c.$banner.append(card)
         }
         c.$list.replaceChildren()
-        if (!ids.length) {
-            const empty = document.createElement("div")
-            empty.className = "nx-empty"
-            const mark = document.createElement("div")
-            mark.setAttribute("style", "--icon:var(--icon-lg);color:var(--muted);margin-bottom:0.375rem")
-            mark.append(icon("person"))
+        for (const row of rows) {
             const line = document.createElement("div")
-            line.textContent = "No identities yet"
-            const cta = button({ variant: "primary", iconName: "plus-lg", onclick: addMe }, ["Add me as admin"])
-            cta.style.marginTop = "0.75rem"
-            empty.append(mark, line, cta)
-            c.$list.append(empty)
-            return
-        }
-        for (const u of ids) {
-            const row = document.createElement("div")
-            row.className = "nx-row"
-            const face = document.createElement("nx-identicon")
-            face.dataset.seed = u.pub
-            face.style.color = "var(--accent)"
-            face.style.width = "2rem"
+            line.className = "nx-row"
+            const avatar = document.createElement("nx-identicon")
+            avatar.dataset.pub = row.pub
             const who = document.createElement("div")
             who.className = "nx-who"
             const name = document.createElement("div")
-            name.textContent = u.name || "(unnamed)"
+            name.textContent = row.name || row.pub
             const pub = document.createElement("div")
             pub.className = "nx-pub"
-            pub.textContent = u.pub
+            pub.textContent = row.pub
             who.append(name, pub)
-            const roles = document.createElement("span")
-            roles.className = "nx-chip accent"
-            roles.style.cursor = "pointer"
-            roles.title = "Edit roles"
-            roles.textContent = (u.roles || []).join(", ") || "no roles"
-            roles.addEventListener("click", async () => {
-                const next = prompt("Roles for " + (u.name || u.pub.slice(0, 12) + "…") + " (comma-separated):", (u.roles || []).join(", "))
-                if (next === null) return
-                const rr = await ctx.api.studio("users", "POST", { action: "role", pub: u.pub, roles: next.split(",").map((s) => s.trim()).filter(Boolean) })
-                toast(rr.ok ? "Roles updated & applied" : rr.error.code, rr.ok ? "ok" : "err")
-                load()
-            })
-            const del = button({
-                variant: "icon", iconName: "x-lg", title: "Remove",
-                onclick: async () => {
-                    if (!(await confirmDialog("Remove " + (u.name || u.pub.slice(0, 12) + "…") + "?"))) return
-                    await ctx.api.studio("users", "POST", { action: "remove", pub: u.pub })
-                    toast("Identity removed & applied")
-                    load()
-                }
-            })
-            row.append(face, who, roles, del)
-            c.$list.append(row)
+            const roleChips = document.createElement("span")
+            roleChips.className = "nx-chip accent"
+            roleChips.textContent = parseRoles(row).join(", ") || "no roles"
+            const edit = button({ variant: "icon", iconName: "pencil", title: "Edit profile + roles", onclick: () => editUser(row) })
+            line.append(avatar, who, roleChips, edit)
+            c.$list.append(line)
         }
+        if (!rows.length) c.$list.append(Object.assign(document.createElement("p"), { className: "nx-muted", textContent: "Nobody here yet." }))
     }
     load()
     return host

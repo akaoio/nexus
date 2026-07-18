@@ -11,6 +11,7 @@ import { buildLayout, buildLogin } from "./layouts/studio/index.js"
 import * as content from "./routes/entity/[entity]/index.js"
 import * as entities from "./routes/entities/index.js"
 import * as permissions from "./routes/permissions/index.js"
+import * as roles from "./routes/roles/index.js"
 import * as users from "./routes/users/index.js"
 import * as settings from "./routes/settings/index.js"
 import * as search from "./routes/search/index.js"
@@ -70,11 +71,12 @@ const MODULES = {
     content: { render: content.render },
     entities: { icon: "plus-lg", key: "entities", render: entities.render },
     permissions: { icon: "shield-lock", key: "permissions", render: permissions.render },
+    roles: { icon: "sliders", key: "roles", render: roles.render },
     users: { icon: "person", key: "users", render: users.render },
     search: { icon: "search", key: "search", render: search.render },
     settings: { icon: "gear", key: "settings", render: settings.render }
 }
-const BUILD = ["entities", "permissions", "users", "search", "settings"]
+const BUILD = ["entities", "permissions", "roles", "users", "search", "settings"]
 
 // ── layout ─────────────────────────────────────────────────────────────────────
 const layout = buildLayout({ site: boot.site })
@@ -85,6 +87,35 @@ NxUser.onSignout = () => {
     api.setToken(null)
     location.reload()
 }
+NxUser.onProfile = () => navigate("users")
+
+// ── the two-level sidebar: full ↔ icons, one attribute, remembered ─────────────
+const NAV_MODES = ["full", "icons"]
+let navMode = localStorage.getItem("nexus-nav") || "full"
+const applyNav = () => {
+    app.dataset.nav = navMode
+    layout.navToggle.title = navMode === "full" ? "Collapse to icons" : "Expand the sidebar"
+}
+applyNav()
+layout.navToggle.addEventListener("click", () => {
+    navMode = NAV_MODES[(NAV_MODES.indexOf(navMode) + 1) % NAV_MODES.length]
+    localStorage.setItem("nexus-nav", navMode)
+    applyNav()
+})
+
+// ── search lives in the HEADER: an overlay panel, "/" opens it ─────────────────
+const headerSearch = document.createElement("nx-search")
+headerSearch.schemas = schemas
+headerSearch.searcher = async ({ entity, query }) => {
+    const r = await api.search(entity, query)
+    return r.ok ? r.data : []
+}
+layout.searchbar.append(headerSearch)
+const toggleSearch = (open) => {
+    layout.searchbar.hidden = open === undefined ? !layout.searchbar.hidden : !open
+    if (!layout.searchbar.hidden) headerSearch.shadowRoot?.querySelector("input")?.focus()
+}
+layout.searchToggle.addEventListener("click", () => toggleSearch())
 
 // the shell's footer is already in the body — the app mounts above it, overlays after
 const foot = document.querySelector("footer.nx-foot")
@@ -106,7 +137,10 @@ function navLink({ to, active, iconName, label }) {
     const ico = document.createElement("span")
     ico.className = "ico"
     ico.append(icon(iconName))
-    a.append(ico, label)
+    const lbl = document.createElement("span")
+    lbl.className = "lbl"
+    lbl.append(label)
+    a.append(ico, lbl)
     return a
 }
 
@@ -195,11 +229,14 @@ NxA.go = (to) => {
 
 // ── keyboard ───────────────────────────────────────────────────────────────────
 document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeDrawer()
-    // "/" focuses the page's primary query box (Frappe's awesomebar habit)
+    if (e.key === "Escape") {
+        closeDrawer()
+        layout.searchbar.hidden = true
+    }
+    // "/" opens the HEADER search from anywhere (Frappe's awesomebar habit)
     if (e.key === "/" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName ?? "")) {
-        const box = main.querySelector("input")
-        if (box) { e.preventDefault(); box.focus() }
+        e.preventDefault()
+        toggleSearch(true)
     }
 })
 

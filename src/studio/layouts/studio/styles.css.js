@@ -22,7 +22,7 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
 .nx-side {
     position: fixed; top: 0; left: 0; bottom: 0; width: min(84vw, 18.75rem); z-index: 50;
     background: var(--surface);
-    transform: translateX(-100%); transition: transform var(--ease); overflow-y: auto; padding: 0.875rem;
+    transform: translateX(-100%); transition: transform var(--ease); overflow-y: auto;
 }
 .nx-app.open .nx-side { transform: none }
 .nx-scrim {
@@ -43,9 +43,25 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
 /* settings children — indented under their parent, the URL shape made visible */
 .nx-nav a.sub { padding-left: 1.9375rem; font-size: var(--text-sm) }
 
+.nx-navtoggle { display: none; padding: 0.5rem 0.375rem 0 }
+.nx-searchbar {
+    position: fixed; top: 3.4375rem; left: 50%; transform: translateX(-50%);
+    width: min(92vw, 40rem); z-index: 70;
+    background: var(--surface); box-shadow: var(--shadow); padding: var(--sp-3);
+}
+.nx-searchbar[hidden] { display: none }
+
 @media (min-width: 53.75rem) {
     .nx-hamb { display: none }
+    .nx-navtoggle { display: block }
     .nx-app { display: grid; grid-template-columns: 15.5rem 1fr }
+    /* two-level sidebar: "icons" keeps the rail, drops the words — pure grid,
+       one attribute flips the whole layout */
+    .nx-app[data-nav="icons"] { grid-template-columns: 3.5rem 1fr }
+    .nx-app[data-nav="icons"] .nx-grouplabel { visibility: hidden; height: 0; margin: 0.5rem 0 0 }
+    .nx-app[data-nav="icons"] .nx-nav a { justify-content: center; padding: 0.5rem 0 }
+    .nx-app[data-nav="icons"] .nx-nav a .lbl { display: none }
+    .nx-app[data-nav="icons"] .nx-nav a.sub { padding-left: 0 }
     .nx-top { grid-column: 1 / -1 }
     .nx-side { grid-column: 1; position: sticky; top: 3.5625rem; height: calc(100vh - 3.5625rem); transform: none; width: auto; z-index: 1 }
     .nx-scrim { display: none }
