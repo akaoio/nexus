@@ -135,6 +135,9 @@ import "./test/studio/permission-manager.test.js"
 // Studio — roles as policy bundles (clauses ROLE-*)
 import "./test/studio/roles.test.js"
 
+// App — system entities (clauses SYS-*)
+import "./test/app/system.test.js"
+
 // Studio — nx-schema-designer (clauses NXS-*)
 import "./test/studio/schema-designer.test.js"
 
