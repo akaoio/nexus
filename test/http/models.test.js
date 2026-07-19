@@ -93,6 +93,27 @@ Test.describe("AI models (MODEL)", () => {
         rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
 
+    Test.it("MODEL-09 `nexus model` routes NL ids to semantic.nlModel; `none --nl` clears only that slot", () => {
+        const scratch = mkdtempSync(join(tmpdir(), "nexus-mnl-"))
+        spawnSync(process.execPath, [BIN, "create", "shop"], { cwd: scratch })
+        const cwd = join(scratch, "shop")
+        const run = (args) => spawnSync(process.execPath, [BIN, "model", ...args, "--json"], { cwd, encoding: "utf8" })
+        run(["use", DEFAULT_MODEL])
+        assert.equal(JSON.parse(run(["use", DEFAULT_NL_MODEL]).stdout).nlModel, DEFAULT_NL_MODEL)
+        let cfg = JSON.parse(readFileSync(join(cwd, "nexus.config.json"), "utf8"))
+        assert.equal(cfg.semantic.nlModel, DEFAULT_NL_MODEL)
+        assert.equal(cfg.semantic.model, DEFAULT_MODEL) // embedding slot untouched
+        const listed = JSON.parse(run(["list"]).stdout)
+        assert.truthy(listed.nlModels.length >= 1)
+        assert.equal(listed.currentNl, DEFAULT_NL_MODEL)
+        assert.equal(JSON.parse(run(["status"]).stdout).nlModel, DEFAULT_NL_MODEL)
+        run(["use", "none", "--nl"]) // clears ONLY the NL slot
+        cfg = JSON.parse(readFileSync(join(cwd, "nexus.config.json"), "utf8"))
+        assert.equal(cfg.semantic?.nlModel, undefined)
+        assert.equal(cfg.semantic.model, DEFAULT_MODEL)
+        rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    })
+
     Test.it("MODEL-06 progressLine formats a download event into % + MB, skips non-progress", () => {
         assert.equal(progressLine({ status: "progress", file: "model.onnx", loaded: 52428800, total: 209715200 }).includes("25%"), true)
         assert.equal(progressLine({ status: "progress", file: "m", loaded: 52428800, total: 209715200 }).includes("50.0/200.0 MB"), true)
