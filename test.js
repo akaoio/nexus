@@ -84,6 +84,10 @@ import "./test/http/start.test.js"
 // Studio — dev-only content-type / permission write endpoints (clauses STUDIO-*)
 import "./test/http/studio.test.js"
 
+// Policy window ≡ engine — the read-only /_studio/policies window over the
+// engine's own live layers, proven enforced end-to-end (clauses POLWIN-*)
+import "./test/http/policy-window.test.js"
+
 // Users / identities — pure ops, CLI, dev endpoints (clauses USER-*)
 import "./test/http/users.test.js"
 

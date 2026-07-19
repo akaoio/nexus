@@ -85,6 +85,11 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
     let engine = "sqlite"
     let authMode = "no entities"
     let embedderInfo = { mode: "none", semanticAvailable: false }
+    // The engine's own runtime layers, for the read-only policy window
+    // (design 2026-07-19 §2). Reassigned below once `shippedAdmin`/`dbPolicies`
+    // exist — kept live (function, not a snapshot) so a hot policy write is
+    // visible on the very next call, no restart.
+    let policyLayers = () => ({ app: appPolicies, system: SYSTEM_BASELINES, admin: [], rows: [] })
 
     if (schemas.length) {
         // System entities join the SAME pipeline as app entities — user, role,
@@ -260,6 +265,9 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         // every loaded entity — Frappe's System Manager) + LIVE nexus_policy rows
         const shippedAdmin = adminBaselines(allSchemas)
         const livePolicies = () => [...appPolicies, ...SYSTEM_BASELINES, ...shippedAdmin, ...dbPolicies]
+        // live array REFERENCES — the window is the engine's own truth, never a
+        // disk re-read; appPolicies/dbPolicies mutate in place on hot reload
+        policyLayers = () => ({ app: appPolicies, system: SYSTEM_BASELINES, admin: shippedAdmin, rows: dbPolicies })
         const context = (req) => {
             // spread per request: appPolicies + dbPolicies mutate live
             if (!authState.required)
@@ -288,7 +296,7 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             : "DEV identity — wide-open policies, user via x-nexus-user header"
     }
 
-    return { api, plane, authState, challenges, engine, authMode, extensions, embedderInfo }
+    return { api, plane, authState, challenges, engine, authMode, extensions, embedderInfo, policyLayers }
 }
 
 export default { buildInstanceApi }
