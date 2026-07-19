@@ -22,6 +22,7 @@ export const permissionsTemplate = (c, { onSave }) => html`
         </div>
     </div>
     <div class="nx-card" ${({ element }) => (c.$matrix = element)}></div>
+    <div class="nx-card" ${({ element }) => (c.$baselines = element)}></div>
     <div class="nx-card" ${({ element }) => (c.$manager = element)}></div>
 `
 
