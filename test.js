@@ -78,6 +78,9 @@ import "./test/cli/ops.test.js"
 // HTTP API — auto-generated from schemas, e2e over real HTTP (clauses API-*)
 import "./test/http/api.test.js"
 
+// Realtime event hub — SSE subscribers, permission per subscriber (clauses EVT-*)
+import "./test/http/events-hub.test.js"
+
 // Production server — nexus start, security contract (clauses START-*)
 import "./test/http/start.test.js"
 
