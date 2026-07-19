@@ -13,11 +13,13 @@
 
 import { DataPlane } from "../Data.js"
 import { profileFor } from "../App/models.js"
-import { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, validatePolicyRow, unpackPolicyRows, importIdentities } from "../App/system.js"
+import { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, isSystem, validatePolicyRow, unpackPolicyRows, importIdentities } from "../App/system.js"
 import { createApi } from "./api.js"
 import { openInstanceData, ensureTables } from "../../cli/data.js"
 import { loadExtensions } from "../App/extensions.js"
 import { policiesFor } from "../App/policies.js"
+import { enqueue, runnerTick } from "../App/jobs.js"
+import { bindPlaneRpc, startJobThread } from "../App/jobthread.js"
 import { verifyToken } from "../App/auth.js"
 import { timingSafeStringEqual } from "../../cli/output.js"
 import { ACTIONS } from "../Permission.js"
@@ -90,6 +92,9 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
     // exist — kept live (function, not a snapshot) so a hot policy write is
     // visible on the very next call, no restart.
     let policyLayers = () => ({ app: appPolicies, system: SYSTEM_BASELINES, admin: [], rows: [] })
+    // No-op until the runner starts below (schemas.length === 0 boots no
+    // plane at all) — dev.js's hot-reload path can always call effects.stop().
+    let effects = { stop: async () => {} }
 
     if (schemas.length) {
         // System entities join the SAME pipeline as app entities — user, role,
@@ -295,9 +300,37 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         authMode = authState.required
             ? `${[keys.length && `${keys.length} API keys`, authState.identities.length && `${authState.identities.length} ZEN identities`].filter(Boolean).join(" + ")} (E_AUTH without credentials)`
             : "DEV identity — wide-open policies, user via x-nexus-user header"
+
+        // ── the effect runner (design §2/§3): claims on main, executes in the
+        // job THREAD, settles through the plane. Server-mode only — effects
+        // never replicate (§6). JOB_CTX is deliberately not god-mode.
+        const JOB_CTX = {
+            user: "nexus-jobs", roles: [], shares: [],
+            policies: [
+                ...allSchemas.filter((s) => !isSystem(s.name)).map((s) => ({ entity: s.name, actions: [...ACTIONS], rule: null, permlevel: 0, ifOwner: false })),
+                { entity: "nexus_job", actions: ["read", "create", "write"], rule: null, permlevel: 0, ifOwner: false },
+                { entity: "nexus_notification", actions: ["read", "create"], rule: null, permlevel: 0, ifOwner: false },
+                { entity: "nexus_webhook", actions: ["read"], rule: null, permlevel: 0, ifOwner: false }
+            ]
+        }
+        extensions.enqueue = (name, payload, opts) => enqueue(plane, JOB_CTX, name, payload, opts)
+        bindPlaneRpc(plane, JOB_CTX)
+        const jobThread = await startJobThread({ root, apps, builtins: [] }) // Task 6 wires effects.js here
+        let draining = false
+        const tick = async () => {
+            if (draining) return
+            draining = true
+            try {
+                while (await runnerTick(plane, { now: Date.now, jobs: extensions.jobs, execute: jobThread.execute, ctx: JOB_CTX })) {}
+            } finally {
+                draining = false
+            }
+        }
+        const poller = setInterval(tick, config.jobs?.poll_ms ?? 1000)
+        effects = { stop: async () => { clearInterval(poller); await jobThread.stop() } }
     }
 
-    return { api, plane, authState, challenges, engine, authMode, extensions, embedderInfo, policyLayers }
+    return { api, plane, authState, challenges, engine, authMode, extensions, embedderInfo, policyLayers, effects }
 }
 
 export default { buildInstanceApi }

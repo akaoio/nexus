@@ -88,6 +88,10 @@ import "./test/http/studio.test.js"
 // engine's own live layers, proven enforced end-to-end (clauses POLWIN-*)
 import "./test/http/policy-window.test.js"
 
+// Effect runner lives in the server — real dev server, real job thread, no
+// restart: endpoint enqueues → runner claims → thread executes (clauses JOBL-*)
+import "./test/http/jobs-live.test.js"
+
 // Users / identities — pure ops, CLI, dev endpoints (clauses USER-*)
 import "./test/http/users.test.js"
 
