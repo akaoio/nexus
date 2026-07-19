@@ -7,6 +7,7 @@
  */
 
 import { createHmac } from "crypto"
+import { mailProvider } from "./mailer.js"
 
 /** HMAC-SHA256 hex over the canonical JSON body — receivers verify with the row's secret. */
 export function sign(secret, body) {
@@ -15,7 +16,7 @@ export function sign(secret, body) {
 
 const EVENTS = ["after:create", "after:update", "after:remove"]
 
-export default function effects(registrar, { schemas = [], plane = null, ctx = null } = {}) {
+export default function effects(registrar, { schemas = [], plane = null, ctx = null, config = {}, root = process.cwd() } = {}) {
     // ── consumers (run in the job thread; harmless to register on main too)
     registrar.job("effects.webhook", {
         run: async ({ id, payload }) => {
@@ -34,6 +35,9 @@ export default function effects(registrar, { schemas = [], plane = null, ctx = n
     })
     registrar.job("effects.notify", {
         run: async ({ payload }, { plane: rpc }) => rpc.create("nexus_notification", { user: payload.user, title: payload.title, body: payload.body ?? null, href: payload.href ?? null, read: false })
+    })
+    registrar.job("effects.mail", {
+        run: async ({ payload }) => mailProvider(config, root).send(payload)
     })
 
     // ── emitters (main only: they need the real plane to read subscriptions)

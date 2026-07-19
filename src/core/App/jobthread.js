@@ -36,7 +36,7 @@ export function bindPlaneRpc(plane, ctx) {
 /** Spawn the job worker; returns { execute, stop }. */
 export async function startJobThread({ root, apps = [], builtins = [], config = {} } = {}) {
     const url = new URL("../threads/job.js", import.meta.url)
-    await threads.register("job", { worker: true, url, workerData: { root, apps, builtins } })
+    await threads.register("job", { worker: true, url, workerData: { root, apps, builtins, config } })
     const execute = ({ id, name, payload }) => new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("E_TIMEOUT: job thread did not answer")), EXEC_TIMEOUT_MS)
         threads.queue({ thread: "job", method: "run", params: { id, name, payload }, callback: (response, error) => {

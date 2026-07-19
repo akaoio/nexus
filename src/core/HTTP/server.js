@@ -320,8 +320,8 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         // only, plane provided) the per-schema hooks that read nexus_webhook rows
         // and enqueue deliveries. Loaded again below inside the job thread —
         // handlers only, no plane, so its emitter half is a no-op there.
-        effectsApp(extensions.registrar(), { schemas: allSchemas, plane, ctx: JOB_CTX })
-        const jobThread = await startJobThread({ root, apps, builtins: [new URL("../App/effects.js", import.meta.url).href] })
+        effectsApp(extensions.registrar(), { schemas: allSchemas, plane, ctx: JOB_CTX, config, root })
+        const jobThread = await startJobThread({ root, apps, config, builtins: [new URL("../App/effects.js", import.meta.url).href] })
         let draining = false
         const tick = async () => {
             if (draining) return

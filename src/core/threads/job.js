@@ -28,7 +28,7 @@ class JobThread extends Thread {
 
     async init() {
         const { workerData } = await import("worker_threads")
-        const { root, apps = [], builtins = [] } = workerData ?? {}
+        const { root, apps = [], builtins = [], config = {} } = workerData ?? {}
         const noop = () => {}
         const registrar = {
             hook: noop,
@@ -39,7 +39,7 @@ class JobThread extends Thread {
             enqueue: () => { throw new Error("E_THREAD_ENQUEUE: enqueue jobs from hooks/endpoints, not from inside a handler") },
             job: (name, spec) => this.jobs.set(name, spec)
         }
-        for (const url of builtins) (await import(url)).default?.(registrar)
+        for (const url of builtins) (await import(url)).default?.(registrar, { config, root })
         for (const app of apps) {
             const path = join(root, "apps", app.dir, "hooks.js")
             try { (await import(pathToFileURL(path).href)).default?.(registrar) } catch { /* app without hooks.js */ }
