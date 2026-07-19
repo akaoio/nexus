@@ -39,14 +39,24 @@ export default function effects(registrar, { schemas = [], plane = null, ctx = n
     // ── emitters (main only: they need the real plane to read subscriptions)
     if (!plane) return
     const fire = (entity, event) => async (payload) => {
-        const hooks = await plane.list("nexus_webhook", {}, ctx)
-        const id = payload.row?.id ?? payload.id
-        for (const row of hooks) {
-            if (!row.enabled) continue
-            if (row.entity && row.entity !== entity) continue
-            const events = row.events ? JSON.parse(row.events) : null
-            if (events?.length && !events.includes(event)) continue
-            await registrar.enqueue("effects.webhook", { url: row.url, secret: row.secret, body: { entity, event, id, ts: Date.now() } })
+        try {
+            const hooks = await plane.list("nexus_webhook", {}, ctx)
+            const id = payload.row?.id ?? payload.id
+            for (const row of hooks) {
+                if (!row.enabled) continue
+                if (row.entity && row.entity !== entity) continue
+                let events = null
+                try {
+                    events = row.events ? JSON.parse(row.events) : null
+                } catch (error) {
+                    console.warn(`effects: nexus_webhook row ${row.id} has malformed events — ${String(error?.message ?? error)}`)
+                    continue
+                }
+                if (events?.length && !events.includes(event)) continue
+                await registrar.enqueue("effects.webhook", { url: row.url, secret: row.secret, body: { entity, event, id, ts: Date.now() } })
+            }
+        } catch (error) {
+            console.warn(`effects: webhook emit failed for ${entity} ${event} — ${String(error?.message ?? error)}`)
         }
     }
     for (const s of schemas) {

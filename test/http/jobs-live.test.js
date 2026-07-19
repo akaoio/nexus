@@ -50,6 +50,10 @@ const post = async (path, body) => {
     const r = await fetch((await ensure()) + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
     return { status: r.status, body: await r.json() }
 }
+const del = async (path) => {
+    const r = await fetch((await ensure()) + path, { method: "DELETE" })
+    return { status: r.status, body: await r.json() }
+}
 
 Test.describe("Effect runner lives in the server (JOBL-*)", () => {
     Test.it("JOBL-01 endpoint enqueues → runner claims → thread executes → notification row lands (no restart, real process)", async () => {
@@ -94,6 +98,15 @@ Test.describe("Effect runner lives in the server (JOBL-*)", () => {
         } finally {
             rx.close() // a failed assertion must never leave the receiver socket open (hangs the process)
         }
+    })
+
+    Test.it("WH-03 a malformed webhook row never fails the primary write — the effect degrades, the data lands", async () => {
+        const bad = await post("/api/v1/nexus_webhook", { url: "http://127.0.0.1:9/never", entity: null, events: "{not json", secret: "x", enabled: true })
+        assert.equal(bad.body.ok, true) // the row itself is legal text
+        const write = await post("/api/v1/task", { title: "must land despite the bad subscriber" })
+        assert.equal(write.body.ok, true) // the primary write survives
+        assert.truthy(write.body.data.id)
+        await del("/api/v1/nexus_webhook/" + bad.body.data.id) // best-effort cleanup
     })
 
     Test.it("JOBL-99 cleanup", async () => {
