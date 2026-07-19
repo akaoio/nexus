@@ -2,9 +2,10 @@
  * The effect runner lives in the server (design 2026-07-19 §2/§3, JOBL-*): a
  * real dev server, a real job thread, no restart, no fake clock — endpoint
  * enqueues → runnerTick claims on the main thread → the job THREAD executes
- * the handler → the plane settles the row. This is the ONE clause allowed to
- * poll real time (bounded 15s) — it proves the whole path end to end; the
- * engine's own timing logic is clock-injected and covered by JOB-*.
+ * the handler → the plane settles the row. This is the ONE SUITE allowed to
+ * poll real time (bounded 15s, one shared server — several clauses in here
+ * poll) — it proves the whole path end to end; the engine's own timing logic
+ * is clock-injected and covered by JOB-*.
  */
 
 import { fileURLToPath } from "url"

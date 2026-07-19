@@ -9,6 +9,10 @@
 
 import { randomUUID } from "crypto"
 
+// Clock contract: every `now()` this module takes (claimNext, runnerTick) returns
+// EPOCH MILLISECONDS (Date.now-shaped) — never pass plane.now, which is an ISO-string
+// clock. The two clocks are not interchangeable; mixing them silently breaks the
+// due/lease-expiry arithmetic below.
 export const LEASE_MS = 60000
 export const BACKOFF = Object.freeze({ base: 5000, cap: 300000 })
 
@@ -76,6 +80,10 @@ export async function claimNext(plane, { now }) {
 export async function runnerTick(plane, { now, jobs, execute, ctx, log = console } = {}) {
     const row = await claimNext(plane, { now })
     if (!row) return false
+    // Plain update, not token-CAS — safe today because exactly one runner exists per
+    // process. When multi-worker lands, settle must become token-CAS too (guard on
+    // lease_token like claimNext's UPDATE does), or two racing runners on the same
+    // row could both settle it.
     const settle = (patch) => plane.update("nexus_job", row.id, { ...patch, lease_until: null, lease_token: null }, ctx)
 
     let payload

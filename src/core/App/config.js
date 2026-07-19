@@ -50,17 +50,28 @@ export function coerce(raw, forceString = false) {
     }
 }
 
-/** A copy with secrets masked (token_secret, api_keys[].key) — safe to print. */
+/**
+ * A copy with secrets masked (token_secret, api_keys[].key, mail.smtp) — safe
+ * to print. `mail.smtp` masks as a whole block (host/user/pass can all leak
+ * credentials via SMTP auth) while `mail.provider`/`mail.from` stay readable.
+ */
 export function redact(config) {
     const c = JSON.parse(JSON.stringify(config ?? {}))
     if (c.token_secret) c.token_secret = "***"
     if (Array.isArray(c.api_keys)) c.api_keys = c.api_keys.map((k) => ({ ...k, key: "***" }))
+    if (c.mail && typeof c.mail === "object" && c.mail.smtp !== undefined) c.mail = { ...c.mail, smtp: "***" }
     return c
 }
 
 /** Is this dot-path a secret (so `get` should mask it unless asked)? */
 export function isSecretPath(path) {
-    return path === "token_secret" || path === "api_keys" || /^api_keys\.\d+\.key$/.test(path)
+    return (
+        path === "token_secret" ||
+        path === "api_keys" ||
+        /^api_keys\.\d+\.key$/.test(path) ||
+        path === "mail.smtp" ||
+        path.startsWith("mail.smtp.")
+    )
 }
 
 export default { getPath, setPath, unsetPath, coerce, redact, isSecretPath }

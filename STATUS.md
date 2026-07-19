@@ -46,8 +46,14 @@ EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
 - **Job/webhook sync exclusion**: exclusion rules are a pinned list in nexus_job/nexus_webhook;
   per-instance exclusion enforcement (avoid re-syncing a job already claimed by another server)
   lands with server-side sync wiring (future task, separate from the effect engine itself).
-- **Cron syntax and multi-process workers**: deferred by spec. Job recurrence and scheduler
-  patterns are designed but not implemented; multi-process worker pools follow the same defer.
+- **Cron syntax and multi-process workers**: cron *syntax* is deferred by spec; `every_ms`
+  recurrence IS implemented and clause-pinned (JOB-05). Multi-process worker pools are
+  the deferred part.
+- **Job thread pool is fixed at one thread in v1**: the `jobs.threads` knob lands with
+  the pool.
+- **Wire-contract deviation, deliberate**: `x-nexus-delivery` carries the job id only
+  (stable across retries — receivers dedup redeliveries on it); the spec sketched
+  jobId+attempt.
 - **/jobs page browser pass owed**: the /jobs Studio page CRUDs and views jobs; E2E flows
   (job enqueue → webhook fire → notification row) are proven on the real infrastructure
   (JOBL-01/WH-02/03/NOTIF-01), but browser-side navigation and form validation are NOT yet
