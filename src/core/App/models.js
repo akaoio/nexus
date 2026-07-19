@@ -136,8 +136,8 @@ export function installLib(root) {
 
 /**
  * Pull a model: ensure the library, then load the model once so its weights are
- * fetched into the transformers.js cache (~/.cache/huggingface). Returns the
- * model's real dimensions. Heavy (network + disk) — the CLI drives it, not tests.
+ * fetched into the transformers.js cache (~/.cache/huggingface). Returns
+ * `{ model, dims }` for embedding ids and `{ model }` for NL ids. Heavy (network + disk) — the CLI drives it, not tests.
  */
 export async function pull(root, id = DEFAULT_MODEL, onProgress) {
     if (!libInstalled(root)) installLib(root)
