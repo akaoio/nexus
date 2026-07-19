@@ -8,7 +8,7 @@
  */
 
 import Test, { assert } from "../../src/core/Test.js"
-import { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, isSystem, packPolicy, unpackPolicy, validatePolicyRow, unpackPolicyRows, importIdentities } from "../../src/core/App/system.js"
+import { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, isSystem, packPolicy, unpackPolicy, validatePolicyRow, unpackPolicyRows, importIdentities, SERVER_ONLY, isServerOnly } from "../../src/core/App/system.js"
 import { validate } from "../../src/core/Model.js"
 import { validatePolicy, policiesFor, loadPolicies } from "../../src/core/App/policies.js"
 import { resolve } from "../../src/core/Permission.js"
@@ -20,8 +20,8 @@ Test.describe("System entities (SYS-*)", () => {
     Test.it("SYS-01 every system schema IS a valid Model Schema v1; the registry is pinned", () => {
         for (const schema of SYSTEM_ENTITIES)
             assert.equal(validate(schema).valid, true, `${schema.name} validates`)
-        assert.deepEqual(SYSTEM_ENTITIES.map((s) => s.name).sort(), ["nexus_policy", "nexus_role", "nexus_user", "nexus_view"])
-        for (const name of ["nexus_user", "nexus_role", "nexus_policy", "nexus_view", "nexus_entity"])
+        assert.deepEqual(SYSTEM_ENTITIES.map((s) => s.name).sort(), ["nexus_job", "nexus_notification", "nexus_policy", "nexus_role", "nexus_user", "nexus_view", "nexus_webhook"])
+        for (const name of ["nexus_user", "nexus_role", "nexus_policy", "nexus_view", "nexus_entity", "nexus_job", "nexus_webhook", "nexus_notification"])
             assert.truthy(isSystem(name), `${name} is system`)
         assert.truthy(!isSystem("task"), "app entities are not system")
     })
@@ -123,5 +123,30 @@ Test.describe("System entities (SYS-*)", () => {
         assert.equal(skipped[0].id, "r2")
         assert.truthy(skipped[0].error)
         assert.deepEqual(unpackPolicyRows(null), { policies: [], skipped: [] })
+    })
+
+    Test.it("SYS-09 effect entities: nexus_job/webhook/notification are system docs; job+webhook are SERVER-ONLY (never sync)", () => {
+        const names = SYSTEM_ENTITIES.map((s) => s.name)
+        for (const n of ["nexus_job", "nexus_webhook", "nexus_notification"]) {
+            assert.truthy(names.includes(n), n)
+            assert.truthy(isSystem(n), n + " is system")
+        }
+        const job = SYSTEM_ENTITIES.find((s) => s.name === "nexus_job")
+        const f = Object.fromEntries(job.fields.map((x) => [x.name, x]))
+        assert.equal(f.name.required, true)
+        assert.deepEqual(f.status.options, ["pending", "running", "done", "failed", "dead"])
+        assert.equal(f.status.default, "pending")
+        assert.equal(f.max_attempts.default, 5)
+        for (const col of ["payload", "run_at", "every_ms", "attempts", "lease_until", "lease_token", "last_error", "result"]) assert.truthy(f[col], col)
+        const wh = SYSTEM_ENTITIES.find((s) => s.name === "nexus_webhook")
+        assert.equal(Object.fromEntries(wh.fields.map((x) => [x.name, x])).url.required, true)
+        const notif = SYSTEM_ENTITIES.find((s) => s.name === "nexus_notification")
+        assert.equal(Object.fromEntries(notif.fields.map((x) => [x.name, x])).user.required, true)
+        // the honest line: replication ≠ work distribution
+        assert.deepEqual([...SERVER_ONLY], ["nexus_job", "nexus_webhook"])
+        assert.equal(isServerOnly("nexus_job"), true)
+        assert.equal(isServerOnly("nexus_notification"), false)
+        // every schema must pass the framework's own validation
+        for (const s of SYSTEM_ENTITIES) assert.equal(validate(s).valid, true, s.name)
     })
 })

@@ -72,7 +72,7 @@ export async function dev(args, flags, out) {
     i18n.locales = coveredLocales(i18n.dict)
     // Data Plane + auth + API through the shared wiring. Dev mode falls back to
     // the loud DEV identity when no auth is configured (production refuses that).
-    let { api, plane, authState, challenges, engine, authMode, embedderInfo, policyLayers } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" })
+    let { api, plane, authState, challenges, engine, authMode, embedderInfo, policyLayers, effects } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" })
     const studioAuthAtBoot = authState.required
 
     // ── hot reload — entity writes NEVER require a dev restart ──────────────
@@ -81,6 +81,7 @@ export async function dev(args, flags, out) {
     // request runs on the new shape. The old sqlite handle is left to the GC —
     // a dev-only cost, taken deliberately for restartless entity CRUD.
     async function reloadInstance() {
+        await effects.stop() // stop the old interval + job thread before the rebuild replaces the plane
         const fresh = loadInstance(root)
         config = fresh.config
         schemas = fresh.schemas
@@ -88,7 +89,7 @@ export async function dev(args, flags, out) {
         schemaFiles = fresh.files
         appPolicies.length = 0
         appPolicies.push(...fresh.policies)
-        ;({ api, plane, authState, challenges, engine, authMode, embedderInfo, policyLayers } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" }))
+        ;({ api, plane, authState, challenges, engine, authMode, embedderInfo, policyLayers, effects } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" }))
     }
 
     // internal plane context for _studio reads/executions (dev-only surface)
@@ -116,7 +117,7 @@ export async function dev(args, flags, out) {
 
     // The Studio's route table — the same patterns the client router uses.
     const STUDIO_ROUTES = ["/entity/[entity]", "/settings/[feature]", "/[view]"]
-    const STUDIO_VIEWS = new Set(["entities", "entity", "permissions", "roles", "users", "settings", "search"]) // "entity" = legacy redirect
+    const STUDIO_VIEWS = new Set(["entities", "entity", "permissions", "roles", "users", "jobs", "settings", "search"]) // "entity" = legacy redirect
     const STUDIO_SETTINGS = new Set(["ai", "locales", "themes"])
     function routeMatches(pathname) {
         if (/\.[^/]+$/.test(pathname) || pathname.includes("/.")) return false // files + dotpaths are never routes

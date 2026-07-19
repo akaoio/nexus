@@ -61,8 +61,54 @@ const POLICY = Object.freeze({
     ]
 })
 
+const JOB = Object.freeze({
+    schemaVersion: 1,
+    name: "nexus_job",
+    label: { en: "Job", vi: "Tác vụ" },
+    fields: [
+        { name: "name", type: "text", required: true, label: { en: "Handler", vi: "Trình xử lý" } },
+        { name: "payload", type: "text", label: { en: "Payload" } },
+        { name: "status", type: "select", options: ["pending", "running", "done", "failed", "dead"], default: "pending", label: { en: "Status", vi: "Trạng thái" } },
+        { name: "run_at", type: "datetime", label: { en: "Run at", vi: "Chạy lúc" } },
+        { name: "every_ms", type: "integer", label: { en: "Every (ms)" } },
+        { name: "attempts", type: "integer", default: 0, label: { en: "Attempts" } },
+        { name: "max_attempts", type: "integer", default: 5, label: { en: "Max attempts" } },
+        { name: "lease_until", type: "datetime", label: { en: "Lease until" } },
+        { name: "lease_token", type: "text", label: { en: "Lease token" } },
+        { name: "last_error", type: "text", label: { en: "Last error", vi: "Lỗi cuối" } },
+        { name: "result", type: "text", label: { en: "Result", vi: "Kết quả" } }
+    ]
+})
+
+const WEBHOOK = Object.freeze({
+    schemaVersion: 1,
+    name: "nexus_webhook",
+    label: { en: "Webhook" },
+    fields: [
+        { name: "url", type: "text", required: true, label: { en: "URL" } },
+        { name: "entity", type: "text", label: { en: "Entity", vi: "Thực thể" } },
+        { name: "events", type: "text", label: { en: "Events (JSON)" } },
+        { name: "secret", type: "text", label: { en: "Secret" } },
+        { name: "enabled", type: "boolean", default: true, label: { en: "Enabled", vi: "Bật" } },
+        { name: "description", type: "text", label: { en: "Description", vi: "Mô tả" } }
+    ]
+})
+
+const NOTIFICATION = Object.freeze({
+    schemaVersion: 1,
+    name: "nexus_notification",
+    label: { en: "Notification", vi: "Thông báo" },
+    fields: [
+        { name: "user", type: "text", required: true, label: { en: "User (pub)" } },
+        { name: "title", type: "text", required: true, label: { en: "Title", vi: "Tiêu đề" } },
+        { name: "body", type: "text", label: { en: "Body", vi: "Nội dung" } },
+        { name: "href", type: "text", label: { en: "Link" } },
+        { name: "read", type: "boolean", default: false, label: { en: "Read", vi: "Đã đọc" } }
+    ]
+})
+
 /** The builtin schemas — every one a valid Model Schema v1 document. */
-export const SYSTEM_ENTITIES = Object.freeze([USER, ROLE, POLICY, viewSchema()])
+export const SYSTEM_ENTITIES = Object.freeze([USER, ROLE, POLICY, viewSchema(), JOB, WEBHOOK, NOTIFICATION])
 
 const SYSTEM_NAMES = new Set([...SYSTEM_ENTITIES.map((s) => s.name), "nexus_entity"])
 
@@ -144,7 +190,7 @@ const ADMIN_ACTIONS = Object.freeze(["read", "write", "create", "delete"])
  * already resolves. Who may edit whom is all here, all data.
  */
 export const SYSTEM_BASELINES = Object.freeze([
-    ...["nexus_user", "nexus_role", "nexus_policy", "nexus_view"].map((entity) =>
+    ...["nexus_user", "nexus_role", "nexus_policy", "nexus_view", "nexus_job", "nexus_webhook", "nexus_notification"].map((entity) =>
         Object.freeze({ entity, actions: ADMIN_ACTIONS, rule: null, permlevel: 0, ifOwner: false, roles: ["admin"] })),
     // the directory: any signed-in user can see who exists and which roles exist
     Object.freeze({ entity: "nexus_user", actions: ["read"], rule: null, permlevel: 0, ifOwner: false }),
@@ -187,4 +233,9 @@ export function importIdentities(identities = []) {
     }))
 }
 
-export default { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, isSystem, packPolicy, unpackPolicy, validatePolicyRow, unpackPolicyRows, importIdentities }
+/** Effect entities never sync: replication ≠ work distribution — a job row
+ *  replayed on every peer is an effect executed N times (design §6). */
+export const SERVER_ONLY = Object.freeze(["nexus_job", "nexus_webhook"])
+export const isServerOnly = (name) => SERVER_ONLY.includes(name)
+
+export default { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, isSystem, packPolicy, unpackPolicy, validatePolicyRow, unpackPolicyRows, importIdentities, SERVER_ONLY, isServerOnly }

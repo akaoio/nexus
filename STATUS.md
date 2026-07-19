@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 485/538 node clauses, 0 red.**
+**Green: 520/573 node clauses, 0 red.**
 (53 node "skips" are browser-only clauses plus the gated real-model suites —
 EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
 
@@ -33,9 +33,31 @@ EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
 | Security | pentest findings pinned as clauses (info-disclosure, oracle, static-serve) | SEC-* |
 | **Install/lifecycle** | **one-line installers (install.sh / install.ps1, GitHub-first, tarball fallback, npm never required); `nexus update` (git fetch+hard-reset, the access pattern) and `nexus uninstall --yes`** | CLI-* (help pin) |
 | **Entity identity** | **schema `icon:` (any bootstrap-icons name — vendored 1.1 MB sprite, nx-icon registry-first with sprite fallback); picker in the /entities editor** | MS-S14 |
+| **Effect engine** | **durable jobs as `nexus_job` rows (token-CAS claim, backoff, DLQ, recurring), Threads execution behind the narrow plane-RPC, webhook/mail/notification consumers as the effect app, Studio /jobs** | SYS-09, JOB-*, EXT-J1, THR-*, JOBL-*, WH-*, MAIL-*, NOTIF-* |
 
-## Unfinished / known drift (honest list, 2026-07-18)
+## Unfinished / known drift (honest list, 2026-07-19)
 
+- **Effect engine at-least-once semantics**: the job/webhook/notification pipeline is
+  at-least-once; exactly-once is documented as NOT a goal (spec note: multi-process
+  deduplication is complex, rare in practice). Consumers must be idempotent.
+- **SMTP provider path**: the mail provider contract is live and tested; `provider:` is
+  exercised through the MAIL-01 clause; actual SMTP delivery is only contract-tested,
+  never against a live SMTP server in CI (infrastructure boundary, as with MySQL).
+- **Job/webhook sync exclusion**: exclusion rules are a pinned list in nexus_job/nexus_webhook;
+  per-instance exclusion enforcement (avoid re-syncing a job already claimed by another server)
+  lands with server-side sync wiring (future task, separate from the effect engine itself).
+- **Cron syntax and multi-process workers**: cron *syntax* is deferred by spec; `every_ms`
+  recurrence IS implemented and clause-pinned (JOB-05). Multi-process worker pools are
+  the deferred part.
+- **Job thread pool is fixed at one thread in v1**: the `jobs.threads` knob lands with
+  the pool.
+- **Wire-contract deviation, deliberate**: `x-nexus-delivery` carries the job id only
+  (stable across retries — receivers dedup redeliveries on it); the spec sketched
+  jobId+attempt.
+- **/jobs page browser pass owed**: the /jobs Studio page CRUDs and views jobs; E2E flows
+  (job enqueue → webhook fire → notification row) are proven on the real infrastructure
+  (JOBL-01/WH-02/03/NOTIF-01), but browser-side navigation and form validation are NOT yet
+  pinned in CI (joins the E2E debt alongside login/cascade/hot-reload/accent clauses).
 - **`/_studio/users` endpoints are legacy**: the /users page now CRUDs `nexus_user`
   rows, but the old config-identities endpoints remain in dev.js for CLI parity.
   Deciding their fate (keep as bootstrap tooling vs delete) is open.

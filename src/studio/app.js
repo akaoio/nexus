@@ -13,6 +13,7 @@ import * as entities from "./routes/entities/index.js"
 import * as permissions from "./routes/permissions/index.js"
 import * as roles from "./routes/roles/index.js"
 import * as users from "./routes/users/index.js"
+import * as jobs from "./routes/jobs/index.js"
 import * as settings from "./routes/settings/index.js"
 import * as search from "./routes/search/index.js"
 // widgets the routes compose (register the custom elements) — each component's
@@ -74,10 +75,11 @@ const MODULES = {
     permissions: { icon: "shield-lock", key: "permissions", render: permissions.render },
     roles: { icon: "sliders", key: "roles", render: roles.render },
     users: { icon: "person", key: "users", render: users.render },
+    jobs: { icon: "list-task", key: "jobs", render: jobs.render },
     search: { icon: "search", key: "search", render: search.render },
     settings: { icon: "gear", key: "settings", render: settings.render }
 }
-const BUILD = ["entities", "permissions", "roles", "users", "search", "settings"]
+const BUILD = ["entities", "permissions", "roles", "users", "jobs", "search", "settings"]
 
 // ── layout ─────────────────────────────────────────────────────────────────────
 const layout = buildLayout({ site: boot.site })

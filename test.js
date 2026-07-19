@@ -88,6 +88,10 @@ import "./test/http/studio.test.js"
 // engine's own live layers, proven enforced end-to-end (clauses POLWIN-*)
 import "./test/http/policy-window.test.js"
 
+// Effect runner lives in the server — real dev server, real job thread, no
+// restart: endpoint enqueues → runner claims → thread executes (clauses JOBL-*)
+import "./test/http/jobs-live.test.js"
+
 // Users / identities — pure ops, CLI, dev endpoints (clauses USER-*)
 import "./test/http/users.test.js"
 
@@ -143,6 +147,12 @@ import "./test/studio/roles.test.js"
 import "./test/app/system.test.js"
 import "./test/app/lifecycle.test.js"
 
+// App — effect engine core: claim/backoff/DLQ/recurring (clauses JOB-*)
+import "./test/app/jobs.test.js"
+
+// App — job thread + plane pseudo-thread RPC, real worker (clauses THR-*)
+import "./test/app/jobthread.test.js"
+
 // Studio — nx-schema-designer (clauses NXS-*)
 import "./test/studio/schema-designer.test.js"
 
@@ -160,6 +170,9 @@ import "./test/app/manifest.test.js"
 
 // App system — extension points (clauses EXT-*)
 import "./test/app/extensions.test.js"
+
+// App — the effect app: webhook consumer (clauses WH-*)
+import "./test/app/effects.test.js"
 
 const results = await Test.run(process.argv[2])
 

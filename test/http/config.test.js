@@ -31,6 +31,19 @@ Test.describe("Config control-plane (CONFIG)", () => {
         assert.equal(redact({ api_keys: [{ key: "k", user: "u" }] }).api_keys[0].key, "***")
         assert.equal(isSecretPath("token_secret"), true)
         assert.equal(isSecretPath("site.name"), false)
+
+        // mail.* — spec §5 claims mail config is redacted; the smtp block (host/user/pass)
+        // must mask the same way api_keys[].key does, while provider/from stay readable.
+        const mailCfg = { mail: { provider: "smtp", from: "x@y.z", smtp: { host: "h", auth: { user: "u", pass: "s3cret" } } } }
+        const redactedMail = redact(mailCfg)
+        assert.equal(redactedMail.mail.provider, "smtp")
+        assert.equal(redactedMail.mail.from, "x@y.z")
+        assert.equal(redactedMail.mail.smtp, "***")
+        assert.equal(isSecretPath("mail.smtp"), true)
+        assert.equal(isSecretPath("mail.smtp.auth.pass"), true)
+        assert.equal(isSecretPath("mail.smtp.auth.user"), true)
+        assert.equal(isSecretPath("mail.provider"), false)
+        assert.equal(isSecretPath("mail.from"), false)
     })
 
     Test.it("CONFIG-02 CLI get/set/unset writes the config with coercion", () => {
