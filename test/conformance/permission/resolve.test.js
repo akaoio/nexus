@@ -95,7 +95,7 @@ Test.describe("Permission v1 — resolution & actions (PERM-A)", () => {
             for (const probe of probes) {
                 const union = Permission.resolve([...A, ...B], probe).allowed
                 const or = Permission.resolve(A, probe).allowed || Permission.resolve(B, probe).allowed
-                assert.equal(union, or, JSON.stringify({ A, B, probe }))
+                assert.truthy(union === or, JSON.stringify({ A, B, probe }))
             }
         }
     })

@@ -264,10 +264,11 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         // (self-service as DATA: $CURRENT_USER rules; the admin bundle over
         // every loaded entity — Frappe's System Manager) + LIVE nexus_policy rows
         const shippedAdmin = adminBaselines(allSchemas)
-        const livePolicies = () => [...appPolicies, ...SYSTEM_BASELINES, ...shippedAdmin, ...dbPolicies]
         // live array REFERENCES — the window is the engine's own truth, never a
         // disk re-read; appPolicies/dbPolicies mutate in place on hot reload
         policyLayers = () => ({ app: appPolicies, system: SYSTEM_BASELINES, admin: shippedAdmin, rows: dbPolicies })
+        // The window and enforcement compose from the SAME source by construction: livePolicies derives from policyLayers.
+        const livePolicies = () => Object.values(policyLayers()).flat()
         const context = (req) => {
             // spread per request: appPolicies + dbPolicies mutate live
             if (!authState.required)
