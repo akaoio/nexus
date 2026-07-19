@@ -13,7 +13,7 @@
 
 import { DataPlane } from "../Data.js"
 import { profileFor } from "../App/models.js"
-import { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, unpackPolicy, importIdentities } from "../App/system.js"
+import { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, validatePolicyRow, unpackPolicyRows, importIdentities } from "../App/system.js"
 import { createApi } from "./api.js"
 import { openInstanceData, ensureTables } from "../../cli/data.js"
 import { loadExtensions } from "../App/extensions.js"
@@ -198,8 +198,11 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         const usersByPub = new Map()
         const refreshPolicies = async () => {
             const rows = await plane.list("nexus_policy", {}, NEXUS_CTX)
+            const { policies, skipped } = unpackPolicyRows(rows)
             dbPolicies.length = 0
-            for (const row of rows) dbPolicies.push(unpackPolicy(row))
+            dbPolicies.push(...policies)
+            for (const bad of skipped)
+                console.warn(`nexus_policy row ${bad.id} skipped (${bad.error}) — repair or delete it via /api/v1/nexus_policy`)
         }
         const refreshUsers = async () => {
             const rows = await plane.list("nexus_user", {}, NEXUS_CTX)
@@ -210,6 +213,20 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             extensions.hook("nexus_policy", event, () => refreshPolicies())
             extensions.hook("nexus_user", event, () => refreshUsers())
         }
+
+        // write-side defense: a nexus_policy row must BE a valid policy —
+        // before-hooks THROW to veto (App API contract), so an invalid row
+        // never reaches the table, from the Studio or any API caller
+        extensions.hook("nexus_policy", "before:create", (payload) => {
+            const result = validatePolicyRow(payload.data, allSchemas)
+            if (!result.valid) throw new Error("E_INVALID: " + JSON.stringify(result.errors))
+        })
+        extensions.hook("nexus_policy", "before:update", async (payload) => {
+            const rows = await plane.list("nexus_policy", {}, NEXUS_CTX)
+            const current = rows.find((r) => r.id === payload.id) ?? {}
+            const result = validatePolicyRow({ ...current, ...payload.patch }, allSchemas)
+            if (!result.valid) throw new Error("E_INVALID: " + JSON.stringify(result.errors))
+        })
 
         const keys = Array.isArray(config.api_keys) ? config.api_keys : []
         // LIVE auth state: the user DIRECTORY (nexus_user rows) decides roles;
