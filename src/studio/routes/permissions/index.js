@@ -29,8 +29,9 @@ export function render(ctx) {
     const host = mountTemplate(permissionsTemplate(c, {
         onSave: async () => {
             c.$save.disabled = true
+            const value = mgr.value
+            let clean = false
             try {
-                const value = mgr.value
                 const before = new Map(saved.map((r) => [r.id, r]))
                 const results = []
                 for (const p of value) {
@@ -40,13 +41,16 @@ export function render(ctx) {
                 const kept = new Set(value.map((p) => p.id).filter(Boolean))
                 for (const r of saved) if (!kept.has(r.id)) results.push(await ctx.api.remove("nexus_policy", r.id))
                 const failed = results.filter((r) => !r.ok)
-                if (!failed.length) toast("Policies saved — live now", "ok")
+                clean = !failed.length
+                if (clean) toast("Policies saved — live now", "ok")
                 else for (const f of failed) toast(f.error.code + ": " + (f.error.message || ""), "err") // per-row truth (spec §6)
             } catch (error) {
                 toast(String(error?.message ?? error), "err")
             } finally {
                 c.$save.disabled = false
-                load() // re-sync from the window: partial saves are shown truthfully
+                // re-sync from the window; a failed save KEEPS the edits that
+                // did not land, so a veto never wipes the draft being corrected
+                load(clean ? null : value)
             }
         }
     }))
@@ -114,7 +118,11 @@ export function render(ctx) {
         }
     }
 
-    async function load() {
+    /** Re-sync from the window. `drafts` (a failed save's value) survives the
+     *  reload: rows that saved show server truth, edits that did NOT land stay
+     *  in the manager — changed rows keep the draft version, new entries whose
+     *  create failed stay as id-less drafts. */
+    async function load(drafts = null) {
         const [w, u] = await Promise.all([ctx.api.studio("policies", "GET"), ctx.api.list("nexus_user", null)])
         if (!w.ok) return
         users = u.ok ? u.data.map((row) => ({ ...row, roles: parseRoles(row) })) : []
@@ -122,9 +130,14 @@ export function render(ctx) {
         const readonly = layers.filter((l) => l.readonly)
         baseline = readonly.flatMap((l) => l.policies.map((p) => ({ ...p, source: p.source ?? l.source })))
         saved = layers.find((l) => l.source === "rows")?.policies ?? []
-        mgr.value = saved
-        matrix.policies = composed(saved)
-        paintRoles(composed(saved))
+        let value = saved
+        if (drafts) value = [
+            ...saved.map((r) => drafts.find((d) => d.id === r.id && !same(d, r)) ?? r),
+            ...drafts.filter((d) => !d.id && !saved.some((r) => same(r, d)))
+        ]
+        mgr.value = value
+        matrix.policies = composed(value)
+        paintRoles(composed(value))
         paintBaselines(readonly)
         c.$status.textContent = `${baseline.length} baseline · ${saved.length} rows`
         c.$banner.replaceChildren()
