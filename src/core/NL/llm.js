@@ -16,9 +16,10 @@
  * Default model: FunctionGemma-270M ONNX — small, multilingual, structured output.
  */
 
-const err = (code, detail) => new Error(detail ? `${code}: ${detail}` : code)
+import { DEFAULT_NL_MODEL } from "../App/models.js"
+export { DEFAULT_NL_MODEL }
 
-export const DEFAULT_NL_MODEL = "onnx-community/functiongemma-270m-it-ONNX"
+const err = (code, detail) => new Error(detail ? `${code}: ${detail}` : code)
 
 /** The closed operator vocabulary — mirrors AST validate() exactly. */
 const OPERATORS = ["eq", "ne", "gt", "gte", "lt", "lte", "like", "nlike", "in", "nin", "between", "isnull", "notnull"]

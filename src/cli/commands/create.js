@@ -12,7 +12,7 @@ import { resolve, basename, join } from "path"
 import { createInterface } from "readline/promises"
 import { validate } from "../../core/Model.js"
 import { ENGINES } from "../../core/Data/adapters.js"
-import { MODELS, pull } from "../../core/App/models.js"
+import { MODELS, NL_MODELS, pull } from "../../core/App/models.js"
 
 /** Ask a free-text question with a default (TTY only). */
 async function ask(question, def) {
@@ -88,12 +88,25 @@ export async function create(args, flags, out) {
     // AI (embedding) model — first-class in Nexus (§4.6). --model sets it;
     // interactive picks from the curated list; "none" = keyword search only.
     let aiModel = null
-    if (flags.model !== undefined) aiModel = flags.model && flags.model !== "none" ? flags.model : null
+    // typeof guards the trailing value-less flag (parseArgs falls back to boolean true)
+    if (flags.model !== undefined) aiModel = typeof flags.model === "string" && flags.model !== "none" ? flags.model : null
     else if (interactive) {
         const opts = [...MODELS.map((m) => `${m.name} — ${m.note} (${m.size})`), "none — keyword search only"]
         const picked = await choose("Embedding / AI model", opts, opts[0])
         const idx = opts.indexOf(picked)
         aiModel = idx >= 0 && idx < MODELS.length ? MODELS[idx].id : null
+    }
+
+    // NL (function calling) model — tier 4 of NL→AST. --nl-model sets it;
+    // the wizard defaults to FunctionGemma; without a TTY nothing is written
+    // (CI never surprise-downloads ~300 MB of weights).
+    let nlModel = null
+    if (flags["nl-model"] !== undefined) nlModel = typeof flags["nl-model"] === "string" && flags["nl-model"] !== "none" ? flags["nl-model"] : null
+    else if (interactive) {
+        const opts = [...NL_MODELS.map((m) => `${m.name} — ${m.note} (${m.size})`), "none — rule/retrieval tiers only"]
+        const picked = await choose("NL (function calling) model", opts, opts[0])
+        const idx = opts.indexOf(picked)
+        nlModel = idx >= 0 && idx < NL_MODELS.length ? NL_MODELS[idx].id : null
     }
 
     const target = resolve(process.cwd(), dir)
@@ -122,7 +135,9 @@ export async function create(args, flags, out) {
             configVersion: 1,
             site: { name: site, locale: "en" },
             database: { engine },
-            ...(aiModel ? { semantic: { model: aiModel } } : {})
+            ...(aiModel || nlModel
+                ? { semantic: { ...(aiModel ? { model: aiModel } : {}), ...(nlModel ? { nlModel } : {}) } }
+                : {})
         },
         "apps/starter/manifest.json": {
             manifestVersion: 1,
@@ -162,21 +177,24 @@ export default ({ hook, endpoint, command }) => {
         created.push(relative)
     }
 
-    out.print(`${out.green("✓")} Created Nexus instance ${out.bold(site)} in ${out.cyan(dir)} ${out.dim(`· ${engine}${aiModel ? " · " + aiModel : ""}`)}`)
+    out.print(`${out.green("✓")} Created Nexus instance ${out.bold(site)} in ${out.cyan(dir)} ${out.dim(`· ${engine}${aiModel ? " · " + aiModel : ""}${nlModel ? " · " + nlModel : ""}`)}`)
     out.print("")
     for (const file of created) out.print(`  ${out.dim("+")} ${file}`)
     out.print("")
 
-    // AI model: in a terminal, offer to install + download it right now.
-    if (aiModel && interactive) {
-        const yes = await ask(`Download ${aiModel} now? installs @huggingface/transformers + weights [y/N]`, "N")
+    // AI models: in a terminal, offer to install + download them right now.
+    const downloads = [aiModel, nlModel].filter(Boolean)
+    if (downloads.length && interactive) {
+        const yes = await ask(`Download ${downloads.join(" + ")} now? installs @huggingface/transformers + weights [y/N]`, "N")
         if (/^y/i.test(yes)) {
-            out.print(`${out.dim("↓")} pulling ${aiModel} — this can take a while…`)
-            try {
-                const pulled = await pull(target, aiModel)
-                out.print(`${out.green("✓")} model ready (${pulled.dims}d)`)
-            } catch (error) {
-                out.print(`${out.yellow("!")} pull failed: ${error.message} — run \`nexus model pull\` later`)
+            for (const id of downloads) {
+                out.print(`${out.dim("↓")} pulling ${id} — this can take a while…`)
+                try {
+                    const pulled = await pull(target, id)
+                    out.print(`${out.green("✓")} model ready${pulled.dims ? ` (${pulled.dims}d)` : ""}`)
+                } catch (error) {
+                    out.print(`${out.yellow("!")} pull failed: ${error.message} — run \`nexus model pull\` later`)
+                }
             }
         }
     }
@@ -184,8 +202,8 @@ export default ({ hook, endpoint, command }) => {
     out.print(`${out.bold("Next steps")}`)
     out.print(`  cd ${dir}`)
     if (engine !== "sqlite") out.print(`  npm install ${engine === "turso" ? "@tursodatabase/database" : engine === "postgres" ? "pg" : "mysql2"}   ${out.dim(`driver for ${engine}`)}`)
-    if (aiModel) out.print(`  nexus model pull   ${out.dim(`install + download ${aiModel}`)}`)
+    if (aiModel || nlModel) out.print(`  nexus model pull   ${out.dim(`install + download ${[aiModel, nlModel].filter(Boolean).join(" + ")}`)}`)
     out.print(`  nexus test    ${out.dim("validate the starter schemas")}`)
     out.print(`  nexus dev     ${out.dim("serve the instance")}`)
-    out.emit({ ok: true, site, dir, engine, model: aiModel, created })
+    out.emit({ ok: true, site, dir, engine, model: aiModel, nlModel, created })
 }

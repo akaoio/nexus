@@ -21,7 +21,7 @@ EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
 | **Sync checkpoint (§8/§9)** | **arbiter-signed checkpoints; Merkle state root; prune-on-match; snapshot bootstrap; late-event handling** | **SYNC-C-*** |
 | **Sync gate 3 (§3/§5)** | **permission → real ZEN PEN bytecode, evaluated by ZEN's policy VM (pen.wasm)** | **SYNC-P3-*** |
 | Semantic | schema serialization; **real EmbeddingGemma-300m (default) + all-MiniLM**; sqlite-vec ANN; RRF; **model PROFILES registry (prompts/floor/threshold per family — App/models.js)** | SEM-*, REM-*, **GEM-***, VEC-* |
-| NL → AST | rule + embedding-retrieval + **FunctionGemma-270M tier: schema as a TOOLS declaration through the chat template (Google dialect: string types + nullable), strict call parser**; validated against schema (injection-safe) | NL-*, **FG-*** |
+| NL → AST | rule + embedding-retrieval + **FunctionGemma-270M tier: schema as a TOOLS declaration through the chat template (Google dialect: string types + nullable), strict call parser**; validated against schema (injection-safe); **NL model is first-class on every surface (create wizard defaults to FunctionGemma + `--nl-model`, two-slot `nexus model`, `/_studio/ai`, Studio /settings/ai)** | NL-*, **FG-***, **MODEL-07..09** |
 | **System entities** | **nexus_user/role/policy/view are ordinary Model Schema v1 docs on the SAME pipeline; shipped baselines (admin bundle per loaded entity, self-service via $CURRENT_USER rule); bootstrap import; directory-backed auth** | **SYS-*** |
 | **Entity lifecycle** | **/entities directory (list view), cascade DELETE behind a pure dry-run plan + typed confirm; hot reload — entity CRUD never restarts dev; field `span` (form grid) + `views` opt-in in Model Schema v1** | **LIFE-*, MS-S12/13** |
 | **Roles** | **role = named policy bundle; rolesIn() overview; /roles + multi-role /users pages over plain entity rows** | **ROLE-*** |
@@ -58,7 +58,7 @@ EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
 - **FunctionGemma zero-shot quality is weak** for the recursive filter grammar
   (Vietnamese asks often refuse; compound English often malforms — safely rejected by
   translate() and covered by the tier chain). Fine-tuning on the filter dialect is the
-  intended path (spec notes it); `dtype` for the generator is also not pinned yet.
+  intended path (spec notes it); `dtype` for the generator is also not pinned yet. Enabling it no longer requires hand-editing config (MODEL-07..09).
 - **nexus_entity is a read view only** (`/_studio/entities`) — item 9's "everything is
   an entity" holds for user/role/policy/view ROWS; entity META stays files by decision,
   but a plane-level `nexus_entity` read adapter (list through /api/v1) is not built.

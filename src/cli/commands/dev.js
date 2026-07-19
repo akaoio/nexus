@@ -20,7 +20,7 @@ import { validate } from "../../core/Model.js"
 import { loadDictionary, mergeDictionaries, coveredLocales } from "../../i18n/i18n.js"
 import { verifyChallenge, issueToken, verifyToken } from "../../core/App/auth.js"
 import { listUsers, addUser, removeUser, setRoles } from "../../core/App/users.js"
-import { MODELS, status as modelStatus, withModel } from "../../core/App/models.js"
+import { MODELS, NL_MODELS, status as modelStatus, withModel, withNlModel, currentModel, currentNlModel } from "../../core/App/models.js"
 import { redact, setPath, unsetPath } from "../../core/App/config.js"
 import { randomBytes } from "crypto"
 import { fileURLToPath } from "url"
@@ -327,13 +327,16 @@ export async function dev(args, flags, out) {
         // pull`) — a multi-minute download has no business blocking a request.
         if (url.pathname === "/_studio/ai" && req.method === "GET") {
             const cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
-            return json(res, 200, { ok: true, data: { ...modelStatus(cfg, root), models: MODELS } })
+            return json(res, 200, { ok: true, data: { ...modelStatus(cfg, root), models: MODELS, nlModels: NL_MODELS } })
         }
         if (url.pathname === "/_studio/ai" && req.method === "POST") {
             const body = await readJson(req)
-            const cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
-            writeFileSync(join(root, "nexus.config.json"), JSON.stringify(withModel(cfg, body?.model || null), null, 4) + "\n")
-            return json(res, 200, { ok: true, data: { model: body?.model || null, restart: true } })
+            let cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
+            // each slot is applied only when its key is present — independent slots
+            if (body && "model" in body) cfg = withModel(cfg, body.model || null)
+            if (body && "nlModel" in body) cfg = withNlModel(cfg, body.nlModel || null)
+            writeFileSync(join(root, "nexus.config.json"), JSON.stringify(cfg, null, 4) + "\n")
+            return json(res, 200, { ok: true, data: { model: currentModel(cfg), nlModel: currentNlModel(cfg), restart: true } })
         }
 
         // Studio settings (DEV-ONLY): read the (redacted) config and set/unset

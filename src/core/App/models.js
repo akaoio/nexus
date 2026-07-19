@@ -1,12 +1,14 @@
 /**
- * AI (embedding) models as a first-class concern (ARCHITECTURE.md §4.6b/§240):
- * EmbeddingGemma is the multilingual default; transformers.js is the INSTANCE's
- * dependency (N2 — never the kernel's), so "install a model" means installing
- * the library into the instance and warming the model's cache. This module is
- * the registry + the install/pull/status logic the CLI and Studio share.
+ * AI two-slot registry (ARCHITECTURE.md §4.6b/§240):
+ * embedding models at `semantic.model` (EmbeddingGemma multilingual default)
+ * and NL/function-calling models at `semantic.nlModel` (FunctionGemma 270M default).
+ * transformers.js is the INSTANCE's dependency (N2 — never the kernel's), so
+ * "install a model" means installing the library into the instance and warming
+ * the model's cache. This module is the registry + the install/pull/status logic
+ * the CLI and Studio share.
  *
- * The configured model lives at `semantic.model` in nexus.config.json — the same
- * key the dev server reads to switch search/NL from lexical to semantic.
+ * The configured models live in nexus.config.json — the same keys the dev server
+ * reads to switch search/NL from lexical to semantic.
  */
 
 /** Curated embedding models (ONNX, run locally via transformers.js). */
@@ -22,6 +24,15 @@ export const DEFAULT_MODEL = MODELS[0].id
 export const NL_MODELS = Object.freeze([
     { id: "onnx-community/functiongemma-270m-it-ONNX", name: "FunctionGemma 270M", langs: "en-strong", size: "~300 MB", note: "default — function calling, edge-sized" }
 ])
+
+export const DEFAULT_NL_MODEL = NL_MODELS[0].id
+
+/** Which slot an id belongs to: "embedding" | "nl" | null (unknown). */
+export function kindOf(id = "") {
+    if (MODELS.some((m) => m.id === id)) return "embedding"
+    if (NL_MODELS.some((m) => m.id === id)) return "nl"
+    return null
+}
 
 /**
  * MODEL PROFILES — every piece of per-model-family knowledge in ONE place,
@@ -72,6 +83,18 @@ export function withModel(config, id) {
     return next
 }
 
+/** The NL (function-calling) model configured for a site, or null. */
+export function currentNlModel(config) {
+    return config?.semantic?.nlModel ?? null
+}
+
+/** Return a config with `semantic.nlModel` set to `id` (pure). */
+export function withNlModel(config, id) {
+    const next = { ...config, semantic: { ...(config?.semantic ?? {}), nlModel: id } }
+    if (!id) delete next.semantic.nlModel
+    return next
+}
+
 /** Is transformers.js installed in the instance? (resolved from its node_modules) */
 export function libInstalled(root) {
     try {
@@ -90,9 +113,12 @@ export function libInstalled(root) {
  */
 export function status(config, root) {
     const id = currentModel(config)
+    const nl = currentNlModel(config)
     return {
         model: id,
         known: id ? MODELS.find((m) => m.id === id) ?? null : null,
+        nlModel: nl,
+        nlKnown: nl ? NL_MODELS.find((m) => m.id === nl) ?? null : null,
         libInstalled: libInstalled(root),
         mode: id ? (libInstalled(root) ? "semantic" : "configured-not-installed") : "lexical"
     }
@@ -110,11 +136,17 @@ export function installLib(root) {
 
 /**
  * Pull a model: ensure the library, then load the model once so its weights are
- * fetched into the transformers.js cache (~/.cache/huggingface). Returns the
- * model's real dimensions. Heavy (network + disk) — the CLI drives it, not tests.
+ * fetched into the transformers.js cache (~/.cache/huggingface). Returns
+ * `{ model, dims }` for embedding ids and `{ model }` for NL ids. Heavy (network + disk) — the CLI drives it, not tests.
  */
 export async function pull(root, id = DEFAULT_MODEL, onProgress) {
     if (!libInstalled(root)) installLib(root)
+    if (kindOf(id) === "nl") {
+        const { functionGemmaGenerator, filterTool } = await import("../NL/llm.js")
+        const generate = await functionGemmaGenerator({ model: id, root, onProgress })
+        await generate({ tools: [filterTool({ name: "warmup", fields: [] })], user: "warm up" })
+        return { model: id }
+    }
     const { transformersProvider } = await import("../Semantic/transformers.js")
     const embedder = await transformersProvider({ model: id, root, onProgress })
     // one embed forces the model to fully materialize
@@ -130,4 +162,4 @@ export function progressLine(event) {
     return `${String(pct).padStart(3)}%  ${mb(event.loaded)}/${mb(event.total)} MB  ${event.file || ""}`.trimEnd()
 }
 
-export default { MODELS, DEFAULT_MODEL, currentModel, withModel, libInstalled, status, installLib, pull }
+export default { MODELS, DEFAULT_MODEL, NL_MODELS, DEFAULT_NL_MODEL, kindOf, currentModel, currentNlModel, withModel, withNlModel, libInstalled, status, installLib, pull }
