@@ -29,6 +29,7 @@ writeFileSync(
     `export default ({ hook, endpoint, command, job, enqueue }) => {
     job("starter.mark", { run: async ({ payload }, { plane }) => plane.create("nexus_notification", { user: payload.user, title: "marked", read: false }) })
     endpoint("POST", "mark", async () => ({ queued: (await enqueue("starter.mark", { user: "pubZ" })).id }))
+    endpoint("POST", "notify", async () => ({ ok: (await enqueue("effects.notify", { user: "pubN", title: "hello" })).id ? true : false }))
 }
 `
 )
@@ -107,6 +108,20 @@ Test.describe("Effect runner lives in the server (JOBL-*)", () => {
         assert.equal(write.body.ok, true) // the primary write survives
         assert.truthy(write.body.data.id)
         await del("/api/v1/nexus_webhook/" + bad.body.data.id) // best-effort cleanup
+    })
+
+    Test.it("NOTIF-01 effects.notify through the whole machine: enqueue → thread → row for the right user", async () => {
+        const q = await post("/api/v1/_/notify", {})
+        assert.equal(q.body.ok, true)
+        let rows = []
+        for (let i = 0; i < 30 && !rows.some((r) => r.user === "pubN"); i++) {
+            await new Promise((r) => setTimeout(r, 500))
+            const res = await post("/api/v1/nexus_notification/query", { filter: null, limit: 20 })
+            rows = res.body.ok ? res.body.data : []
+        }
+        const mine = rows.filter((r) => r.user === "pubN")
+        assert.equal(mine.length, 1)
+        assert.equal(mine[0].title, "hello")
     })
 
     Test.it("JOBL-99 cleanup", async () => {
