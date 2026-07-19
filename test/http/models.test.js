@@ -12,7 +12,7 @@ import { mkdtempSync, rmSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import Test, { assert } from "../../src/core/Test.js"
-import { MODELS, DEFAULT_MODEL, currentModel, withModel, status, progressLine } from "../../src/core/App/models.js"
+import { MODELS, DEFAULT_MODEL, NL_MODELS, DEFAULT_NL_MODEL, kindOf, currentModel, currentNlModel, withModel, withNlModel, status, progressLine } from "../../src/core/App/models.js"
 
 const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 
@@ -34,6 +34,24 @@ Test.describe("AI models (MODEL)", () => {
         assert.equal(st.libInstalled, false) // no transformers under that dir
         assert.equal(st.mode, "configured-not-installed")
         assert.equal(status({}, "/nope").mode, "lexical") // no model → lexical
+    })
+
+    Test.it("MODEL-07 two-slot registry: kindOf + pure NL config ops + status", () => {
+        assert.truthy(NL_MODELS.length >= 1, "a curated NL registry")
+        assert.equal(NL_MODELS[0].id, DEFAULT_NL_MODEL)
+        for (const m of MODELS) assert.equal(kindOf(m.id), "embedding")
+        for (const m of NL_MODELS) assert.equal(kindOf(m.id), "nl")
+        assert.equal(kindOf("nobody/unknown-model"), null)
+        const c1 = withNlModel({ site: {} }, DEFAULT_NL_MODEL)
+        assert.equal(currentNlModel(c1), DEFAULT_NL_MODEL)
+        assert.equal(currentModel(c1), null) // slots are independent
+        const c2 = withNlModel(c1, null) // clearing removes the key
+        assert.equal(currentNlModel(c2), null)
+        assert.equal("nlModel" in (c2.semantic ?? {}), false)
+        const st = status({ semantic: { nlModel: DEFAULT_NL_MODEL } }, "/nope")
+        assert.equal(st.nlModel, DEFAULT_NL_MODEL)
+        assert.equal(st.nlKnown.name, "FunctionGemma 270M")
+        assert.equal(st.model, null)
     })
 
     Test.it("MODEL-03 `nexus model use/list/status` reads and writes the config", () => {
