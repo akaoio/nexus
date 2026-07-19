@@ -28,19 +28,26 @@ export function render(ctx) {
     const c = {}
     const host = mountTemplate(permissionsTemplate(c, {
         onSave: async () => {
-            const value = mgr.value
-            const before = new Map(saved.map((r) => [r.id, r]))
-            const results = []
-            for (const p of value) {
-                if (!p.id) results.push(await ctx.api.create("nexus_policy", packPolicy(p)))
-                else if (!before.has(p.id) || !same(p, before.get(p.id))) results.push(await ctx.api.update("nexus_policy", p.id, packPolicy(p)))
+            c.$save.disabled = true
+            try {
+                const value = mgr.value
+                const before = new Map(saved.map((r) => [r.id, r]))
+                const results = []
+                for (const p of value) {
+                    if (!p.id) results.push(await ctx.api.create("nexus_policy", packPolicy(p)))
+                    else if (!before.has(p.id) || !same(p, before.get(p.id))) results.push(await ctx.api.update("nexus_policy", p.id, packPolicy(p)))
+                }
+                const kept = new Set(value.map((p) => p.id).filter(Boolean))
+                for (const r of saved) if (!kept.has(r.id)) results.push(await ctx.api.remove("nexus_policy", r.id))
+                const failed = results.filter((r) => !r.ok)
+                if (!failed.length) toast("Policies saved — live now", "ok")
+                else for (const f of failed) toast(f.error.code + ": " + (f.error.message || ""), "err") // per-row truth (spec §6)
+            } catch (error) {
+                toast(String(error?.message ?? error), "err")
+            } finally {
+                c.$save.disabled = false
+                load() // re-sync from the window: partial saves are shown truthfully
             }
-            const kept = new Set(value.map((p) => p.id).filter(Boolean))
-            for (const r of saved) if (!kept.has(r.id)) results.push(await ctx.api.remove("nexus_policy", r.id))
-            const failed = results.filter((r) => !r.ok)
-            if (!failed.length) toast("Policies saved — live now", "ok")
-            else for (const f of failed) toast(f.error.code + ": " + (f.error.message || ""), "err") // per-row truth (spec §6)
-            load() // re-sync from the window: partial saves are shown truthfully
         }
     }))
     c.$matrix.append(matrix)
@@ -128,7 +135,7 @@ export function render(ctx) {
             b.textContent = "DEV mode — policies are not enforced yet."
             const span = document.createElement("span")
             span.className = "nx-muted"
-            span.textContent = " Without identities every request runs as the wide-open DEV admin, so nothing is denied. Add an identity in Users (e.g. "Add me as admin") to turn authentication on — from that moment these policies decide who can do what."
+            span.textContent = " Without identities every request runs as the wide-open DEV admin, so nothing is denied. Add an identity in Users (e.g. “Add me as admin”) to turn authentication on — from that moment these policies decide who can do what."
             card.append(b, document.createElement("br"), span)
             c.$banner.append(card)
         }
