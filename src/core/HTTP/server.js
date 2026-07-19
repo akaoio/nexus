@@ -20,6 +20,7 @@ import { loadExtensions } from "../App/extensions.js"
 import { policiesFor } from "../App/policies.js"
 import { enqueue, runnerTick } from "../App/jobs.js"
 import { bindPlaneRpc, startJobThread } from "../App/jobthread.js"
+import effectsApp from "../App/effects.js"
 import { verifyToken } from "../App/auth.js"
 import { timingSafeStringEqual } from "../../cli/output.js"
 import { ACTIONS } from "../Permission.js"
@@ -315,7 +316,12 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         }
         extensions.enqueue = (name, payload, opts) => enqueue(plane, JOB_CTX, name, payload, opts)
         bindPlaneRpc(plane, JOB_CTX)
-        const jobThread = await startJobThread({ root, apps, builtins: [] }) // Task 6 wires effects.js here
+        // The effect app (design §5): registers webhook/notify handlers AND (main
+        // only, plane provided) the per-schema hooks that read nexus_webhook rows
+        // and enqueue deliveries. Loaded again below inside the job thread —
+        // handlers only, no plane, so its emitter half is a no-op there.
+        effectsApp(extensions.registrar(), { schemas: allSchemas, plane, ctx: JOB_CTX })
+        const jobThread = await startJobThread({ root, apps, builtins: [new URL("../App/effects.js", import.meta.url).href] })
         let draining = false
         const tick = async () => {
             if (draining) return

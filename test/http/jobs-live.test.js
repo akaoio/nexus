@@ -12,7 +12,9 @@ import { spawnSync, spawn } from "child_process"
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
+import { createServer } from "http"
 import Test, { assert } from "../../src/core/Test.js"
+import { sign } from "../../src/core/App/effects.js"
 
 const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 
@@ -64,6 +66,31 @@ Test.describe("Effect runner lives in the server (JOBL-*)", () => {
         assert.equal(rows[0].user, "pubZ")
         const jobs = await post("/api/v1/nexus_job/query", { filter: null, limit: 10 })
         assert.equal(jobs.body.data[0].status, "done")
+    })
+
+    Test.it("WH-02 a row write fires the webhook: signed and delivery-id'd", async () => {
+        const seen = []
+        const rx = createServer((req, res) => {
+            let raw = ""
+            req.on("data", (c) => (raw += c))
+            req.on("end", () => {
+                seen.push({ raw, sig: req.headers["x-nexus-signature"], delivery: req.headers["x-nexus-delivery"] })
+                res.writeHead(200).end()
+            })
+        })
+        await new Promise((r) => rx.listen(0, r))
+        const rxUrl = `http://127.0.0.1:${rx.address().port}/hook`
+        // subscribe via ordinary rows — the editor's own write path
+        await post("/api/v1/nexus_webhook", { url: rxUrl, entity: "task", events: JSON.stringify(["after:create"]), secret: "s3cret", enabled: true })
+        await post("/api/v1/task", { title: "fire one" })
+        for (let i = 0; i < 30 && seen.length < 1; i++) await new Promise((r) => setTimeout(r, 500))
+        assert.equal(seen.length >= 1, true, "the webhook fired")
+        const body = JSON.parse(seen[0].raw)
+        assert.equal(body.entity, "task")
+        assert.equal(body.event, "after:create")
+        assert.equal(seen[0].sig, sign("s3cret", body))
+        assert.truthy(seen[0].delivery)
+        rx.close()
     })
 
     Test.it("JOBL-99 cleanup", async () => {

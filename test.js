@@ -171,6 +171,9 @@ import "./test/app/manifest.test.js"
 // App system — extension points (clauses EXT-*)
 import "./test/app/extensions.test.js"
 
+// App — the effect app: webhook consumer (clauses WH-*)
+import "./test/app/effects.test.js"
+
 const results = await Test.run(process.argv[2])
 
 console.log(
