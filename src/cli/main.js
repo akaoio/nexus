@@ -24,7 +24,7 @@ import { doctor } from "./commands/doctor.js"
 import { update } from "./commands/update.js"
 import { uninstall } from "./commands/uninstall.js"
 
-const VALUE_FLAGS = new Set(["port", "site", "engine", "name", "role", "roles", "model"])
+const VALUE_FLAGS = new Set(["port", "site", "engine", "name", "role", "roles", "model", "nl-model"])
 
 export function parseArgs(argv) {
     const flags = {}

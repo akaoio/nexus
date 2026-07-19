@@ -79,6 +79,20 @@ Test.describe("AI models (MODEL)", () => {
         rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
 
+    Test.it("MODEL-08 `nexus create --nl-model` records the NL choice; omitted/none stays absent", () => {
+        const scratch = mkdtempSync(join(tmpdir(), "nexus-cnl-"))
+        const run = (args) => spawnSync(process.execPath, [BIN, "create", ...args, "--json"], { cwd: scratch, encoding: "utf8" })
+        assert.equal(JSON.parse(run(["a", "--nl-model", DEFAULT_NL_MODEL]).stdout).nlModel, DEFAULT_NL_MODEL)
+        const cfg = JSON.parse(readFileSync(join(scratch, "a", "nexus.config.json"), "utf8"))
+        assert.equal(cfg.semantic.nlModel, DEFAULT_NL_MODEL)
+        assert.equal(cfg.semantic.model, undefined) // slots independent
+        run(["b"]) // no flag, non-interactive → nothing written
+        assert.equal(JSON.parse(readFileSync(join(scratch, "b", "nexus.config.json"), "utf8")).semantic, undefined)
+        run(["c", "--nl-model", "none"])
+        assert.equal(JSON.parse(readFileSync(join(scratch, "c", "nexus.config.json"), "utf8")).semantic, undefined)
+        rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    })
+
     Test.it("MODEL-06 progressLine formats a download event into % + MB, skips non-progress", () => {
         assert.equal(progressLine({ status: "progress", file: "model.onnx", loaded: 52428800, total: 209715200 }).includes("25%"), true)
         assert.equal(progressLine({ status: "progress", file: "m", loaded: 52428800, total: 209715200 }).includes("50.0/200.0 MB"), true)
