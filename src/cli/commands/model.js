@@ -68,6 +68,7 @@ export async function model(args, flags, out) {
         const nl = flags.nl === true || (!clear && kindOf(id) === "nl")
         const next = (nl ? withNlModel : withModel)(config, clear ? null : id)
         writeFileSync(configPath, JSON.stringify(next, null, 4) + "\n")
+        if (!clear && !kindOf(id)) out.hint(`unknown model id (not in the curated registry) — written to the ${nl ? "NL" : "embedding"} slot anyway`)
         const label = nl ? "NL model" : "model"
         out.print(`${out.green("✓")} ${label} set to ${clear ? out.dim(nl ? "none (rule/retrieval tiers)" : "none (lexical)") : out.cyan(id)}`)
         if (!clear && !st.libInstalled) out.hint("run `nexus model pull` to install the library and download the weights")

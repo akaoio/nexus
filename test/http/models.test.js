@@ -90,6 +90,11 @@ Test.describe("AI models (MODEL)", () => {
         assert.equal(JSON.parse(readFileSync(join(scratch, "b", "nexus.config.json"), "utf8")).semantic, undefined)
         run(["c", "--nl-model", "none"])
         assert.equal(JSON.parse(readFileSync(join(scratch, "c", "nexus.config.json"), "utf8")).semantic, undefined)
+        // a trailing value-less flag parses as boolean true — it must not leak into the config
+        run(["d", "--model"])
+        assert.equal(JSON.parse(readFileSync(join(scratch, "d", "nexus.config.json"), "utf8")).semantic, undefined)
+        run(["e", "--nl-model"])
+        assert.equal(JSON.parse(readFileSync(join(scratch, "e", "nexus.config.json"), "utf8")).semantic, undefined)
         rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
 
@@ -111,6 +116,14 @@ Test.describe("AI models (MODEL)", () => {
         cfg = JSON.parse(readFileSync(join(cwd, "nexus.config.json"), "utf8"))
         assert.equal(cfg.semantic?.nlModel, undefined)
         assert.equal(cfg.semantic.model, DEFAULT_MODEL)
+        // ids unknown to both registries stay in the embedding slot (back-compat)…
+        assert.equal(JSON.parse(run(["use", "acme/custom-model"]).stdout).model, "acme/custom-model")
+        cfg = JSON.parse(readFileSync(join(cwd, "nexus.config.json"), "utf8"))
+        assert.equal(cfg.semantic.model, "acme/custom-model")
+        assert.equal(cfg.semantic?.nlModel, undefined)
+        // …with a human-mode warning (spec: unknown ids warn but write)
+        const human = spawnSync(process.execPath, [BIN, "model", "use", "acme/custom-model"], { cwd, encoding: "utf8" })
+        assert.equal(human.stderr.includes("unknown"), true)
         rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
 

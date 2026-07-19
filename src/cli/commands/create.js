@@ -88,7 +88,8 @@ export async function create(args, flags, out) {
     // AI (embedding) model — first-class in Nexus (§4.6). --model sets it;
     // interactive picks from the curated list; "none" = keyword search only.
     let aiModel = null
-    if (flags.model !== undefined) aiModel = flags.model && flags.model !== "none" ? flags.model : null
+    // typeof guards the trailing value-less flag (parseArgs falls back to boolean true)
+    if (flags.model !== undefined) aiModel = typeof flags.model === "string" && flags.model !== "none" ? flags.model : null
     else if (interactive) {
         const opts = [...MODELS.map((m) => `${m.name} — ${m.note} (${m.size})`), "none — keyword search only"]
         const picked = await choose("Embedding / AI model", opts, opts[0])
@@ -100,7 +101,7 @@ export async function create(args, flags, out) {
     // the wizard defaults to FunctionGemma; without a TTY nothing is written
     // (CI never surprise-downloads ~300 MB of weights).
     let nlModel = null
-    if (flags["nl-model"] !== undefined) nlModel = flags["nl-model"] && flags["nl-model"] !== "none" ? flags["nl-model"] : null
+    if (flags["nl-model"] !== undefined) nlModel = typeof flags["nl-model"] === "string" && flags["nl-model"] !== "none" ? flags["nl-model"] : null
     else if (interactive) {
         const opts = [...NL_MODELS.map((m) => `${m.name} — ${m.note} (${m.size})`), "none — rule/retrieval tiers only"]
         const picked = await choose("NL (function calling) model", opts, opts[0])
