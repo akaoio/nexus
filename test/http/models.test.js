@@ -138,6 +138,12 @@ Test.describe("AI models (MODEL)", () => {
             const set = await (await fetch(base + "/_studio/ai", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: DEFAULT_MODEL }) })).json()
             assert.equal(set.data.model, DEFAULT_MODEL)
             assert.equal(JSON.parse(readFileSync(join(scratch, "shop", "nexus.config.json"), "utf8")).semantic.model, DEFAULT_MODEL)
+            assert.truthy(ai.data.nlModels.length >= 1) // the NL registry is exposed
+            const setNl = await (await fetch(base + "/_studio/ai", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ nlModel: DEFAULT_NL_MODEL }) })).json()
+            assert.equal(setNl.data.nlModel, DEFAULT_NL_MODEL)
+            const cfg = JSON.parse(readFileSync(join(scratch, "shop", "nexus.config.json"), "utf8"))
+            assert.equal(cfg.semantic.nlModel, DEFAULT_NL_MODEL)
+            assert.equal(cfg.semantic.model, DEFAULT_MODEL) // a { nlModel } POST must NOT clear the embedding slot
         } finally {
             await new Promise((resolve) => { server.once("exit", resolve); server.kill("SIGKILL") })
             rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
