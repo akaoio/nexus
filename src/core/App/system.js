@@ -69,11 +69,11 @@ const JOB = Object.freeze({
         { name: "name", type: "text", required: true, label: { en: "Handler", vi: "Trình xử lý" } },
         { name: "payload", type: "text", label: { en: "Payload" } },
         { name: "status", type: "select", options: ["pending", "running", "done", "failed", "dead"], default: "pending", label: { en: "Status", vi: "Trạng thái" } },
-        { name: "run_at", type: "date", label: { en: "Run at", vi: "Chạy lúc" } },
+        { name: "run_at", type: "datetime", label: { en: "Run at", vi: "Chạy lúc" } },
         { name: "every_ms", type: "integer", label: { en: "Every (ms)" } },
         { name: "attempts", type: "integer", default: 0, label: { en: "Attempts" } },
         { name: "max_attempts", type: "integer", default: 5, label: { en: "Max attempts" } },
-        { name: "lease_until", type: "date", label: { en: "Lease until" } },
+        { name: "lease_until", type: "datetime", label: { en: "Lease until" } },
         { name: "lease_token", type: "text", label: { en: "Lease token" } },
         { name: "last_error", type: "text", label: { en: "Last error", vi: "Lỗi cuối" } },
         { name: "result", type: "text", label: { en: "Result", vi: "Kết quả" } }
