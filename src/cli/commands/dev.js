@@ -230,7 +230,7 @@ export async function dev(args, flags, out) {
                     schemas: schemas.map((s) => ({ schema: s, file: schemaFiles[s.name] })),
                     rowCount,
                     dbPolicyRows,
-                    baselinePolicies: appPolicies.map((p) => ({ ...p, source: "app" })),
+                    baselinePolicies: appPolicies.map((p) => ({ source: "app", ...p })),
                     viewRows
                 })
                 if (req.method === "GET") return json(res, 200, { ok: true, data: plan })
