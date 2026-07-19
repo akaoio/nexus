@@ -147,4 +147,20 @@ Test.describe("App system — extension points (EXT-*)", () => {
             rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
         }
     })
+
+    Test.it("EXT-J1 registrar job(): registry, name law, collision, late-bound enqueue", async () => {
+        const ext = new Extensions()
+        const reg = ext.registrar()
+        reg.job("mail.send", { run: async () => "ok" })
+        assert.equal(ext.jobs.get("mail.send").run !== undefined, true)
+        assert.throws(() => reg.job("mail.send", { run: () => {} }), "E_JOB_CONFLICT")
+        assert.throws(() => reg.job("Bad Name", { run: () => {} }), "E_JOB_NAME")
+        assert.throws(() => reg.job("x.y", {}), "E_JOB_FN")
+        // enqueue is late-bound: captured at load, functional once the server binds it
+        const captured = reg.enqueue
+        let got = null
+        ext.enqueue = (name, payload) => { got = { name, payload }; return "row" }
+        assert.equal(await captured("mail.send", { to: "a" }), "row")
+        assert.equal(got.name, "mail.send")
+    })
 })
