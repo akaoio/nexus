@@ -1,5 +1,5 @@
-/** /ai route — logic: embedding model status and one-click switch. Weights
- *  are pulled from the terminal (nexus model pull). */
+/** /ai route — manages embedding and NL model status; one-click switch for each.
+ *  Weights are pulled from the terminal (nexus model pull). */
 
 import { mountTemplate, button, toast } from "../../../kit/index.js"
 import { aiTemplate } from "./template.js"
@@ -21,43 +21,54 @@ export function render(ctx) {
         c.$body.replaceChildren(
             p("Mode: " + (d.mode || "?") + " · " + (d.libInstalled ? "library installed" : "library NOT installed — run: nexus model pull"), d.libInstalled ? "nx-muted" : "nx-err")
         )
-        for (const m of d.models || []) {
-            const current = m.id === d.model
+        section("Embedding", d.models || [], d.model, "model", "Keyword only", (m) => m.dims + "d · " + m.langs + " · " + m.size + " · " + m.note)
+        section("NL (function calling)", d.nlModels || [], d.nlModel, "nlModel", "None — rule/retrieval tiers only", (m) => m.langs + " · " + m.size + " · " + m.note)
+        c.$body.append(p("Download weights with the nexus model pull command (shows % + MB). Restart nexus dev to apply."))
+    }
+
+    // One model slot: a heading, a row per registry model, a clear button.
+    function section(title, models, current, key, noneLabel, spec) {
+        const h = document.createElement("h2")
+        h.textContent = title
+        c.$body.append(h)
+        for (const m of models) {
+            const active = m.id === current
             const row = document.createElement("div")
             row.className = "nx-row"
             const who = document.createElement("div")
             who.className = "nx-who"
             const name = document.createElement("div")
             name.textContent = m.name
-            const spec = document.createElement("div")
-            spec.className = "nx-pub"
-            spec.textContent = m.dims + "d · " + m.langs + " · " + m.size + " · " + m.note
-            who.append(name, spec)
+            const detail = document.createElement("div")
+            detail.className = "nx-pub"
+            detail.textContent = spec(m)
+            who.append(name, detail)
             const use = button({
-                variant: current ? "primary" : undefined, disabled: current,
+                variant: active ? "primary" : undefined, disabled: active,
                 onclick: async () => {
-                    await ctx.api.studio("ai", "POST", { model: m.id })
+                    await ctx.api.studio("ai", "POST", { [key]: m.id })
                     toast("Model set — restart nexus dev to apply")
                     load()
                 }
-            }, [current ? "In use" : "Use"])
+            }, [active ? "In use" : "Use"])
             row.append(who, use)
             c.$body.append(row)
         }
         const none = button({
-            variant: d.model ? undefined : "primary", disabled: !d.model,
+            variant: current ? undefined : "primary", disabled: !current,
             onclick: async () => {
-                await ctx.api.studio("ai", "POST", { model: null })
-                toast("Switched to keyword search")
+                await ctx.api.studio("ai", "POST", { [key]: null })
+                toast(key === "model" ? "Switched to keyword search" : "NL tier off — rule/retrieval tiers remain")
                 load()
             }
-        }, ["Keyword only"])
+        }, [noneLabel])
         const toolbar = document.createElement("div")
         toolbar.className = "nx-toolbar"
         toolbar.style.marginTop = "var(--sp-3)"
         toolbar.append(none)
-        c.$body.append(toolbar, p("Download weights with the nexus model pull command (shows % + MB). Restart nexus dev to apply."))
+        c.$body.append(toolbar)
     }
+
     load()
     return host
 }
