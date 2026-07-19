@@ -73,7 +73,7 @@ export function loadPolicies(root, apps, schemas) {
             for (const policy of list) {
                 const result = validatePolicy(policy, schemas)
                 if (!result.valid) throw err("E_INVALID", `${file}: ${JSON.stringify(result.errors)}`)
-                policies.push(policy)
+                policies.push({ ...policy, source: `app:${file}` })
             }
         }
     }

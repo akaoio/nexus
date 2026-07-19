@@ -80,4 +80,23 @@ Test.describe("Permission v1 — resolution & actions (PERM-A)", () => {
         const bad = policy({ rule: { astVersion: 1, root: { op: "xor", children: [] } } })
         assert.throws(() => Permission.resolve([bad], ctx()), "E_INVALID")
     })
+
+    Test.it("PERM-U01 composition is a purely ADDITIVE union — a layered set grants iff some layer grants", () => {
+        // the hundred-year contract (spec 2026-07-19 §1): layers OR together, never interact
+        const a = { entity: "task", actions: ["read"], rule: null, permlevel: 0, ifOwner: false }
+        const b = { entity: "task", actions: ["create"], rule: null, permlevel: 0, ifOwner: false, roles: ["editor"] }
+        const probes = [
+            { entity: "task", action: "read", user: "u", roles: [] },
+            { entity: "task", action: "create", user: "u", roles: [] },
+            { entity: "task", action: "delete", user: "u", roles: [] },
+            { entity: "invoice", action: "read", user: "u", roles: [] }
+        ]
+        for (const [A, B] of [[[a], [b]], [[a, b], []], [[], []], [[a], [a]]]) {
+            for (const probe of probes) {
+                const union = Permission.resolve([...A, ...B], probe).allowed
+                const or = Permission.resolve(A, probe).allowed || Permission.resolve(B, probe).allowed
+                assert.truthy(union === or, JSON.stringify({ A, B, probe }))
+            }
+        }
+    })
 })

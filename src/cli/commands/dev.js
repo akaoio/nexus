@@ -72,7 +72,7 @@ export async function dev(args, flags, out) {
     i18n.locales = coveredLocales(i18n.dict)
     // Data Plane + auth + API through the shared wiring. Dev mode falls back to
     // the loud DEV identity when no auth is configured (production refuses that).
-    let { api, plane, authState, challenges, engine, authMode, embedderInfo } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" })
+    let { api, plane, authState, challenges, engine, authMode, embedderInfo, policyLayers } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" })
     const studioAuthAtBoot = authState.required
 
     // ── hot reload — entity writes NEVER require a dev restart ──────────────
@@ -88,7 +88,7 @@ export async function dev(args, flags, out) {
         schemaFiles = fresh.files
         appPolicies.length = 0
         appPolicies.push(...fresh.policies)
-        ;({ api, plane, authState, challenges, engine, authMode, embedderInfo } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" }))
+        ;({ api, plane, authState, challenges, engine, authMode, embedderInfo, policyLayers } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" }))
     }
 
     // internal plane context for _studio reads/executions (dev-only surface)
@@ -230,7 +230,7 @@ export async function dev(args, flags, out) {
                     schemas: schemas.map((s) => ({ schema: s, file: schemaFiles[s.name] })),
                     rowCount,
                     dbPolicyRows,
-                    baselinePolicies: appPolicies.map((p) => ({ ...p, source: "app" })),
+                    baselinePolicies: appPolicies.map((p) => ({ source: "app", ...p })),
                     viewRows
                 })
                 if (req.method === "GET") return json(res, 200, { ok: true, data: plan })
@@ -257,31 +257,25 @@ export async function dev(args, flags, out) {
                 return json(res, code.startsWith("E_") ? 400 : 500, { ok: false, error: { code, message: error.message } })
             }
         }
-        // The Studio-managed policy set: what the editor loads and saves.
-        // devMode tells the UI to say, honestly, that policies only bite once
-        // auth is on (the DEV identity is wide-open by design).
-        if (url.pathname === "/_studio/permissions" && req.method === "GET") {
-            const file = join(root, "apps", appName, "permissions", "studio.json")
-            let policies = []
-            try { policies = JSON.parse(readFileSync(file, "utf8")) } catch {}
-            return json(res, 200, { ok: true, data: { policies, devMode: !authState.required, live: appPolicies.length } })
-        }
-        if (url.pathname === "/_studio/permissions" && req.method === "POST") {
-            const body = await readJson(req)
-            if (!body || !Array.isArray(body.policies)) return json(res, 400, { ok: false, error: { code: "E_REQUEST" } })
-            try {
-                const dir = join(root, "apps", appName, "permissions")
-                mkdirSync(dir, { recursive: true })
-                writeFileSync(join(dir, "studio.json"), JSON.stringify(body.policies, null, 4))
-                // hot-apply: reload every app's policies into the LIVE array the
-                // request contexts read — no restart, immediately enforced
-                const fresh = loadInstance(root).policies
-                appPolicies.length = 0
-                appPolicies.push(...fresh)
-                return json(res, 200, { ok: true, data: { count: body.policies.length, applied: true } })
-            } catch (error) {
-                return json(res, 500, { ok: false, error: { code: "E_WRITE", message: error.message } })
+        // The policy WINDOW (read-only, design 2026-07-19 §2): the exact
+        // layers the engine composes, straight from its runtime arrays — the
+        // UI can never drift from the enforced truth. Writes go through
+        // /api/v1/nexus_policy ONLY.
+        if (url.pathname === "/_studio/policies" && req.method === "GET") {
+            const { app, system, admin, rows } = policyLayers()
+            const byFile = new Map()
+            for (const p of app) {
+                const key = p.source ?? "app"
+                if (!byFile.has(key)) byFile.set(key, [])
+                byFile.get(key).push(p)
             }
+            const layers = [
+                ...[...byFile.entries()].map(([source, policies]) => ({ source, readonly: true, policies })),
+                { source: "system", readonly: true, policies: system },
+                { source: "admin", readonly: true, policies: admin },
+                { source: "rows", readonly: false, policies: rows }
+            ]
+            return json(res, 200, { ok: true, data: { layers, devMode: !authState.required, authRequired: authState.required } })
         }
 
         // Studio session (whoami) — tells the UI whether login is required and,
@@ -353,6 +347,10 @@ export async function dev(args, flags, out) {
             writeFileSync(join(root, "nexus.config.json"), JSON.stringify(next, null, 4) + "\n")
             return json(res, 200, { ok: true, data: { restart: true } })
         }
+
+        // no other /_studio surface exists — dead paths (like the removed
+        // /_studio/permissions) answer 404, never the SPA shell
+        if (url.pathname.startsWith("/_studio/")) return json(res, 404, { ok: false, error: { code: "E_NOT_FOUND" } })
 
         if (api && (await api(req, res))) return
 
