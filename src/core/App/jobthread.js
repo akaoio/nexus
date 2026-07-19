@@ -16,7 +16,7 @@ export function bindPlaneRpc(plane, ctx) {
         create: ({ entity, data }) => plane.create(entity, data, ctx),
         update: ({ entity, id, patch }) => plane.update(entity, id, patch, ctx),
         get: ({ entity, id }) => plane.get(entity, id, ctx),
-        list: ({ entity, filter }) => plane.list(entity, filter ?? {}, ctx)
+        list: ({ entity, filter }) => plane.list(entity, filter ? { filter } : {}, ctx)
     }
     threads.threads["plane"] = {
         postMessage: async ({ queue, method, params }) => {
