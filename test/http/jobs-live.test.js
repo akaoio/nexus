@@ -79,18 +79,21 @@ Test.describe("Effect runner lives in the server (JOBL-*)", () => {
             })
         })
         await new Promise((r) => rx.listen(0, r))
-        const rxUrl = `http://127.0.0.1:${rx.address().port}/hook`
-        // subscribe via ordinary rows — the editor's own write path
-        await post("/api/v1/nexus_webhook", { url: rxUrl, entity: "task", events: JSON.stringify(["after:create"]), secret: "s3cret", enabled: true })
-        await post("/api/v1/task", { title: "fire one" })
-        for (let i = 0; i < 30 && seen.length < 1; i++) await new Promise((r) => setTimeout(r, 500))
-        assert.equal(seen.length >= 1, true, "the webhook fired")
-        const body = JSON.parse(seen[0].raw)
-        assert.equal(body.entity, "task")
-        assert.equal(body.event, "after:create")
-        assert.equal(seen[0].sig, sign("s3cret", body))
-        assert.truthy(seen[0].delivery)
-        rx.close()
+        try {
+            const rxUrl = `http://127.0.0.1:${rx.address().port}/hook`
+            // subscribe via ordinary rows — the editor's own write path
+            await post("/api/v1/nexus_webhook", { url: rxUrl, entity: "task", events: JSON.stringify(["after:create"]), secret: "s3cret", enabled: true })
+            await post("/api/v1/task", { title: "fire one" })
+            for (let i = 0; i < 30 && seen.length < 1; i++) await new Promise((r) => setTimeout(r, 500))
+            assert.equal(seen.length >= 1, true, "the webhook fired")
+            const body = JSON.parse(seen[0].raw)
+            assert.equal(body.entity, "task")
+            assert.equal(body.event, "after:create")
+            assert.equal(seen[0].sig, sign("s3cret", body))
+            assert.truthy(seen[0].delivery)
+        } finally {
+            rx.close() // a failed assertion must never leave the receiver socket open (hangs the process)
+        }
     })
 
     Test.it("JOBL-99 cleanup", async () => {
