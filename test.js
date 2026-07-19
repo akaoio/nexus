@@ -146,6 +146,9 @@ import "./test/app/lifecycle.test.js"
 // App — effect engine core: claim/backoff/DLQ/recurring (clauses JOB-*)
 import "./test/app/jobs.test.js"
 
+// App — job thread + plane pseudo-thread RPC, real worker (clauses THR-*)
+import "./test/app/jobthread.test.js"
+
 // Studio — nx-schema-designer (clauses NXS-*)
 import "./test/studio/schema-designer.test.js"
 
