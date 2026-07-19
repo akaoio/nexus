@@ -322,6 +322,8 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             draining = true
             try {
                 while (await runnerTick(plane, { now: Date.now, jobs: extensions.jobs, execute: jobThread.execute, ctx: JOB_CTX })) {}
+            } catch (error) {
+                console.warn(`effect runner: tick failed (will retry next poll) — ${String(error?.message ?? error)}`)
             } finally {
                 draining = false
             }
