@@ -22,7 +22,7 @@ EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
 | **Sync gate 3 (§3/§5)** | **permission → real ZEN PEN bytecode, evaluated by ZEN's policy VM (pen.wasm)** | **SYNC-P3-*** |
 | Semantic | schema serialization; **real EmbeddingGemma-300m (default) + all-MiniLM**; sqlite-vec ANN; RRF; **model PROFILES registry (prompts/floor/threshold per family — App/models.js)** | SEM-*, REM-*, **GEM-***, VEC-* |
 | NL → AST | rule + embedding-retrieval + **FunctionGemma-270M tier: schema as a TOOLS declaration through the chat template (Google dialect: string types + nullable), strict call parser**; validated against schema (injection-safe); **NL model is first-class on every surface (create wizard defaults to FunctionGemma + `--nl-model`, two-slot `nexus model`, `/_studio/ai`, Studio /settings/ai)** | NL-*, **FG-***, **MODEL-07..09** |
-| **System entities** | **nexus_user/role/policy/view are ordinary Model Schema v1 docs on the SAME pipeline; shipped baselines (admin bundle per loaded entity, self-service via $CURRENT_USER rule); bootstrap import; directory-backed auth** | **SYS-*** |
+| **System entities** | **nexus_user/role/policy/view are ordinary Model Schema v1 docs on the SAME pipeline; shipped baselines (admin bundle per loaded entity, self-service via $CURRENT_USER rule); bootstrap import; directory-backed auth**; **permissions editor edits nexus_policy ROWS through the plane — layered read window /_studio/policies, additive-union contract pinned, bespoke POST dead** | **PERM-U01, SYS-06..08, STUDIO-04/06/07, POLWIN-*** |
 | **Entity lifecycle** | **/entities directory (list view), cascade DELETE behind a pure dry-run plan + typed confirm; hot reload — entity CRUD never restarts dev; field `span` (form grid) + `views` opt-in in Model Schema v1** | **LIFE-*, MS-S12/13** |
 | **Roles** | **role = named policy bundle; rolesIn() overview; /roles + multi-role /users pages over plain entity rows** | **ROLE-*** |
 | **Saved views (§7)** | **persisted through the Data Plane (permissioned, ownable); applyView reconstructs the list** | **VIEW-*** |
@@ -36,12 +36,6 @@ EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
 
 ## Unfinished / known drift (honest list, 2026-07-18)
 
-- **Permissions page still saves the app-file baseline** (`apps/<app>/permissions/studio.json`
-  via `/_studio/permissions` POST). The live layer (`nexus_policy` rows) exists and is
-  enforced (+ hot-refreshed through hooks); /roles and /users already read it — but the
-  permission EDITOR has not been switched to rows yet. Until it is, Studio-edited policies
-  land in the baseline file, not the row layer. (The spec said the POST endpoint dies —
-  it has not yet.)
 - **`/_studio/users` endpoints are legacy**: the /users page now CRUDs `nexus_user`
   rows, but the old config-identities endpoints remain in dev.js for CLI parity.
   Deciding their fate (keep as bootstrap tooling vs delete) is open.

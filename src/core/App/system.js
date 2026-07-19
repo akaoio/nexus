@@ -14,6 +14,7 @@
  */
 
 import { viewSchema } from "../Views.js"
+import { validatePolicy } from "./policies.js"
 
 /** JSON-in-text columns (the nexus_view.config precedent): arrays and rule
  *  documents ride as serialized text — the schema stays v1-plain. */
@@ -97,6 +98,39 @@ export function unpackPolicy(row) {
     return policy
 }
 
+/**
+ * Validate a nexus_policy ROW's data columns as the policy it will become.
+ * The write-side defense (design 2026-07-19 §3): the same law binds the
+ * Studio and any direct API caller. Unparseable JSON columns are E_POLICY.
+ */
+export function validatePolicyRow(data, schemas = null) {
+    let policy
+    try {
+        policy = unpackPolicy(data)
+    } catch {
+        return { valid: false, errors: [{ code: "E_POLICY" }] }
+    }
+    return validatePolicy(policy, schemas)
+}
+
+/**
+ * Unpack nexus_policy rows TOLERANTLY (design §3 read-side defense): a
+ * corrupt row is collected, never thrown — one bad row must never take
+ * down the auth layer. Each unpacked policy carries its row id.
+ */
+export function unpackPolicyRows(rows) {
+    const policies = []
+    const skipped = []
+    for (const row of rows ?? []) {
+        try {
+            policies.push({ id: row.id, ...unpackPolicy(row) })
+        } catch (error) {
+            skipped.push({ id: row?.id, error: String(error?.message ?? error) })
+        }
+    }
+    return { policies, skipped }
+}
+
 // ─── shipped baselines — self-service as DATA, never an if-admin branch ───────
 
 /** Lifecycle actions the admin bundle grants on system entities. */
@@ -153,4 +187,4 @@ export function importIdentities(identities = []) {
     }))
 }
 
-export default { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, isSystem, packPolicy, unpackPolicy, importIdentities }
+export default { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, isSystem, packPolicy, unpackPolicy, validatePolicyRow, unpackPolicyRows, importIdentities }

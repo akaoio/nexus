@@ -8,10 +8,13 @@
  */
 
 import Test, { assert } from "../../src/core/Test.js"
-import { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, isSystem, packPolicy, unpackPolicy, importIdentities } from "../../src/core/App/system.js"
+import { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, isSystem, packPolicy, unpackPolicy, validatePolicyRow, unpackPolicyRows, importIdentities } from "../../src/core/App/system.js"
 import { validate } from "../../src/core/Model.js"
-import { validatePolicy, policiesFor } from "../../src/core/App/policies.js"
+import { validatePolicy, policiesFor, loadPolicies } from "../../src/core/App/policies.js"
 import { resolve } from "../../src/core/Permission.js"
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs"
+import { tmpdir } from "os"
+import { join } from "path"
 
 Test.describe("System entities (SYS-*)", () => {
     Test.it("SYS-01 every system schema IS a valid Model Schema v1; the registry is pinned", () => {
@@ -83,5 +86,42 @@ Test.describe("System entities (SYS-*)", () => {
         assert.deepEqual(JSON.parse(rows[0].roles), ["admin"])
         assert.equal(rows[1].name, "PK2") // a nameless identity is addressed by its pub
         assert.deepEqual(importIdentities(undefined), [])
+    })
+
+    Test.it("SYS-08 loadPolicies stamps each policy with its source file (app:<path>) — labels ride the engine's own objects", () => {
+        const scratch = mkdtempSync(join(tmpdir(), "nexus-polsrc-"))
+        mkdirSync(join(scratch, "apps", "crm", "permissions"), { recursive: true })
+        writeFileSync(join(scratch, "apps", "crm", "permissions", "team.json"),
+            JSON.stringify([{ entity: "task", actions: ["read"], rule: null, permlevel: 0, ifOwner: false }]))
+        const loaded = loadPolicies(scratch, [{ dir: "crm" }], null)
+        assert.equal(loaded.length, 1)
+        assert.equal(loaded[0].source, "app:apps/crm/permissions/team.json")
+        assert.equal(loaded[0].entity, "task") // the policy itself is intact
+        rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    })
+
+    Test.it("SYS-06 validatePolicyRow: a nexus_policy row's data must unpack into a VALID policy — same law for every writer", () => {
+        const good = packPolicy({ entity: "task", actions: ["read"], rule: null, permlevel: 0, ifOwner: false })
+        assert.equal(validatePolicyRow(good).valid, true)
+        assert.equal(validatePolicyRow({ ...good, actions: JSON.stringify(["fly"]) }).valid, false) // unknown action
+        assert.equal(validatePolicyRow({ ...good, actions: "{not json" }).valid, false) // unparseable → E_POLICY
+        assert.equal(validatePolicyRow({ ...good, permlevel: 99 }).valid, false)
+        assert.equal(validatePolicyRow({ ...good, rule: JSON.stringify({ op: "nonsense" }) }).valid, false) // broken AST
+        const schemas = [{ name: "task", fields: [] }]
+        assert.equal(validatePolicyRow({ ...good, entity: "ghost" }, schemas).valid, false)
+        assert.equal(validatePolicyRow(good, schemas).valid, true)
+    })
+
+    Test.it("SYS-07 unpackPolicyRows tolerates corrupt rows — skips and reports, NEVER throws (one bad row must not kill auth)", () => {
+        const good = { id: "r1", ...packPolicy({ entity: "task", actions: ["read"], rule: null, permlevel: 0, ifOwner: false }) }
+        const bad = { id: "r2", entity: "task", actions: "{not json", rule: null, permlevel: 0, ifowner: 0 }
+        const { policies, skipped } = unpackPolicyRows([good, bad])
+        assert.equal(policies.length, 1)
+        assert.equal(policies[0].id, "r1") // the row id rides the unpacked policy
+        assert.equal(policies[0].entity, "task")
+        assert.equal(skipped.length, 1)
+        assert.equal(skipped[0].id, "r2")
+        assert.truthy(skipped[0].error)
+        assert.deepEqual(unpackPolicyRows(null), { policies: [], skipped: [] })
     })
 })

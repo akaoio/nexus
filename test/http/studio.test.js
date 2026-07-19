@@ -36,6 +36,10 @@ const post = async (path, body) => {
     const r = await fetch((await ensure()) + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
     return { status: r.status, body: await r.json() }
 }
+const patch = async (path, body) => {
+    const r = await fetch((await ensure()) + path, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+    return { status: r.status, body: await r.json() }
+}
 
 Test.describe("Studio write endpoints (STUDIO)", () => {
     Test.it("STUDIO-01 POST /_studio/model persists a valid, validated content type", async () => {
@@ -63,14 +67,11 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.equal(r.body.error.code, "E_INVALID")
     })
 
-    Test.it("STUDIO-04 POST /_studio/permissions persists the policy set", async () => {
-        const policies = [{ entity: "task", actions: ["read", "create"], rule: null, permlevel: 0, ifOwner: true }]
-        const r = await post("/_studio/permissions", { policies })
-        assert.equal(r.status, 200)
-        assert.equal(r.body.ok, true)
-        const file = join(instance, "apps", "starter", "permissions", "studio.json")
-        assert.truthy(existsSync(file))
-        assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), policies)
+    Test.it("STUDIO-04 the bespoke permissions write path is DEAD — /_studio/permissions 404s both ways", async () => {
+        const g = await fetch((await ensure()) + "/_studio/permissions")
+        assert.equal(g.status, 404)
+        const p = await post("/_studio/permissions", { policies: [] })
+        assert.equal(p.status, 404)
     })
 
     Test.it("STUDIO-05 /_studio/config reads (redacted) and writes a dot-path", async () => {
@@ -83,6 +84,43 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         // GET is redacted
         const list = await (await fetch((await ensure()) + "/_studio/config")).json()
         assert.equal(list.data.config.token_secret, "***")
+    })
+
+    Test.it("STUDIO-06 GET /_studio/policies is the engine's own layers; a row created via the plane appears under rows", async () => {
+        const created = await post("/api/v1/nexus_policy", {
+            entity: "task", actions: JSON.stringify(["read"]), rule: null,
+            permlevel: 0, ifowner: false, roles: JSON.stringify(["viewer"])
+        })
+        assert.equal(created.body.ok, true)
+        const id = created.body.data.id
+        const w = await fetch((await ensure()) + "/_studio/policies").then((r) => r.json())
+        assert.equal(w.ok, true)
+        const sources = w.data.layers.map((l) => l.source)
+        assert.truthy(sources.includes("system") && sources.includes("admin") && sources.includes("rows"))
+        const rows = w.data.layers.find((l) => l.source === "rows")
+        assert.equal(rows.readonly, false)
+        assert.truthy(rows.policies.some((p) => p.id === id && p.entity === "task"))
+        for (const layer of w.data.layers) if (layer.source !== "rows") assert.equal(layer.readonly, true)
+        assert.equal(typeof w.data.devMode, "boolean")
+    })
+
+    Test.it("STUDIO-07 an invalid nexus_policy row is VETOED at the plane — same law for every writer", async () => {
+        const bad = await post("/api/v1/nexus_policy", { entity: "task", actions: JSON.stringify(["fly"]), rule: null, permlevel: 0, ifowner: false })
+        assert.equal(bad.body.ok, false)
+        assert.equal(bad.body.error.code, "E_INVALID")
+        const broken = await post("/api/v1/nexus_policy", { entity: "task", actions: "{not json", rule: null, permlevel: 0, ifowner: false })
+        assert.equal(broken.body.ok, false)
+
+        // the UPDATE before-hook validates the MERGED row (current + patch),
+        // not the patch alone — same law, proven through the other write path
+        const valid = await post("/api/v1/nexus_policy", { entity: "task", actions: JSON.stringify(["read"]), rule: null, permlevel: 0, ifowner: false })
+        assert.equal(valid.body.ok, true)
+        const rowId = valid.body.data.id
+        const vetoed = await patch(`/api/v1/nexus_policy/${rowId}`, { actions: JSON.stringify(["fly"]) })
+        assert.equal(vetoed.body.ok, false)
+        assert.equal(vetoed.body.error.code, "E_INVALID")
+        const allowed = await patch(`/api/v1/nexus_policy/${rowId}`, { actions: JSON.stringify(["read", "create"]) })
+        assert.equal(allowed.body.ok, true)
     })
 
     Test.it("STUDIO-99 cleanup", async () => {
