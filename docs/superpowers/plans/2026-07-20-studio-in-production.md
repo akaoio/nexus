@@ -320,43 +320,74 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 7: The production Studio boots, and its nav hides what production does not have
+### Task 6b: Split `adapters.js` so the Data core is browser-safe (the vendor boundary)
 
-**Files:** Modify `src/studio/app.js`, `src/studio/routes/schema-designer/index.js` (or wherever the designer's static `core/Data` import lives), `src/studio/layouts/studio/shell.js` · Test `test/cli/studio-build.test.js` (extend)
+**Files:** Modify `src/core/Data/adapters.js`; create `src/core/Data/executor.js`; modify `src/cli/data.js`, `test/data/adapters.test.js`, `test/data/live-engine.test.js`, `test/data/live-postgres.test.js`, `test/data/vec.test.js` · Clause in the Data conformance suite (near VND-02), registered in `test.js` if new.
 
-**Two coupled problems, one root.** Task 5's review proved that `src/studio/app.js` **statically** imports the schema designer, whose graph reaches `src/core/Data/migrate.js` → `src/core/Data/adapters.js`, which does `import { createRequire } from "module"` (a Node built-in with no browser form). Because the edge is static, the WHOLE `app.js` module graph fails to evaluate in a browser — the built Studio renders blank. The nav-filter alone does not fix this: a hidden route whose module is still in the static graph still crashes the graph.
+**Root cause (Task 5's review, corrected direction).** The built Studio renders blank because `src/studio/app.js` statically reaches `src/core/Data/migrate.js` → `import { capabilitiesFor } from "./adapters.js"`, and `adapters.js` top-of-file does `import { createRequire } from "module"` / `"url"` / `"path"` — Node built-ins a browser cannot resolve, so the whole app graph fails to evaluate. Verified: `adapters.js` is the ONLY module under `src/core/Data/` that statically imports a Node built-in; `ddl.js`, `kysely.js` (vendored Kysely already behind the `kysely.js` boundary, VND-02), `migrate.js`, `Model.js` are already browser-safe. `createExecutor` has exactly one non-test caller (`src/cli/data.js`).
 
-So the fix is structural: the schema designer (and any other dev-only surface reaching server-oriented `core/Data` code) must be imported **lazily** — a dynamic `import()` performed only when that route is actually entered — so it leaves `app.js`'s static boot graph entirely. In production the route is never entered (nav + route table exclude it), so the dynamic import never runs and `adapters.js` is never fetched; the copy-build still ships those files (dynamic imports are walked by `collectModules`), but nothing loads them. The shipped Studio boots because its STATIC graph no longer touches a Node built-in.
+**The durable fix is the vendor/boundary discipline this repo already uses for Kysely, NOT a lazy-import band-aid.** Split `adapters.js` by concern so the browser-needed half never carries a Node dependency:
 
-**Step 1 — make the designer import lazy.**
-Read `src/studio/app.js`'s MODULES/route table and how a route's module is currently referenced. Convert the schema designer from a static `import` at module top to a dynamic `import()` resolved at navigation time, following whatever lazy pattern the router already supports (check whether any route is already lazy; if the router only accepts eager modules, add the smallest honest lazy path rather than inventing a framework). Confirm by reading the result that `app.js`'s static graph no longer reaches `src/core/Data/adapters.js`. Apply the same treatment to any other dev-only route whose static graph reaches `core/`-server code — enumerate them, do not assume the designer is the only one.
+- **`adapters.js` becomes pure and browser-safe:** keeps `ENGINES`, `engineDialect`, `CAPABILITIES`, `capabilitiesFor`, the `err` helper. The three Node imports and everything using them are removed; default export drops `createExecutor`.
+- **New `executor.js` is the server-only tier:** `createExecutor`, `importDriver`, `INSTALL`, the three Node imports. It re-imports `ENGINES` from `./adapters.js` (single source of truth, no duplication). A MOVE — every error code (`E_ENGINE`, `E_DRIVER`, `E_VEC`), signature and SQL byte-identical.
+- **Importers updated:** `src/cli/data.js` → `executor.js`; the four `test/data/*` suites split their imports (pure exports from `adapters.js`, `createExecutor` from `executor.js`). Grep the whole repo — do not trust this list.
 
-**Step 2 — the mode axis and nav filter.** The boot payload gains `mode: "dev" | "production"` (dev.js passes it to `studioIndex`; the built shell — Task 5's `buildStudio` — bakes `"production"`; coordinate the exact key with Task 5's boot-data baking). `app.js`'s MODULES entries gain `devOnly: true` for the schema designer (`/entities`) and the two config panels (`/settings` general, `/settings/ai`); nav and route table filter them out when `mode === "production"`. A production user hitting a dev-only route directly gets the Studio's normal not-found handling, not a broken page.
+**The anti-drift pin (RED first), in the spirit of VND-02:**
 
-**Step 3 — a clause that pins the boot graph (RED first).** Extend `test/cli/studio-build.test.js`:
+```js
+    Test.it("VND-03 the Data core is browser-safe: no src/core/Data/ module statically imports a Node built-in, except the server-only executor", () => {
+        // static `import … from "<builtin>"` (module|url|path|fs|crypto|os|child_process|net|http|https|node:*)
+        // Every hit must be executor.js. node:sqlite is a real server-tier dependency, allowed only there.
+    })
+```
+
+Prove it discriminates: RED against current pre-split `adapters.js` (which has the three imports), GREEN after the split; temporarily reintroduce a built-in into `adapters.js` and confirm RED again.
+
+**Why this replaces the old Task 7 boot fix:** with the Data core browser-safe, `app.js`'s static graph reaching `migrate.js → adapters.js` is fine — the designer boots in a browser *for real* (it plans migrations and generates DDL via vendored Kysely), not merely deferred. Task 7 below is now only the nav filter. STB-03 (boot graph free of Node built-ins) still applies and passes because of this split, not because of laziness.
+
+- [ ] **Step 1: VND-03 RED against pre-split code.**
+- [ ] **Step 2: Split `adapters.js` → pure `adapters.js` + `executor.js`; update all importers (grep-verified).**
+- [ ] **Step 3: VND-03 GREEN; the four `test/data/*` suites stay green (proof the move preserved behavior); full suite 0 red.**
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/core/Data/adapters.js src/core/Data/executor.js src/cli/data.js test/data test.js
+git commit -m "Split the Data adapters: browser-safe capability declarations, server-only driver execution (VND-03)
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 7: The Studio nav derives from the mode
+
+**Files:** Modify `src/studio/app.js`, `src/studio/layouts/studio/shell.js`, and Task 5's `buildStudio` boot-data baking · Test `test/cli/studio-build.test.js` (extend)
+
+With Task 6b making the Data core browser-safe, the built Studio boots. This task hides from a production build the surfaces production does not have.
+
+**The mode axis.** The boot payload gains `mode: "dev" | "production"` — `dev.js` passes it to `studioIndex`; Task 5's `buildStudio` bakes `"production"` (coordinate the exact key with Task 5's boot-data baking). `app.js`'s MODULES entries gain `devOnly: true` for the schema designer (`/entities`) and the two config panels (`/settings` general, `/settings/ai`); nav and route table filter them out when `mode === "production"`. A production user hitting a dev-only route directly gets the Studio's normal not-found handling, not a broken page.
+
+**Clause (RED first)** — pin that the boot graph stays free of Node built-ins, so a future static import into the Data core (or a new dev-only module that reaches server code) is caught. Extend `test/cli/studio-build.test.js`:
 
 ```js
     Test.it("STB-03 the built Studio's static boot graph never reaches a Node built-in — it boots in a browser", () => {
-        // app.js's STATIC import graph (exclude dynamic import() — those are lazy, dev-only routes)
         const staticGraph = collectModules(new URL("../../src/studio/app.js", import.meta.url), { staticOnly: true })
-        assert.equal(staticGraph.some((f) => f.includes("core/Data/adapters.js")), false, "server-oriented adapter left the boot graph")
         for (const f of staticGraph) {
             const src = readFileSync(f, "utf8")
-            assert.equal(/from\s+["'](module|url|path|fs|crypto|os|child_process)["']/.test(src), false, `${f} statically imports a Node built-in`)
+            assert.equal(/(^|[^.])\bfrom\s+["'](module|url|path|fs|crypto|os|child_process|node:(?!sqlite))/.test(src), false, `${f} statically imports a Node built-in`)
         }
     })
 ```
 
-This requires `collectModules` to distinguish static from dynamic edges. If Task 5's `collectModules` does not already carry that distinction, add a `staticOnly` option that follows only static `import`/`export … from` edges — a small, honest extension, and it also lets Task 8's PROD-01 assert the same way. Verify STB-03 is RED against the current static import (it will fail on `adapters.js` present), then GREEN after Step 1.
+If Task 5's `collectModules` does not distinguish static from dynamic edges, add a `staticOnly` option that follows only static `import`/`export … from` edges — it also lets Task 8's PROD-01 assert the same way. After Task 6b this is GREEN; verify it goes RED if a Node-built-in import is put back into a boot-graph module.
 
-- [ ] **Step 1: Make the designer (and any peer) import lazy; confirm the static graph is clean.**
-- [ ] **Step 2: Add the `mode` axis + nav/route filtering.**
-- [ ] **Step 3: STB-03 RED → GREEN; `node --check` every modified file; full suite 0 red; browser pass (dev shows everything and the designer still works via its lazy load; a built shell boots, hides the three, and loads /users + /permissions).**
-- [ ] **Step 4: Commit**
+- [ ] **Step 1: Add the `mode` axis + nav/route filtering; bake `mode` in `buildStudio`.**
+- [ ] **Step 2: STB-03 (with `staticOnly`) GREEN; `node --check` every modified file; full suite 0 red; browser pass (dev shows everything; a built shell boots, hides the three, loads /users + /permissions).**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add src/studio/app.js src/studio/routes src/studio/layouts/studio/shell.js test/cli/studio-build.test.js
-git commit -m "The production Studio boots: dev-only routes load lazily so no Node built-in sits in the static graph (STB-03)
+git add src/studio/app.js src/studio/layouts/studio/shell.js src/cli/commands/studio.js test/cli/studio-build.test.js
+git commit -m "Studio nav derives from the mode: dev-only surfaces are absent from a production build (STB-03)
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
