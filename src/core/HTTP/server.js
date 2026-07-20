@@ -297,7 +297,15 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             throw new Error("E_AUTH: a valid session token or API key is required")
         }
 
-        api = createApi({ plane, endpoints: extensions.endpoints, context })
+        // Realtime (design 2026-07-20 §1): the hub attaches to the SAME
+        // extensions map the plane already holds as `hooks` — Extensions.run
+        // looks up hooks by key at call time, so attaching after the plane is
+        // built still fires for every write from here on.
+        const { createEventHub } = await import("./events.js")
+        const eventHub = createEventHub({ plane })
+        eventHub.attach(extensions, allSchemas)
+
+        api = createApi({ plane, endpoints: extensions.endpoints, context, events: eventHub })
         authMode = authState.required
             ? `${[keys.length && `${keys.length} API keys`, authState.identities.length && `${authState.identities.length} ZEN identities`].filter(Boolean).join(" + ")} (E_AUTH without credentials)`
             : "DEV identity — wide-open policies, user via x-nexus-user header"
@@ -335,7 +343,7 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             }
         }
         const poller = setInterval(tick, config.jobs?.poll_ms ?? 1000)
-        effects = { stop: async () => { clearInterval(poller); await jobThread.stop() } }
+        effects = { stop: async () => { eventHub.stop(); clearInterval(poller); await jobThread.stop() } }
     }
 
     return { api, plane, authState, challenges, engine, authMode, extensions, embedderInfo, policyLayers, effects }
