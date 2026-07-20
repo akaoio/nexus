@@ -49,13 +49,13 @@ Frappe is the most powerful meta-framework in its class — and nearly impossibl
 | **Installation** | ❌ bench + Redis ×3 + NGINX + Supervisor + wkhtmltopdf; WSL/Docker only on Windows | ✅ npx | ✅ npm/Docker | ✅ | ✅ one command, Node ≥18, self-served HTTPS — no NGINX, no Redis, no Supervisor |
 | **CLI** | ✅ bench — powerful but heavy, Linux-only | ✅ polished DX | ⚠️ | ⚠️ | ✅ `nexus` — Strapi-grade polish, bench-grade coverage, zero-dep, dry-run by default, `--json` everywhere |
 | **Runs 100% in the browser (offline)** | ❌ | ❌ | ❌ | ❌ | ✅ SQLite WASM + OPFS, same app schema as server mode |
-| **P2P sync / no central server required** | ❌ | ❌ | ❌ | ❌ | ✅ signed CRDT event log (ZEN); super-peers accelerate, never required |
+| **P2P sync — server optional for state** | ❌ | ❌ | ❌ | ❌ | ✅ signed CRDT event log (ZEN); super-peers accelerate state, never required for it ⁵ |
 | **Identity** | password sessions | password/JWT | password/SSO | password | ✅ WebAuthn passkey → deterministic keypair; no passwords stored |
 | **Semantic + full-text search built in** | ❌ | ❌ | ❌ | ⚠️ external glue (webhooks + n8n + OpenAI) ³ | ✅ schema-aware FTS + vector + RRF hybrid, **local-first embeddings** |
 | **Update safety for apps** | ⚠️ no public/private API boundary | ❌ v4→v5 broke the plugin ecosystem ⁴ | ⚠️ major-version migration pain | ⚠️ | ✅ enumerated public API, deprecation windows, behavior switches, core updates go through the same migration engine |
 | **i18n** | ⚠️ runtime | ⚠️ plugin | ⚠️ | ⚠️ | ✅ build-time static routes per locale (SEO-grade), translations in schema |
 | **Multi-tenancy** | ✅ bench sites | ❌ | ⚠️ | ⚠️ | ✅ sites with **isolated databases**, domain-mapped |
-| **Kernel dependencies** | Python stack | Node + Knex stack | Node + Knex stack | Node stack | ✅ **zero** external runtime deps (vendored Kysely behind the AST boundary) |
+| **Kernel dependencies** | Python stack | Node + Knex stack | Node + Knex stack | Node stack | ✅ **zero** external runtime deps — three tiers: kernel zero · vendored behind a boundary (Kysely) · instance-optional providers (DB drivers, transformers.js, nodemailer) |
 | **License** | MIT | MIT (core) | ❌ BSL → MSCL (left open source) | AGPL | ✅ MIT, permanently |
 
 † The Nexus column describes the design contract in [ARCHITECTURE.md](ARCHITECTURE.md) — not shipped code yet. Every claim is backed by a conformance test before implementation (see Status).
@@ -65,13 +65,15 @@ Frappe is the most powerful meta-framework in its class — and nearly impossibl
 ³ Documented community pattern: NocoDB semantic search requires wiring webhooks through n8n to OpenAI and pgvector by hand.
 ⁴ Strapi v5 removed `helper-plugin`, changed the response shape, and replaced `id` with `documentId` — most v4 plugins required manual rewrites ([official breaking-changes list](https://docs.strapi.io/cms/migration/v4-to-v5/breaking-changes)).
 
+⁵ Said precisely: **server optional for *state*, required for *effects*.** CRDT sync converges state — every replay order yields the same table. It cannot converge side-effects: a replayed "send the customer an email" sends twice. Coordinating effects (exactly one worker takes the job, acks on success, retries on failure) needs one owner of the queue, so jobs and webhooks are server-only entities that never sync. Data lives without a server; *acting on the outside world* does not.
+
 Nexus combines what each got right and refuses what each got wrong:
 
 - **Universal Query AST** — one recursive filter structure (infinite AND/OR nesting) that drives queries, permissions, validations, and the visual query builder. Frappe core's own filter UI is actually flat; Nexus goes past it.
 - **Meta-model** — entities defined in versioned YAML/JSON; forms, list views, APIs, and migrations derive from schema. Customize without forking.
 - **Deep permissions** — role/policy matrix, field-level levels, row-level rules written in the same AST as queries.
 - **Your database** — SQLite, [Turso](https://github.com/tursodatabase/turso) (the async-native Rust rewrite of SQLite — file-format compatible, so the exit path back to plain SQLite always stays open), PostgreSQL, MySQL/MariaDB, tested as equals; plus SQLite WASM fully in the browser.
-- **Dual runtime** — the same app schema runs on a single-process Node server *or* 100% locally in the browser (OPFS persistence, P2P sync over ZEN), with super-peers as accelerators, never as dependencies.
+- **Dual runtime** — the same app schema runs on a single-process Node server *or* 100% locally in the browser (OPFS persistence, P2P sync over ZEN), with super-peers as accelerators of state, never as dependencies for it. Effects (jobs, webhooks, mail) are the honest exception: they need a server, and the design says so out loud.
 - **Semantic layer** — schema-aware full-text + vector search with local-first embeddings. Nexus doesn't just record data; it understands it.
 - **Built to last** — zero-dependency kernel, frozen data formats, "never break userspace" compatibility policy, spec-as-conformance-tests. Lessons taken from SQLite, Linux, TeX, and Go.
 

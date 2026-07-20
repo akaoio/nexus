@@ -49,8 +49,13 @@ Web Components, ES Modules, Worker, OPFS, WebAuthn, WebCrypto — nền tảng d
 
 ### N2. Zero runtime dependency trong kernel (bài học SQLite)
 SQLite cam kết hỗ trợ đến **2050**, và liệt kê "không phụ thuộc thư viện ngoài" là chiến lược sống còn số một ([sqlite.org/lts.html](https://sqlite.org/lts.html)). Dependency churn là nguyên nhân tử vong lớn nhất của dự án JS. Quy tắc Nexus:
-- Kernel: **0** dependency ngoài. ZEN và các module kế thừa từ akao là **first-party** — cùng hệ sinh thái, tự chủ toàn bộ mã nguồn (bản thân ZEN cũng zero-dependency trong browser) — không tính là dependency ngoài.
-- Data plane: các dependency được **vendor** (copy vào cây nguồn, pin version, bọc sau interface nội bộ) — hiện chỉ có Kysely (bản thân Kysely cũng 0 dependency) và driver DB do người dùng chọn. Kysely nằm **sau** ranh giới compile của Query AST: nếu 30 năm nữa Kysely chết, chỉ viết lại một module compiler, không app nào biết.
+Chính sách thật của repo không phải "zero-deps ở mọi nơi" mà là **ba tầng**, và ranh giới giữa chúng là điều phải giữ:
+
+1. **Kernel: 0 dependency ngoài.** ZEN và các module kế thừa từ akao là **first-party** — cùng hệ sinh thái, tự chủ toàn bộ mã nguồn (bản thân ZEN cũng zero-dependency trong browser) — không tính là dependency ngoài.
+2. **Sau boundary: vendored.** Dependency được copy vào cây nguồn, pin version, bọc sau interface nội bộ — hiện chỉ có Kysely (bản thân Kysely cũng 0 dependency). Kysely nằm **sau** ranh giới compile của Query AST: nếu 30 năm nữa Kysely chết, chỉ viết lại một module compiler, không app nào biết.
+3. **Instance-level: optional, do người dùng cài.** Core chỉ định nghĩa **provider interface**; package thật nằm trong `node_modules` của instance và được nạp qua `createRequire` từ thư mục instance. Tiền lệ đang chạy: driver DB (`pg`, `mysql2`), `@huggingface/transformers` (semantic + NL), `nodemailer` (Mail provider).
+
+**Luật của tầng 3 — đọc kỹ trước khi thêm tính năng "effect":** mọi thứ cần thư viện nặng hoặc chuyên ngành (SMTP, HTML→PDF, XLSX, SAML/SSO, xử lý ảnh) đi theo đúng mô hình DB-driver: interface trong core, implementation optional ở instance. **Không bao giờ tự chế lại chúng trong kernel** — đó không phải zero-dep, đó là chết chìm trong bánh xe. Ngày nào một trong số đó bị "zero-dep hoá" vào kernel là ngày N2 bị hiểu sai.
 
 ### N3. Không bao giờ phá app (bài học Linux + Go)
 Linux: *"regression trong hành vi userspace-visible là bug của kernel, kể cả khi hành vi cũ là sai"*. Go 1 (2012): *chương trình viết theo spec Go 1 chạy mãi mãi; câu trả lời cho "bao giờ Go 2 phá Go 1?" là "never"*. Áp vào Nexus:
@@ -282,6 +287,7 @@ Không tool nào hiện có spec serialization schema-aware kiểu này (NocoDB/
 - **Cài đặt = một lệnh** trên mọi OS có Node ≥18 (kể cả Windows native — akao đã kiểm tra `process.platform === "win32"`). Đây là đòn trực diện vào điểm yếu nhất của Frappe.
 - **HTTP API tự sinh từ schema** (ngang hàng Frappe/Strapi/Directus): server mode tự expose CRUD + `search()` + một endpoint nhận **Query AST** cho mọi Entity, permission enforce sẵn ở Data Plane nên transport không có logic riêng. Hợp đồng API thuộc App API v1 (chịu N3, versioned trong URL). App nội bộ và client ngoài (mobile, integration) dùng **cùng một hợp đồng** — không có API "nội bộ nhanh hơn". Realtime subscription đi qua ZEN (thay socketio + Redis của Frappe).
 - **Trust boundary phải nói thẳng**: local mode không có trọng tài — DB nằm trong máy user. Permission ở local mode chỉ có nghĩa với dữ liệu cá nhân; dữ liệu multi-party cần điểm authoritative: hoặc một server mode instance, hoặc enforce bằng PEN tại điểm nhận write P2P (§6).
+- **Công thức trung thực của topo Nexus: server TUỲ CHỌN cho *state*, BẮT BUỘC cho *effect*.** CRDT hội tụ được state — mọi thứ tự đến đều ra cùng một bảng. Nhưng CRDT **không hội tụ được side-effect**: "gửi email cho khách" replay hai lần là gửi hai lần. Điều phối effect (đúng một worker nhận việc, ack khi xong, retry khi hỏng) cần một điểm sở hữu hàng đợi — nên `nexus_job`/`nexus_webhook` là entity **server-only, không sync** (§ effect engine). Vì vậy claim của dự án không phải "không cần server" mà là: dữ liệu sống được không cần server, còn *hành động ra thế giới bên ngoài* thì cần.
 - Job nền, cache, socket — dùng **Threads** isomorphic của akao (Web Worker/browser, worker_threads/Node) thay cho 3 instance Redis + worker process riêng của Frappe.
 
 ### 5.1. Super-peer — có server nhưng không lệ thuộc server
