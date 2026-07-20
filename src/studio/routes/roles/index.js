@@ -24,16 +24,17 @@ export function render(ctx) {
     }))
 
     async function load() {
-        const [roles, users, policies, baselines] = await Promise.all([
+        const [roles, users, policies, layers] = await Promise.all([
             ctx.api.list("nexus_role", null),
             ctx.api.list("nexus_user", null),
             ctx.api.list("nexus_policy", null),
-            ctx.api.studio("permissions", "GET")
+            ctx.api.get("/api/v1/_policy-layers") // Task 3's composed layers — same document Permissions reads
         ])
         const roleRows = roles.ok ? roles.data : []
         const userRows = users.ok ? users.data : []
         const policyRows = policies.ok ? policies.data : []
-        const baselinePolicies = baselines.ok ? baselines.data.policies : []
+        // read-only layers are the shipped baselines; mirrors permissions/index.js's `baseline`
+        const baselinePolicies = layers.ok ? (layers.data.layers ?? []).filter((l) => l.readonly).flatMap((l) => l.policies) : []
 
         // every name in play — a row, a policy annotation, or a holder makes a
         // role REAL; rows merely give it a description and a delete button
