@@ -1,7 +1,7 @@
 /** /jobs route — the DLQ front and center (design §7): nexus_job rows
  *  grouped by status, Retry = an ordinary entity-API update. */
 
-import { mountTemplate, button, toast } from "../../kit/index.js"
+import { mountTemplate, button, toast, subscribe } from "../../kit/index.js"
 import { jobsTemplate } from "./template.js"
 
 const GROUPS = ["dead", "failed", "running", "pending", "done"]
@@ -52,5 +52,13 @@ export function render(ctx) {
         }
     }
     load()
+
+    // live refresh: coarse but truthful — re-run load() on any matching event
+    let reloadTimer = null
+    const unsubscribe = subscribe(["nexus_job"], () => {
+        if (!host.isConnected) return unsubscribe() // the router has no unmount hook — stale routes reap themselves
+        clearTimeout(reloadTimer)
+        reloadTimer = setTimeout(load, 250) // collapse bursts into one reload
+    })
     return host
 }

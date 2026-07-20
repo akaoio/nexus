@@ -98,15 +98,32 @@ function listOptions(searchParams) {
  * @param {(req) => Object} config.context - Resolves a request into a Data
  *   Plane ctx { user, roles, policies, shares } — the auth layer's seam
  * @param {string} [config.base] - URL prefix (default /api/v1)
+ * @param {Object} [config.events] - the realtime event hub (createEventHub()),
+ *   or null when realtime is not enabled — mounts GET /api/v1/_events
  * @returns {(req, res) => Promise<boolean>} true when the request was handled
  */
-export function createApi({ plane, context, base = "/api/v1", endpoints = [] }) {
+export function createApi({ plane, context, base = "/api/v1", endpoints = [], events = null }) {
     return async function handle(req, res) {
         const url = new URL(req.url, "http://localhost")
         if (url.pathname !== base && !url.pathname.startsWith(base + "/")) return false
 
         const segments = url.pathname.slice(base.length).split("/").filter(Boolean)
         try {
+            // The realtime stream (design 2026-07-20 §1). EventSource cannot
+            // set headers, so this ONE endpoint also accepts ?token= — it is
+            // folded into the normal auth seam before context() runs.
+            if (segments[0] === "_events" && req.method === "GET") {
+                if (!events) throw new Error("E_NOT_FOUND: realtime is not enabled")
+                const token = url.searchParams.get("token")
+                if (token && !req.headers["authorization"] && !req.headers["x-nexus-key"]) {
+                    req.headers["authorization"] = "Bearer " + token
+                }
+                const ctx = context(req)
+                const entities = url.searchParams.get("entities")
+                events.subscribe({ res, ctx, entities: entities ? entities.split(",").filter(Boolean) : null })
+                return true // the connection stays open — no ok()/end()
+            }
+
             const ctx = context(req)
             const [entity, tail] = segments
             if (!entity) throw new Error("E_ENTITY: missing entity in path")

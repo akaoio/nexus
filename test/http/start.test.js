@@ -93,6 +93,8 @@ Test.describe("Production server — nexus start (START)", () => {
             // NO Studio index, NO framework source in production
             assert.equal((await call("GET", "/")).status, 404)
             assert.equal((await call("GET", "/_nexus/src/core/UI.js")).status, 404)
+            // START-EVT: the dev-only event stream is never mounted in production
+            assert.equal((await call("GET", "/__dev_events")).status, 404)
         } finally {
             await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
             rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })

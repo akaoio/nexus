@@ -78,6 +78,15 @@ import "./test/cli/ops.test.js"
 // HTTP API — auto-generated from schemas, e2e over real HTTP (clauses API-*)
 import "./test/http/api.test.js"
 
+// Realtime event hub — SSE subscribers, permission per subscriber (clauses EVT-*)
+import "./test/http/events-hub.test.js"
+
+// Realtime on the wire — GET /api/v1/_events mounted, live clauses (EVT-01/02/03/05)
+import "./test/http/events-live.test.js"
+
+// Dev event stream — /__dev_events feeds the shipped HMR client (DEVE-*)
+import "./test/http/dev-events.test.js"
+
 // Production server — nexus start, security contract (clauses START-*)
 import "./test/http/start.test.js"
 
@@ -146,6 +155,9 @@ import "./test/studio/roles.test.js"
 // App — system entities (clauses SYS-*)
 import "./test/app/system.test.js"
 import "./test/app/lifecycle.test.js"
+
+// App — HMR file watcher (clauses HMR-*)
+import "./test/app/hmr-watch.test.js"
 
 // App — effect engine core: claim/backoff/DLQ/recurring (clauses JOB-*)
 import "./test/app/jobs.test.js"

@@ -4,7 +4,7 @@
  *  never cascades silently — the card says exactly what still references
  *  the name before you confirm. */
 
-import { mountTemplate, button, toast, confirmDialog } from "../../kit/index.js"
+import { mountTemplate, button, toast, confirmDialog, subscribe } from "../../kit/index.js"
 import { rolesTemplate } from "./template.js"
 
 const rolesOf = (jsonText) => (jsonText ? JSON.parse(jsonText) : [])
@@ -123,5 +123,13 @@ export function render(ctx) {
         }
     }
     load()
+
+    // live refresh: coarse but truthful — re-run load() on any matching event
+    let reloadTimer = null
+    const unsubscribe = subscribe(["nexus_role", "nexus_policy"], () => {
+        if (!host.isConnected) return unsubscribe() // the router has no unmount hook — stale routes reap themselves
+        clearTimeout(reloadTimer)
+        reloadTimer = setTimeout(load, 250) // collapse bursts into one reload
+    })
     return host
 }

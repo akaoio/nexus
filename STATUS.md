@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 520/573 node clauses, 0 red.**
+**Green: 540/593 node clauses, 0 red.**
 (53 node "skips" are browser-only clauses plus the gated real-model suites —
 EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
 
@@ -34,6 +34,7 @@ EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
 | **Install/lifecycle** | **one-line installers (install.sh / install.ps1, GitHub-first, tarball fallback, npm never required); `nexus update` (git fetch+hard-reset, the access pattern) and `nexus uninstall --yes`** | CLI-* (help pin) |
 | **Entity identity** | **schema `icon:` (any bootstrap-icons name — vendored 1.1 MB sprite, nx-icon registry-first with sprite fallback); picker in the /entities editor** | MS-S14 |
 | **Effect engine** | **durable jobs as `nexus_job` rows (token-CAS claim, backoff, DLQ, recurring), Threads execution behind the narrow plane-RPC, webhook/mail/notification consumers as the effect app, Studio /jobs** | SYS-09, JOB-*, EXT-J1, THR-*, JOBL-*, WH-*, MAIL-*, NOTIF-* |
+| **Realtime** | **public SSE `/api/v1/_events` (auth'd incl. `?token=`, per-subscriber plane-gated, no row data on the wire, heartbeat); Studio live refresh on every list route via the public stream; dev `/__dev_events` + watcher + full module hot-swap + `"reload"` on schema hot-apply** | **EVT-U*, EVT-*, HMR-*, DEVE-*** |
 
 ## Unfinished / known drift (honest list, 2026-07-19)
 
@@ -68,13 +69,43 @@ EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
 - **Studio auth gate is boot-time** (`studioAuthAtBoot`): flipping auth ON live protects
   the data API immediately, but `/_studio/*` write endpoints only start demanding a token
   after the next dev restart.
-- **Hot reload leaks one sqlite handle per reload** (dev-only, documented in dev.js) and
-  the browser page still needs a manual refresh to pick up a new boot payload (schemas)
-  — the SERVER is hot, the client is not (no HMR push).
+- **Hot reload leaks one sqlite handle per reload** (dev-only, documented in dev.js).
+- **`nexus dev` has no graceful teardown** (pre-existing): the file watcher and dev-events
+  subscribers die with the process rather than unsubscribing cleanly on Ctrl-C. Harmless for
+  a dev-only surface; a real teardown path is owed if dev ever holds anything that must be flushed.
 - **FunctionGemma zero-shot quality is weak** for the recursive filter grammar
   (Vietnamese asks often refuse; compound English often malforms — safely rejected by
   translate() and covered by the tier chain). Fine-tuning on the filter dialect is the
   intended path (spec notes it); `dtype` for the generator is also not pinned yet. Enabling it no longer requires hand-editing config (MODEL-07..09).
+- **Realtime event replay is not implemented** (`Last-Event-ID` v2 is deferred): reconnecting
+  clients refetch the full list rather than resuming from a checkpoint. The hub is in-memory
+  fan-out only — nothing is stored; a client that misses events recovers by refetching, not replay.
+- **`after:remove` permission check is document-level, and the leak bound is wider than "a row
+  seen moments earlier"**: `Permission.resolve` returns `{allowed:true, filter}` whenever ANY
+  permlevel-0 policy applies to the action; the row-restricting `rule`/`ifOwner` survive only in
+  `filter`, which the doc-level remove check discards. So any subscriber with document-level read
+  on an entity learns the id of ANY removed row of that entity, regardless of row-level
+  restrictions — not bounded to rows that subscriber could actually have read. Documented in spec
+  §1 as a known tradeoff; a `before:remove` hook capturing the row would close the asymmetry
+  entirely (v2 note).
+- **In-browser swap loop (CSS/template/module HMR) is verified by hand** in Chrome, not pinned
+  in CI — the module hot-swap mechanism is proven on the real infrastructure (DEVE-02/03), but
+  the browser-side application of those swaps (entry point reexecution, style reinjection) are
+  joins to the E2E debt alongside login/cascade/hot-reload/accent clauses.
+- **Studio router has NO unmount hook** (`src/studio/app.js:181`): subscriptions ride ONE shared
+  EventSource and stale routes self-reap on their first event after a navigation rather than
+  closing cleanly. A real teardown hook is the structural follow-up (architectural debt, documented).
+- **App-file changes broadcast a full `reload`** (apps/ is not browser-served): only framework files
+  (`/_nexus/src/{studio,core}`) hot-swap at the module level. Schema hot-apply triggers `"reload"` to
+  ensure app logic sees the new schema before any user action.
+- **Token is re-read from localStorage only on reconnect**: mid-session re-login updates the token,
+  but the shared EventSource connection keeps the old token until it reconnects (by entity-union
+  change, or, since the final review's fix, automatically when the browser closes the connection
+  on a 401 — see `src/studio/kit/events.js`'s `onerror`).
+- **Subscriber ctx is captured once at connect**: `api.js` calls `context(req)` a single time when
+  the SSE connection opens, so a mid-session revocation or role change does not affect a live
+  subscriber until it reconnects. Exposure is bounded to event metadata (`{entity,event,id,ts}`)
+  only — never row data — and any refetch through the ordinary API re-authorizes from scratch.
 - **nexus_entity is a read view only** (`/_studio/entities`) — item 9's "everything is
   an entity" holds for user/role/policy/view ROWS; entity META stays files by decision,
   but a plane-level `nexus_entity` read adapter (list through /api/v1) is not built.

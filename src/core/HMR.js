@@ -132,16 +132,18 @@ class HMRRuntime {
         }
     }
     
-    async apply({ path, type, timestamp }) {
+    async apply(update) {
+        const { path, timestamp } = update
+        const kind = update.asset ?? update.type
         const url = this.resolve(path)
-        
-        console.log(`🔥 HMR: ${type} update for ${path}`)
-        
-        if (type === 'css' || path.endsWith('.css.js')) {
+
+        console.log(`🔥 HMR: ${kind} update for ${path}`)
+
+        if (kind === 'css' || path.endsWith('.css.js')) {
             await this.swapcss(url, timestamp)
-        } else if (type === 'template' || path.includes('/template.js')) {
+        } else if (kind === 'template' || path.includes('/template.js')) {
             await this.swaptpl(url, timestamp)
-        } else if (type === 'js' || path.endsWith('.js')) {
+        } else if (kind === 'js' || path.endsWith('.js')) {
             await this.swapmod(url, timestamp)
         }
     }
@@ -376,7 +378,14 @@ class HMRRuntime {
      */
     resolve(path) {
         if (path.startsWith('http://') || path.startsWith('https://')) return path
-        
+
+        // Origin-absolute paths (e.g. "/_nexus/src/studio/…", what dev.js's
+        // devMessage() now broadcasts) are already the exact URL to fetch —
+        // resolve them directly and skip the "strip a leading src/" rewrite
+        // below, which exists for the akao src/ → build/ convention and would
+        // otherwise mangle a literal "/src/…" path.
+        if (path.startsWith('/')) return new URL(path, window.location.origin).href
+
         // Normalize
         path = path.replace(/^\.\//, '').replace(/^\//, '')
         

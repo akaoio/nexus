@@ -5,7 +5,7 @@
  *  self-service, the admin bundle for everyone) — nothing here branches
  *  on a role name. */
 
-import { mountTemplate, button, toast, confirmDialog } from "../../kit/index.js"
+import { mountTemplate, button, toast, confirmDialog, subscribe } from "../../kit/index.js"
 import "../../components/identicon/index.js"
 import { usersTemplate } from "./template.js"
 
@@ -156,5 +156,13 @@ export function render(ctx) {
         if (!rows.length) c.$list.append(Object.assign(document.createElement("p"), { className: "nx-muted", textContent: "Nobody here yet." }))
     }
     load()
+
+    // live refresh: coarse but truthful — re-run load() on any matching event
+    let reloadTimer = null
+    const unsubscribe = subscribe(["nexus_user", "nexus_role"], () => {
+        if (!host.isConnected) return unsubscribe() // the router has no unmount hook — stale routes reap themselves
+        clearTimeout(reloadTimer)
+        reloadTimer = setTimeout(load, 250) // collapse bursts into one reload
+    })
     return host
 }
