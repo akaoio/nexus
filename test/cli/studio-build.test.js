@@ -53,7 +53,7 @@ function specifiersIn(source) {
 }
 
 Test.describe("Studio build — nexus studio build (STB-*)", () => {
-    Test.it("STB-01 collectModules follows the import graph and stays inside the package", () => {
+    Test.it("STB-01 the build stays inside the package and ships nothing that statically imports a Node built-in", async () => {
         const files = collectModules(new URL("../../src/studio/app.js", import.meta.url))
         assert.truthy(files.some((f) => f.endsWith("src/studio/app.js")))
         assert.truthy(files.some((f) => f.includes("src/studio/components/")))
@@ -62,11 +62,49 @@ Test.describe("Studio build — nexus studio build (STB-*)", () => {
             "kernel modules the Studio imports come along"
         )
         for (const f of files) assert.truthy(f.includes("/src/") || f.includes("/vendor/"), `${f} is inside the package`)
-        assert.equal(
-            files.some((f) => f.includes("/cli/") || f.includes("/HTTP/")),
-            false,
-            "server-side code never ships to a browser"
-        )
+
+        // Widened (carry-over from Task 5's review): the narrow "/cli/ or
+        // /HTTP/" substring check above stayed green while whole modules
+        // changed shape around it — a path-name check, not a content check.
+        // Task 6b's lazy split made core/Data's browser-safe tier
+        // (adapters/ddl/kysely/migrate.js) provably clean of Node built-ins,
+        // so state the real invariant instead of implying a stronger one:
+        // NO file in the copy-build's ACTUAL BUILT OUTPUT has a STATIC
+        // top-level import of a Node built-in — checked against the built
+        // tree itself (not just the source graph), so a future rewrite step
+        // cannot reintroduce one silently. Some modules (OPFS/Thread/the
+        // crypto worker/vendored zen) DO ship, and DO reference a Node
+        // built-in — but only inside a guarded DYNAMIC import() (e.g.
+        // FS/shared.js's `if (NODE) fs = await import("fs")`), which a
+        // browser boot never evaluates. That is the honest state: shipped
+        // but never eagerly loaded, not absent — asserted explicitly below
+        // rather than left to the narrow check's unstated implication.
+        const out = mkdtempSync(join(tmpdir(), "nexus-studio-"))
+        try {
+            await buildStudio({ root: NEXUS_ROOT, out })
+            const BUILTIN = /^(module|url|path|fs|crypto|os|child_process|node:(?!sqlite))/
+            const inComment = (src, i) => {
+                const line = src.slice(src.lastIndexOf("\n", i) + 1, i).trimStart()
+                return line.startsWith("//") || line.startsWith("*") || line.startsWith("/*")
+            }
+            const STATIC_EDGES = [/(?<!["'\w])from\s*["']([^"'\n]+)["']/g, /(?<!["'\w])import\s+["']([^"'\n]+)["']/g]
+            for (const file of walkJs(out)) {
+                const src = readFileSync(file, "utf8")
+                for (const re of STATIC_EDGES) {
+                    re.lastIndex = 0
+                    let match
+                    while ((match = re.exec(src)))
+                        if (!inComment(src, match.index)) assert.equal(BUILTIN.test(match[1]), false, `${file} statically imports a Node built-in ("${match[1]}")`)
+                }
+            }
+            // Prove the invariant above is "clean by construction", not
+            // "clean because the reference is missing": the guarded fallback
+            // that DOES mention a Node built-in (inside a dynamic import())
+            // is genuinely present in the shipped tree.
+            assert.truthy(existsSync(join(out, "src", "core", "FS", "shared.js")), "the guarded Node fs fallback still ships — dynamic-only, never a static import")
+        } finally {
+            rmSync(out, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
     })
 
     Test.it("STB-02 the built tree resolves: every specifier points at a file that exists in the output", async () => {

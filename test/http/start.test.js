@@ -7,12 +7,37 @@
 
 import { fileURLToPath } from "url"
 import { spawnSync, spawn } from "child_process"
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "fs"
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSync, statSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import Test, { assert } from "../../src/core/Test.js"
+import { collectModules } from "../../src/cli/commands/studio.js"
+import { STUDIO_ROUTE_PATHS, modesFor } from "../../src/cli/dev-access.js"
 
 const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
+
+// Build checks over our own source — NOT a JavaScript parser (same discipline
+// as studio-build.test.js's walkJs/specifiersIn). Both are local to this
+// file: they gate two structural invariants, not general-purpose tooling.
+
+/** Every .js file under a directory, recursively. */
+function* walkJs(dir) {
+    const root = dir instanceof URL ? fileURLToPath(dir) : dir
+    for (const name of readdirSync(root)) {
+        const path = join(root, name)
+        if (statSync(path).isDirectory()) yield* walkJs(path)
+        else if (path.endsWith(".js")) yield path
+    }
+}
+
+/** Every name passed to `ctx.api.studio("<name>", …)` in a source string. */
+function studioCallNames(src) {
+    const names = []
+    const re = /ctx\.api\.studio\(\s*["']([^"']+)["']/g
+    let m
+    while ((m = re.exec(src))) names.push(m[1])
+    return names
+}
 
 function scaffold({ withAuth = false, withPolicies = false } = {}) {
     const scratch = mkdtempSync(join(tmpdir(), "nexus-start-"))
@@ -258,6 +283,51 @@ Test.describe("Production server — nexus start (START)", () => {
             if (prev === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
             else process.env.NODE_TLS_REJECT_UNAUTHORIZED = prev
             rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+})
+
+/**
+ * Structural invariants (PROD-*) — the boundary enforced by test, not
+ * remembered. Two pin the production surface directly; one pins the exact
+ * bug Task 4 fixed by hand so it cannot recur silently. Reuses the scaffold/
+ * startServer harness above rather than standing up a second one.
+ */
+Test.describe("Production surface — structural invariants (PROD)", () => {
+    Test.it("PROD-01 start.js never imports the dev module — the dev-only surface is unreachable, not merely unmounted", () => {
+        // start.js's STATIC import graph; dev.js (and anything only it reaches)
+        // must not appear — UNREACHABLE, not merely unmounted at runtime.
+        const reached = collectModules(new URL("../../src/cli/commands/start.js", import.meta.url), { staticOnly: true })
+        assert.equal(reached.some((f) => f.endsWith("commands/dev.js")), false)
+        assert.equal(reached.some((f) => f.includes("HMR")), false, "no hot-reload machinery in production")
+    })
+
+    Test.it("PROD-02 production answers exactly the declared production route set", async () => {
+        // Iterates ALL STUDIO_ROUTE_PATHS in both directions — a route wrongly
+        // opened to production OR wrongly withheld from it fails this clause.
+        const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true })
+        const { proc, ready } = startServer(instance, ["--insecure"])
+        try {
+            const base = await ready
+            for (const path of STUDIO_ROUTE_PATHS) {
+                const status = (await fetch(base + path)).status
+                const declared = modesFor(path).includes("production")
+                assert.equal(status !== 404, declared, `${path}: served=${status !== 404} declared=${declared}`)
+            }
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
+    Test.it("PROD-03 every ctx.api.studio(name, …) call site names a declared studio route", () => {
+        // Pins the exact bug Task 4 fixed by hand: the roles page once called
+        // a deleted /_studio/permissions. Scans the whole src/studio/ tree,
+        // not just routes/, since a violation could live anywhere in it.
+        const declared = new Set(STUDIO_ROUTE_PATHS.map((p) => p.replace("/_studio/", "")))
+        for (const file of walkJs(new URL("../../src/studio", import.meta.url))) {
+            for (const name of studioCallNames(readFileSync(file, "utf8")))
+                assert.truthy(declared.has(name), `${file} calls /_studio/${name}, not in the declared table`)
         }
     })
 })

@@ -184,6 +184,10 @@ import "./test/studio/views.test.js"
 // Studio — the selection model under bulk operations (clauses SEL-*)
 import "./test/studio/selection.test.js"
 
+// Studio — studioRouteMatches, the shared router primitive dev.js and
+// start.js both ask (clauses ROUTES-*)
+import "./test/studio/routes.test.js"
+
 // App system — manifest format (clauses MF-*)
 import "./test/app/manifest.test.js"
 
