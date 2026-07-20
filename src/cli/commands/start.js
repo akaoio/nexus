@@ -7,9 +7,12 @@
  *   1. NO god-mode. Production goes through the shared wiring in mode
  *      "production", which throws E_NO_AUTH if the instance has no api_keys or
  *      identities — it will never serve the wide-open DEV identity to a network.
- *   2. NO Studio and NO framework-source route. Production serves only the API,
- *      the auth handshake, /_health, and the instance's own public/ assets —
- *      never /_nexus/src or an admin UI.
+ *   2. NO framework-source route, ever — /_nexus/src is never reachable here.
+ *      The Studio itself IS servable, but only as whatever `nexus studio
+ *      build` (Task 5) put under the instance's own public/studio/: a static
+ *      shell + assets, served through the SAME public/ boundary as everything
+ *      else (Task 6) — no module-serving route, no second static root. When
+ *      no build exists, production has no Studio at all (404), same as today.
  *
  * TLS: a key+cert from SSL_KEY/SSL_CERT (or <root>/.certs/{key,cert}.pem) →
  * HTTPS. Missing certs is a loud E_NO_TLS unless --insecure is passed (for
@@ -23,6 +26,7 @@ import { join, resolve, extname, sep } from "path"
 import { loadInstance } from "../instance.js"
 import { buildInstanceApi } from "../../core/HTTP/server.js"
 import { verifyChallenge, issueToken } from "../../core/App/auth.js"
+import { studioRouteMatches } from "../../studio/routes.js"
 import { randomBytes } from "crypto"
 
 const MIME = {
@@ -166,6 +170,22 @@ export async function start(args, flags, out) {
         }
 
         if (api && (await api(req, res))) return
+
+        // The BUILT Studio (Task 5 `nexus studio build` + Task 6): when
+        // public/studio/index.html exists, serve it for paths matching the
+        // Studio's route table (studioRouteMatches — the SAME table `nexus
+        // dev` uses, so the two never disagree on "is this a Studio page").
+        // A file-looking path or a dotpath never matches, so it falls through
+        // to the ordinary static handler below (asset or 404) instead of ever
+        // reaching the shell. NO new server surface: this is served through
+        // the SAME public/ boundary as everything else — public/studio/ is
+        // already inside public/, not a second static root. When no build
+        // exists, this block does nothing and behavior is unchanged (404).
+        const studioIndexPath = join(root, "public", "studio", "index.html")
+        if (existsSync(studioIndexPath) && statSync(studioIndexPath).isFile() && studioRouteMatches(url.pathname, { schemas })) {
+            res.writeHead(200, { "content-type": MIME[".html"], "cache-control": "no-cache" })
+            return res.end(readFileSync(studioIndexPath))
+        }
 
         // Static — ONLY the instance's public/ dir (never the instance root nor
         // framework source). Same SEC-01..04 boundary as dev.

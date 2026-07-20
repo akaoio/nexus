@@ -16,6 +16,7 @@ import { join, resolve, extname, sep } from "path"
 import { loadInstance } from "../instance.js"
 import { buildInstanceApi, NEXUS_CTX_POLICIES } from "../../core/HTTP/server.js"
 import { studioIndex } from "../../studio/layouts/studio/shell.js"
+import { studioRouteMatches } from "../../studio/routes.js"
 import { validate } from "../../core/Model.js"
 import { loadDictionary, mergeDictionaries, coveredLocales } from "../../i18n/i18n.js"
 import { verifyChallenge, issueToken, verifyToken } from "../../core/App/auth.js"
@@ -24,7 +25,6 @@ import { MODELS, NL_MODELS, status as modelStatus, withModel, withNlModel, curre
 import { redact, setPath, unsetPath } from "../../core/App/config.js"
 import { randomBytes } from "crypto"
 import { fileURLToPath } from "url"
-import { Router } from "../../core/Router.js"
 import { createWatcher, devMessage } from "../../core/HMR/watch.js"
 import { accessFor } from "../dev-access.js"
 
@@ -168,22 +168,11 @@ export async function dev(args, flags, out) {
             req.on("error", () => resolve(null))
         })
 
-    // The Studio's route table — the same patterns the client router uses.
-    const STUDIO_ROUTES = ["/entity/[entity]", "/settings/[feature]", "/[view]"]
-    const STUDIO_VIEWS = new Set(["entities", "entity", "permissions", "roles", "users", "jobs", "settings", "search"]) // "entity" = legacy redirect
-    const STUDIO_SETTINGS = new Set(["ai", "locales", "themes"])
+    // The Studio's route table — the SAME declared list `nexus start` reuses
+    // for the built Studio (studio/routes.js), so the two servers can never
+    // answer "is this a Studio page" differently.
     function routeMatches(pathname) {
-        if (/\.[^/]+$/.test(pathname) || pathname.includes("/.")) return false // files + dotpaths are never routes
-        const locales = i18n.locales.map((code) => ({ code }))
-        const r = Router.process({ path: pathname, routes: STUDIO_ROUTES, locales })
-        // "home" covers both the root and unmatched leftovers — tell them apart
-        const segments = pathname.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean)
-        if (segments.length && (i18n.locales.includes(segments[0]) || /^[a-z]{2}(-[A-Z]{2})?$/.test(segments[0]))) segments.shift()
-        if (!segments.length) return true // "/" or a bare locale prefix
-        if (r.route === "/entity/[entity]") return schemas.some((s) => s.name === r.params.entity)
-        if (r.route === "/settings/[feature]") return STUDIO_SETTINGS.has(r.params.feature)
-        if (r.route === "/[view]") return STUDIO_VIEWS.has(r.params.view)
-        return false
+        return studioRouteMatches(pathname, { schemas, locales: i18n.locales })
     }
 
     const server = createServer(async (req, res) => {

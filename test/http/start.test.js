@@ -195,6 +195,42 @@ Test.describe("Production server — nexus start (START)", () => {
         }
     })
 
+    Test.it("START-STUDIO with a built Studio, production serves the shell for Studio routes and its assets", async () => {
+        const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true })
+        spawnSync(process.execPath, [BIN, "studio", "build"], { cwd: instance })
+        const { proc, ready } = startServer(instance, ["--insecure"])
+        try {
+            const base = await ready
+            assert.equal((await fetch(base + "/users")).status, 200) // a Studio route → the shell
+            const html = await (await fetch(base + "/users")).text()
+            // the ACTUAL built shell (shell.js's studioIndex) embeds boot data in
+            // <script id="nx-boot">, not any "<nx-…>" custom element — those are
+            // created by app.js at RUNTIME, not present in the served markup
+            assert.truthy(html.includes("nx-boot"))
+            // assets — the real build layout preserves the package path
+            // (public/studio/src/studio/app.js), verified against the actual
+            // `nexus studio build` output rather than assumed
+            assert.equal((await fetch(base + "/studio/src/studio/app.js")).status, 200)
+            assert.equal((await fetch(base + "/_nexus/src/core/UI.js")).status, 404) // never framework source
+            assert.equal((await fetch(base + "/nope.js")).status, 404) // file-looking paths never reach the shell
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
+    Test.it("START-STUDIO-ABSENT without a build, production has no Studio and says so with a 404", async () => {
+        const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true })
+        const { proc, ready } = startServer(instance, ["--insecure"])
+        try {
+            const base = await ready
+            assert.equal((await fetch(base + "/users")).status, 404)
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
     Test.it("START-04 with a TLS certificate: serves HTTPS", async () => {
         const openssl = spawnSync("openssl", ["version"], { encoding: "utf8" })
         if (openssl.status !== 0) {
