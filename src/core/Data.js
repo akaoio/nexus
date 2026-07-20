@@ -204,9 +204,11 @@ export class DataPlane {
 
         const values = Object.fromEntries(Object.entries(row).map(([k, v]) => [k, this.#toBinding(v)]))
         await this.#run(this.kysely.insertInto(entity).values(values).compile())
-        await this.#maintainEmbedding(entity, row)
-        if (this.hooks) await this.hooks.run("after:create", entity, { row }, ctx)
-        return row
+        await this.#maintainEmbedding(entity, row) // embedding needs the FULL row
+        if (this.hooks) await this.hooks.run("after:create", entity, { row }, ctx) // hooks see the FULL row too
+        // SECURITY (C2): only the caller's permitted field set is returned —
+        // the full `row` above is for embedding/hooks only, never the reply.
+        return Object.fromEntries(Object.entries(row).filter(([k]) => fields.includes(k)))
     }
 
     /** Read one row by id — null when missing OR forbidden (no existence leak). */
@@ -273,9 +275,11 @@ export class DataPlane {
         const set = Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, this.#toBinding(v ?? null)]))
         set.updated_at = post.updated_at
         await this.#run(this.kysely.updateTable(entity).set(set).where("id", "=", id).compile())
-        await this.#maintainEmbedding(entity, post)
-        if (this.hooks) await this.hooks.run("after:update", entity, { row: post }, ctx)
-        return post
+        await this.#maintainEmbedding(entity, post) // embedding needs the FULL post-image
+        if (this.hooks) await this.hooks.run("after:update", entity, { row: post }, ctx) // hooks see the FULL post-image too
+        // SECURITY (C2): only the caller's permitted field set is returned —
+        // the full `post` above is for embedding/hooks/predicate only, never the reply.
+        return Object.fromEntries(Object.entries(post).filter(([k]) => fields.includes(k)))
     }
 
     /** Delete a row — same not-found/forbidden opacity as update. */

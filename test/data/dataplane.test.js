@@ -29,15 +29,15 @@ const TASK = schema({
 
 const CLOCK = "2026-07-16T00:00:00.000Z"
 
-function makePlane({ now } = {}) {
+function makePlane({ now, schemaDoc = TASK } = {}) {
     const db = new DatabaseSync(":memory:")
     const kysely = createCompiler("sqlite")
-    for (const builder of tableDDL(kysely, TASK)) db.exec(builder.compile().sql)
+    for (const builder of tableDDL(kysely, schemaDoc)) db.exec(builder.compile().sql)
     const executor = {
         run: (sql, params = []) => void db.prepare(sql).run(...params),
         all: (sql, params = []) => db.prepare(sql).all(...params)
     }
-    const plane = new DataPlane({ executor, schemas: [TASK], dialect: "sqlite", now: now ?? (() => CLOCK) })
+    const plane = new DataPlane({ executor, schemas: [schemaDoc], dialect: "sqlite", now: now ?? (() => CLOCK) })
     return { plane, db }
 }
 
@@ -188,5 +188,28 @@ Test.describe("Data Plane — CRUD API (DPL-*)", () => {
         const { plane } = makePlane()
         await Test.assert.rejects(plane.create("ghost", { a: 1 }, CTX()), "E_ENTITY")
         await Test.assert.rejects(plane.list("ghost", {}, CTX()), "E_ENTITY")
+    })
+
+    Test.it("DPL-PERMLEVEL update and create never return a field the actor cannot read", async () => {
+        const STAFF = schema({ name: "staff", fields: [
+            field("name", "text", { required: true }),
+            field("salary", "integer", { permlevel: 1 })
+        ] })
+        const { plane } = makePlane({ schemaDoc: STAFF })
+        const staffPolicy = (over = {}) =>
+            ({ entity: "staff", actions: ["read", "write", "create"], rule: null, permlevel: 0, ifOwner: false, ...over })
+        const ctxWith = (policies) => ({ user: "u1", roles: [], policies, shares: [] })
+        const ADMIN = ctxWith([staffPolicy(), staffPolicy({ permlevel: 1 })])
+        const BASIC = ctxWith([staffPolicy()])
+
+        const row = await plane.create("staff", { name: "A", salary: 999 }, ADMIN)
+        assert.equal(row.salary, 999)
+        const madeBasic = await plane.create("staff", { name: "B" }, BASIC)
+        assert.equal("salary" in madeBasic, false, "create must not echo a gated field")
+        const patched = await plane.update("staff", row.id, { name: "A2" }, BASIC)
+        assert.equal(patched.name, "A2")
+        assert.equal("salary" in patched, false, "update must not leak the gated field")
+        const asAdmin = await plane.update("staff", row.id, { name: "A3" }, ADMIN)
+        assert.equal(asAdmin.salary, 999, "admin still sees it")
     })
 })
