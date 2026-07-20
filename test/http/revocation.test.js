@@ -92,6 +92,47 @@ Test.describe("Roles resolve per request, not per token (AUTH-REVOKE)", () => {
         assert.equal(after.body.error.code, "E_FORBIDDEN")
     })
 
+    Test.it("AUTH-REVOKE-DELETE deleting a config-seeded identity's row revokes it — the config seed is bootstrap-only", async () => {
+        // the prior test cleared this row's roles — restore admin so this
+        // test starts from a known-good state independent of test order
+        const preList = await callAs(ROOT_KEY, "GET", "/api/v1/nexus_user")
+        const preRow = preList.body.data.find((r) => r.pub === adminPair.pub)
+        assert.truthy(preRow, "the config identity was imported into nexus_user at boot")
+        await callAs(ROOT_KEY, "PATCH", `/api/v1/nexus_user/${preRow.id}`, { roles: JSON.stringify(["admin"]) })
+
+        const token = await signInAs(adminPair) // token minted while admin
+        assert.equal((await withToken(token, "POST", "/api/v1/nexus_role", { name: "probe-del-1" })).body.ok, true)
+
+        // keep the directory non-empty after the deletion below — this is the
+        // realistic "revoke one identity, others remain" case, not the
+        // degenerate empty-directory bootstrap case
+        const fillerPair = await ZEN.pair(null, { seed: "revoke-filler" })
+        const filler = await callAs(ROOT_KEY, "POST", "/api/v1/nexus_user", { pub: fillerPair.pub, roles: JSON.stringify([]) })
+        assert.equal(filler.body.ok, true)
+
+        const row = preRow
+
+        const removed = await callAs(ROOT_KEY, "DELETE", `/api/v1/nexus_user/${row.id}`)
+        assert.equal(removed.status, 200)
+
+        // the SAME token must be refused now — no falling back to the config seed
+        const after = await withToken(token, "POST", "/api/v1/nexus_role", { name: "probe-del-2" })
+        assert.equal(after.body.ok, false)
+        assert.equal(after.body.error.code, "E_FORBIDDEN")
+
+        // a fresh handshake for the deleted pub must also be refused — no longer provisioned
+        const b = await ensure()
+        const chal = await (await fetch(b + "/api/v1/_auth/challenge", { method: "POST" })).json()
+        const signature = await ZEN.sign(chal.data.nonce, adminPair)
+        const verified = await (await fetch(b + "/api/v1/_auth/verify", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ pub: adminPair.pub, nonce: chal.data.nonce, signature })
+        })).json()
+        assert.equal(verified.ok, false)
+        assert.equal(verified.error.code, "E_AUTH")
+    })
+
     Test.it("AUTH-REVOKE-99 cleanup", async () => {
         if (server) await new Promise((resolve) => { server.once("exit", resolve); server.kill("SIGKILL") })
         rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })

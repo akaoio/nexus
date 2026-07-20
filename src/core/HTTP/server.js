@@ -261,10 +261,17 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         authState.identities = Array.isArray(config.identities) ? [...config.identities] : [] // [{ pub, roles }]
         Object.defineProperty(authState, "required", { get: () => keys.length > 0 || authState.identities.length > 0 || usersByPub.size > 0 })
         authState.secret = config.token_secret || randomBytes(32).toString("hex") // ephemeral if unset
-        authState.rolesForPub = (pub) => usersByPub.get(pub)?.roles ?? authState.identities.find((i) => i.pub === pub)?.roles ?? []
+        // The directory is the truth once it exists. The config seed is a
+        // BOOTSTRAP fallback for an empty directory only — otherwise deleting a
+        // config-seeded row would silently fail to revoke (issue #9 I4 follow-up),
+        // contradicting "from then on the table IS the truth" below.
+        authState.rolesForPub = (pub) =>
+            usersByPub.get(pub)?.roles ??
+            (usersByPub.size === 0 ? authState.identities.find((i) => i.pub === pub)?.roles ?? [] : [])
         // membership: a token is for a PROVISIONED user — holding a keypair is
         // not membership (issue #9 C1b)
-        authState.knownPub = (pub) => usersByPub.has(pub) || authState.identities.some((i) => i.pub === pub)
+        authState.knownPub = (pub) =>
+            usersByPub.has(pub) || (usersByPub.size === 0 && authState.identities.some((i) => i.pub === pub))
 
         // bootstrap: an empty directory imports the config identities ONCE —
         // from then on the table IS the truth the Studio edits
