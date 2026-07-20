@@ -7,7 +7,7 @@
 
 import { createHmac } from "crypto"
 import Test, { assert } from "../../src/core/Test.js"
-import { sign } from "../../src/core/App/effects.js"
+import { sign, validateWebhookRow } from "../../src/core/App/effects.js"
 import { mailProvider } from "../../src/core/App/mailer.js"
 
 Test.describe("App — effect app: webhook consumer (WH-*)", () => {
@@ -15,6 +15,14 @@ Test.describe("App — effect app: webhook consumer (WH-*)", () => {
         const body = { entity: "task", event: "after:create", id: "r1", ts: 1000 }
         const expected = createHmac("sha256", "s3cret").update(JSON.stringify(body)).digest("hex")
         assert.equal(sign("s3cret", body), expected)
+    })
+
+    Test.it("WH-04 validateWebhookRow: only http(s) URLs are accepted", () => {
+        assert.equal(validateWebhookRow({ url: "https://ok.example/hook" }).valid, true)
+        assert.equal(validateWebhookRow({ url: "http://ok.example/hook" }).valid, true)
+        assert.equal(validateWebhookRow({ url: "file:///etc/passwd" }).valid, false)
+        assert.equal(validateWebhookRow({ url: "ftp://x/y" }).valid, false)
+        assert.equal(validateWebhookRow({ url: "not a url" }).valid, false)
     })
 })
 

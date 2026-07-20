@@ -20,7 +20,7 @@ import { loadExtensions } from "../App/extensions.js"
 import { policiesFor } from "../App/policies.js"
 import { enqueue, runnerTick } from "../App/jobs.js"
 import { bindPlaneRpc, startJobThread } from "../App/jobthread.js"
-import effectsApp from "../App/effects.js"
+import effectsApp, { validateWebhookRow } from "../App/effects.js"
 import { verifyToken } from "../App/auth.js"
 import { timingSafeStringEqual } from "../../cli/output.js"
 import { ACTIONS } from "../Permission.js"
@@ -252,6 +252,18 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             const result = validatePolicyRow({ ...current, ...payload.patch }, allSchemas)
             if (!result.valid) throw new Error("E_INVALID: " + JSON.stringify(result.errors))
         })
+
+        // write-side defense: a nexus_webhook row must target http(s) — anything
+        // else is an SSRF vector (issue #9 I1). Vetoed here (before the row ever
+        // lands) AND re-checked at dispatch time in effects.js, since a row can
+        // change between write and fire.
+        for (const event of ["before:create", "before:update"])
+            extensions.hook("nexus_webhook", event, (payload) => {
+                const data = payload.data ?? payload.patch ?? {}
+                if (data.url === undefined) return
+                const result = validateWebhookRow(data, config)
+                if (!result.valid) throw new Error("E_INVALID: " + JSON.stringify(result.errors))
+            })
 
         const keys = Array.isArray(config.api_keys) ? config.api_keys : []
         // LIVE auth state: the user DIRECTORY (nexus_user rows) decides roles;

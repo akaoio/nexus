@@ -102,6 +102,24 @@ Test.describe("Effect runner lives in the server (JOBL-*)", () => {
         }
     })
 
+    Test.it("WH-05 a file:// webhook row is refused at write; the enqueued payload carries no secret", async () => {
+        const bad = await post("/api/v1/nexus_webhook", { url: "file:///etc/passwd", entity: "task", events: JSON.stringify(["after:create"]), secret: "s", enabled: true })
+        assert.equal(bad.body.ok, false)
+        assert.equal(bad.body.error.code, "E_INVALID")
+        const good = await post("/api/v1/nexus_webhook", { url: "http://127.0.0.1:9/never", entity: "task", events: JSON.stringify(["after:create"]), secret: "s3cret", enabled: true })
+        assert.equal(good.body.ok, true)
+        await post("/api/v1/task", { title: "fire" })
+        let jobs = []
+        for (let i = 0; i < 30 && !jobs.length; i++) {
+            await new Promise((r) => setTimeout(r, 500))
+            jobs = (await post("/api/v1/nexus_job/query", { filter: null, limit: 20 })).body.data.filter((j) => j.name === "effects.webhook")
+        }
+        assert.truthy(jobs.length)
+        const payload = JSON.parse(jobs[0].payload)
+        assert.equal("secret" in payload, false, "the signing secret must never enter the ledger")
+        assert.truthy(payload.webhookId)
+    })
+
     Test.it("WH-03 a malformed webhook row never fails the primary write — the effect degrades, the data lands", async () => {
         const bad = await post("/api/v1/nexus_webhook", { url: "http://127.0.0.1:9/never", entity: null, events: "{not json", secret: "x", enabled: true })
         assert.equal(bad.body.ok, true) // the row itself is legal text
