@@ -84,6 +84,9 @@ import "./test/http/events-hub.test.js"
 // Realtime on the wire — GET /api/v1/_events mounted, live clauses (EVT-01/02/03/05)
 import "./test/http/events-live.test.js"
 
+// Dev event stream — /__dev_events feeds the shipped HMR client (DEVE-*)
+import "./test/http/dev-events.test.js"
+
 // Production server — nexus start, security contract (clauses START-*)
 import "./test/http/start.test.js"
 

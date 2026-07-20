@@ -25,6 +25,7 @@ import { redact, setPath, unsetPath } from "../../core/App/config.js"
 import { randomBytes } from "crypto"
 import { fileURLToPath } from "url"
 import { Router } from "../../core/Router.js"
+import { createWatcher } from "../../core/HMR/watch.js"
 
 const MIME = {
     ".html": "text/html; charset=utf-8",
@@ -92,6 +93,23 @@ export async function dev(args, flags, out) {
         ;({ api, plane, authState, challenges, engine, authMode, embedderInfo, policyLayers, effects } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" }))
     }
 
+    // ── dev tooling stream (design 2026-07-20 §3): the server half of the
+    // shipped akao HMR client. Dev-only; `nexus start` never mounts this.
+    // No SIGINT/SIGTERM teardown exists in dev.js today (unlike start.js) —
+    // the watcher's lifetime is the process's; the spawned dev process is
+    // SIGKILLed by callers/tests, which reaps it along with everything else.
+    const devSubscribers = new Set()
+    const devBroadcast = (message) => {
+        const data = typeof message === "string" ? message : JSON.stringify(message)
+        for (const res of [...devSubscribers]) {
+            try { res.write(`data:${data}\n\n`) } catch { devSubscribers.delete(res); try { res.end() } catch {} }
+        }
+    }
+    const watcher = createWatcher({
+        dirs: [join(NEXUS_ROOT, "src", "studio"), join(NEXUS_ROOT, "src", "core"), join(root, "apps")],
+        onChange: ({ path, asset, timestamp }) => devBroadcast({ type: "hmr", path: "/" + path, asset, timestamp })
+    })
+
     // internal plane context for _studio reads/executions (dev-only surface)
     const nexusCtx = (entity, actions) => ({ user: "nexus", roles: [], shares: [], policies: [{ entity, actions, rule: null, permlevel: 0, ifOwner: false }] })
 
@@ -146,6 +164,18 @@ export async function dev(args, flags, out) {
             return json(res, 200, { ok: true, data: { status: "ok", entities: schemas.map((s) => s.name), engine, uptime: Math.round(process.uptime()) } })
         }
 
+        // Dev tooling stream — the server half of the shipped HMR client
+        // (core/HMR/client.js). Dev-only: `nexus start` never mounts this.
+        if (url.pathname === "/__dev_events" && req.method === "GET") {
+            res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", "connection": "keep-alive" })
+            res.write(":connected\n\n")
+            devSubscribers.add(res)
+            const off = () => { devSubscribers.delete(res) }
+            req.on("close", off)
+            res.on("error", off)
+            return
+        }
+
         // ZEN auth handshake — issue a nonce, verify a signature, mint a token.
         if (authState.secret && url.pathname === "/api/v1/_auth/challenge" && req.method === "POST") {
             const nonce = randomBytes(24).toString("base64url")
@@ -189,6 +219,7 @@ export async function dev(args, flags, out) {
                 mkdirSync(dir, { recursive: true })
                 writeFileSync(join(dir, model.name + ".json"), JSON.stringify(model, null, 4))
                 await reloadInstance() // live: tables ensured, API surface rebuilt
+                devBroadcast("reload") // structural change — the client does a full page reload
                 return json(res, 200, { ok: true, data: { name: model.name, applied: true } })
             } catch (error) {
                 return json(res, 500, { ok: false, error: { code: "E_WRITE", message: error.message } })
@@ -252,6 +283,7 @@ export async function dev(args, flags, out) {
                 const { rmSync } = await import("fs")
                 rmSync(join(root, plan.schemaFile))
                 await reloadInstance()
+                devBroadcast("reload") // structural change — the client does a full page reload
                 return json(res, 200, { ok: true, data: { deleted: name, plan } })
             } catch (error) {
                 const code = String(error.message).split(":")[0]
@@ -362,7 +394,12 @@ export async function dev(args, flags, out) {
         // (SEC-01..04 hold: /nexus.config.json, /.nexus/*, backups stay 404).
         if (routeMatches(url.pathname)) {
             res.writeHead(200, { "content-type": MIME[".html"], "cache-control": "no-cache" })
-            return res.end(studioIndex(config, schemas, { embedder: embedderInfo, appName, i18n }))
+            const html = studioIndex(config, schemas, { embedder: embedderInfo, appName, i18n })
+            // dev-only bootstrap (design 2026-07-20 §3): wires up the shipped HMR
+            // client. `nexus start` never serves the Studio shell at all, so
+            // production HTML cannot carry this by construction (START-* pins it).
+            const DEV_BOOTSTRAP = `<script>globalThis._dev = { enabled: true, runtime: "/_nexus/src/core/HMR.js" }</script><script src="/_nexus/src/core/HMR/client.js"></script>`
+            return res.end(html.replace("</head>", `${DEV_BOOTSTRAP}</head>`))
         }
         // Statics (the akao statics discipline): YAML in src is the human+machine
         // source; what ships is JSON — composed at request time, no build step,
