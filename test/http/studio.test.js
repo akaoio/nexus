@@ -209,6 +209,22 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.equal(typeof body.data.authRequired, "boolean")
     })
 
+    Test.it("STUDIO-09b a token in the query string ALONE is anonymous at /api/v1/_session — only a header identifies it", async () => {
+        // _events legitimately accepts ?token= because EventSource cannot set
+        // headers; _session is called via fetch, which can, so it deliberately
+        // ignores the query string — a credential in a URL leaks into access
+        // logs, proxy logs, browser history, and Referer. The SAME valid token
+        // identifies the caller in a header but is anonymous in the query.
+        const token = await loginAs(VIEWER)
+        const queryOnly = await fetch((await ensureAuth()) + "/api/v1/_session?token=" + token)
+        assert.equal(queryOnly.status, 200)
+        const queryBody = await queryOnly.json()
+        assert.equal(queryBody.data.user, null, "a query-only token is treated as anonymous")
+        assert.deepEqual(queryBody.data.roles, [])
+        const headerBody = await (await fetch((await ensureAuth()) + "/api/v1/_session", { headers: { authorization: `Bearer ${token}` } })).json()
+        assert.equal(headerBody.data.user, VIEWER.pub, "the identical token in a header identifies the caller")
+    })
+
     Test.it("STUDIO-10 INVARIANT: every /_studio route dev.js actually handles is declared in STUDIO_ACCESS; undeclared is admin-only", () => {
         // The old form of this clause looped `for (const path of
         // STUDIO_ROUTE_PATHS) assert.truthy(accessFor(path))` — but
