@@ -231,6 +231,10 @@ Test.describe("CLI operations (OPS-*)", () => {
                 url: "https://example.com/hook", entity: "task", events: JSON.stringify(["create"]), secret: "whsec_topsecret", enabled: true
             })
             assert.equal(webhook.ok, true, "the webhook row was created via the API")
+            const job = await post("/api/v1/nexus_job", {
+                name: "mail.send", payload: JSON.stringify({ to: "a@b.co" }), lease_token: "lease-topsecret"
+            })
+            assert.equal(job.ok, true, "the job row was created via the API")
             const user = await post("/api/v1/nexus_user", { pub: "test-pub-key-1", name: "Ada", roles: JSON.stringify(["admin"]) })
             assert.equal(user.ok, true, "the directory row was created via the API")
         } finally {
@@ -253,6 +257,9 @@ Test.describe("CLI operations (OPS-*)", () => {
         assert.truthy(doc.data.nexus_webhook?.length, "webhook rows are backed up")
         assert.equal(doc.data.nexus_webhook[0].secret, "***", "but never its signing secret")
         assert.truthy(doc.data.nexus_webhook[0].url, "the non-secret columns survive")
+        assert.truthy(doc.data.nexus_job?.length, "job rows are backed up")
+        assert.equal(doc.data.nexus_job[0].lease_token, "***", "but never its lease token")
+        assert.truthy(doc.data.nexus_job[0].name, "the non-secret columns survive")
         assert.equal(doc.config.token_secret, "***")
         assert.equal(doc.config.api_keys[0].key, "***")
         assert.equal(doc.secretsRedacted, true, "the restore path must know")

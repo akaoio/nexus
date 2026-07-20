@@ -186,6 +186,17 @@ Test.describe("System entities (SYS-*)", () => {
     })
 
     Test.it("SYS-11 INVARIANT: no shipped baseline grants write on a permlevel-restricted field to a roleless actor", () => {
+        // The loop below SKIPS any schema with no restricted field at all —
+        // which means it silently passes over nexus_user entirely if `roles`
+        // ever lost its permlevel:1 (a revert of C1/SYS-10 would make
+        // nexus_user.fields have NO restricted field, `restricted.length` would
+        // be 0, and `continue` would fire before a single assertion runs).
+        // Assert the field this test exists FOR is actually restricted, so
+        // SYS-11 alone — not just SYS-10 — catches that revert.
+        const user = SYSTEM_ENTITIES.find((s) => s.name === "nexus_user")
+        const rolesField = user.fields.find((f) => f.name === "roles")
+        assert.truthy((rolesField.permlevel ?? 0) !== 0, "nexus_user.roles must be permlevel-restricted, or this whole test is inert for it")
+
         // pins C1's SHAPE, not just its instance — a future baseline cannot reopen it
         for (const schema of SYSTEM_ENTITIES) {
             const restricted = (schema.fields ?? []).filter((f) => (f.permlevel ?? 0) !== 0).map((f) => f.name)

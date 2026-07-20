@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 564/617 node clauses, 0 red.**
+**Green: 566/619 node clauses, 0 red.**
 (53 node "skips" are browser-only clauses plus the gated real-model suites —
 EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
 
@@ -44,7 +44,7 @@ under Unfinished below, not silently dropped.
 | **Entity identity** | **schema `icon:` (any bootstrap-icons name — vendored 1.1 MB sprite, nx-icon registry-first with sprite fallback); picker in the /entities editor** | MS-S14 |
 | **Effect engine** | **durable jobs as `nexus_job` rows (token-CAS claim, backoff, DLQ, recurring), Threads execution behind the narrow plane-RPC, webhook/mail/notification consumers as the effect app, Studio /jobs** | SYS-09, JOB-*, EXT-J1, THR-*, JOBL-*, WH-*, MAIL-*, NOTIF-* |
 | **Realtime** | **public SSE `/api/v1/_events` (auth'd incl. `?token=`, per-subscriber plane-gated, no row data on the wire, heartbeat); Studio live refresh on every list route via the public stream; dev `/__dev_events` + watcher + full module hot-swap + `"reload"` on schema hot-apply** | **EVT-U*, EVT-*, HMR-*, DEVE-*** |
-| **Security hardening (issue #9 Criticals + security Importants)** | **`nexus_user.roles` behind `permlevel:1` with an admin permlevel-1 companion policy, so self-service cannot promote itself, pinned by driving the actual escalation through the plane; `/_auth/verify` refuses an unprovisioned pub — holding a keypair is not membership; create/update return through the actor's READ-scoped field set, not the write set; backup carries the system entities (users/roles/policies/views/webhooks/notifications) and redacts config secrets AND declared row-level secret columns, failing loudly (not silently) on an app-schema read error; `/_studio/*` authorizes from a declared per-route table with an admin-only default and roles resolved from the live directory, not the token; engine capabilities are declared (`CAPABILITIES`/`capabilitiesFor`, fail-closed for unknown engines) and a non-transactional-DDL dialect refuses the structural path — dry-run included — before any statement runs; roles resolve per REQUEST from the live directory, so revoking/deleting a user's row takes effect on their very next call without re-issuing the token; webhooks are http(s)-only at write and dispatch time, timeout-bounded, non-redirecting, and the signing secret never enters the job ledger; both servers cap pre-auth request bodies, the challenge map is swept and capped under a flood, and production refuses to boot without a real `token_secret`** | **SYS-10/11/12/13, AUTH-STRANGER, DPL-PERMLEVEL, DPL-ASYMMETRIC, SITE-BACKUP, OPS-10, STUDIO-08/09/09a/10, ADP-CAP, MIG-NOTX, AUTH-REVOKE, AUTH-REVOKE-DELETE, WH-04/05/06/07, START-BODY/CHALLENGE/SECRET** |
+| **Security hardening (issue #9 Criticals + security Importants)** | **`nexus_user.roles` behind `permlevel:1` with an admin permlevel-1 companion policy, so self-service cannot promote itself, pinned by driving the actual escalation through the plane (SYS-11 also asserts the field IS restricted, so the invariant loop cannot silently skip it on a revert); `/_auth/verify` refuses an unprovisioned pub — holding a keypair is not membership; create/update return through the actor's READ-scoped field set, not the write set; backup carries the system entities (users/roles/policies/views/webhooks/notifications), redacts config secrets AND declared row-level secret columns (webhook `secret`, job `lease_token`), and fails loudly (not silently) on an app-schema read error; `/_studio/*` — including `/_studio/session`'s own whoami body, the last surface that used to trust token claims — authorizes from ONE declared per-route table (`dev-access.js`) with an admin-only default, "any" meaning no-auth-at-all rather than a role tier, and roles resolved from the live directory everywhere, never the token; engine capabilities are declared (`CAPABILITIES`/`capabilitiesFor`, fail-closed for unknown engines) and a non-transactional-DDL dialect refuses the structural path — dry-run included — before any statement runs; roles resolve per REQUEST from the live directory for token-bearing callers, so revoking/deleting a user's row takes effect on their very next call without re-issuing the token (this does NOT cover API keys, whose roles come from `config.api_keys[].roles` and are operator-managed rather than directory-revocable, nor an already-open SSE subscription, which captures its ctx once at connect); `/_studio/users` add/role-set writes the `nexus_user` directory row (not just `nexus.config.json`), so a Studio-provisioned identity can actually complete the ZEN handshake past first boot, instead of reporting `applied: true` for an identity that cannot log in; webhooks are http(s)-only at write and dispatch time, timeout-bounded, non-redirecting, and the signing secret never enters the job ledger; both servers cap pre-auth request bodies, the challenge map is swept and capped under a flood, and production refuses to boot without a real `token_secret`** | **SYS-10/11/12/13, AUTH-STRANGER, DPL-PERMLEVEL, DPL-ASYMMETRIC, SITE-BACKUP, OPS-10, STUDIO-08/09/09a/10/11/12, ADP-CAP, MIG-NOTX, AUTH-REVOKE, AUTH-REVOKE-DELETE, WH-04/05/06/07, START-BODY/CHALLENGE/SECRET** |
 
 ## Unfinished / known drift (honest list, 2026-07-20)
 
@@ -145,9 +145,16 @@ under Unfinished below, not silently dropped.
   (job enqueue → webhook fire → notification row) are proven on the real infrastructure
   (JOBL-01/WH-02/03/NOTIF-01), but browser-side navigation and form validation are NOT yet
   pinned in CI (joins the E2E debt alongside login/cascade/hot-reload/accent clauses).
-- **`/_studio/users` endpoints are legacy**: the /users page now CRUDs `nexus_user`
-  rows, but the old config-identities endpoints remain in dev.js for CLI parity.
-  Deciding their fate (keep as bootstrap tooling vs delete) is open.
+- **`/_studio/users` endpoints are legacy, but no longer inert**: the /users page
+  itself CRUDs `nexus_user` rows directly; the old config-identities endpoints
+  remain in dev.js for CLI parity, and as of the final review's item 2 their
+  `add`/`role` actions ALSO write the `nexus_user` directory row (through the
+  same internal ctx the server's own directory actor uses), so an identity
+  provisioned this way can actually log in past first boot. `remove` still
+  touches only `nexus.config.json` — revocation is the directory's job
+  (`/api/v1/nexus_user`, AUTH-REVOKE-DELETE), not this endpoint's. Deciding
+  these endpoints' longer-term fate (keep as bootstrap tooling vs delete) is
+  still open.
 - **Component discipline is not yet total** (the pre-Huy akao bar): sidebar entries are
   now `<nx-navlink>` and the shell composes components, but hand-built DOM remains in
   several routes (users list rows, roles cards, entities editor chrome, settings/general
@@ -192,6 +199,16 @@ under Unfinished below, not silently dropped.
   the SSE connection opens, so a mid-session revocation or role change does not affect a live
   subscriber until it reconnects. Exposure is bounded to event metadata (`{entity,event,id,ts}`)
   only — never row data — and any refetch through the ordinary API re-authorizes from scratch.
+- **App code in `apps/` is server-trusted, by design, and nothing previously said so**
+  (issue #9 final review): `DataPlane` (`src/core/Data.js`) trusts `ctx.policies` verbatim —
+  it is hand the caller supplies, not looked up — and an app's `hooks.js` endpoint handlers
+  receive `{ plane, ctx }` directly (`src/core/App/extensions.js`'s
+  `endpoint(method, path, async ({ plane, ctx }) => …)` contract). An app endpoint can
+  therefore construct any `ctx` it likes — any user, any roles, any permlevel — and call
+  the plane with it; there is no sandboxing between "an app's own code" and "the engine's
+  internal policy". This is pre-existing and intentional (apps ARE server code, the same
+  trust level as the framework itself, not a third-party plugin sandbox), but it was an
+  implicit assumption nobody had written down.
 - **nexus_entity is a read view only** (`/_studio/entities`) — item 9's "everything is
   an entity" holds for user/role/policy/view ROWS; entity META stays files by decision,
   but a plane-level `nexus_entity` read adapter (list through /api/v1) is not built.

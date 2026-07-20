@@ -42,8 +42,20 @@ function maskSecretColumns(entityName, rows) {
 }
 
 /** A missing table is tolerable only for a SYSTEM entity — an older instance
- *  may predate it; anything else (permission, I/O, corruption) is not. */
-const isMissingTableError = (error) => /no such table|doesn't exist|does not exist|Unknown table/i.test(String(error?.message))
+ *  may predate it; anything else (permission, I/O, corruption) is not.
+ *  Bare "does not exist" is Postgres's phrasing for a missing relation, but
+ *  the SAME phrase also shows up in a permission-scoped message like
+ *  "relation X does not exist for role Y" — there the relation EXISTS, it is
+ *  merely invisible to that role/session (a permission fault we must NOT
+ *  swallow), not a version-skew missing table. Excluding "…does not exist
+ *  for role…" specifically (rather than requiring an engine error code,
+ *  which not every driver here exposes) keeps the common no-such-table
+ *  phrasings while refusing that one ambiguous shape. */
+const isMissingTableError = (error) => {
+    const message = String(error?.message ?? "")
+    if (/no such table|doesn't exist|Unknown table/i.test(message)) return true
+    return /does not exist/i.test(message) && !/does not exist\s+for\s+role/i.test(message)
+}
 
 async function backup(args, flags, out, root) {
     const { config, schemas, apps } = loadInstance(root)

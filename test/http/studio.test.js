@@ -206,11 +206,66 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.equal(typeof body.data.authRequired, "boolean")
     })
 
-    Test.it("STUDIO-10 INVARIANT: every /_studio route has a declared access level; undeclared is admin-only", () => {
-        // pins the fail-closed default so a new route cannot ship open by omission
-        for (const path of STUDIO_ROUTE_PATHS) assert.truthy(accessFor(path), `${path} resolves`)
+    Test.it("STUDIO-10 INVARIANT: every /_studio route dev.js actually handles is declared in STUDIO_ACCESS; undeclared is admin-only", () => {
+        // The old form of this clause looped `for (const path of
+        // STUDIO_ROUTE_PATHS) assert.truthy(accessFor(path))` — but
+        // STUDIO_ROUTE_PATHS IS `Object.keys(STUDIO_ACCESS)`, and accessFor
+        // reads that same table, so the loop asserted the table agrees with
+        // itself. It could not fail if dev.js grew a new route and forgot to
+        // declare it here (exactly the drift item 3 exists to catch). This
+        // version derives the route set from dev.js's OWN source text —
+        // every literal `"/_studio/…"` path it branches on — and checks each
+        // one is declared, so a new undeclared route makes this test RED.
+        const devPath = fileURLToPath(new URL("../../src/cli/commands/dev.js", import.meta.url))
+        const devSource = readFileSync(devPath, "utf8")
+        const handledRoutes = new Set([...devSource.matchAll(/"(\/_studio\/[a-z-]+)"/g)].map((m) => m[1]))
+        assert.truthy(handledRoutes.size >= STUDIO_ROUTE_PATHS.length, "the source scan found at least the declared routes")
+        for (const path of handledRoutes) assert.truthy(path in STUDIO_ACCESS, `${path} is handled in dev.js but not declared in STUDIO_ACCESS`)
         assert.equal(accessFor("/_studio/nonexistent"), "admin", "an undeclared route is admin-only")
         assert.equal(accessFor("/_studio/session"), "any", "the declared exception is honoured")
+    })
+
+    Test.it("STUDIO-11 /_studio/session resolves roles from the LIVE directory, not the token's stale claims (issue #9 final review, item 1)", async () => {
+        // VIEWER already holds a cached session token whose CLAIMS carry
+        // roles: ["viewer"] (baked in at issue time). An admin now clears
+        // that identity's roles in the directory through the ordinary plane
+        // API — the SAME token must immediately start answering with the
+        // LIVE roles, exactly like the /_studio gate already did; if
+        // /_studio/session instead echoed the token's own claims, a route
+        // that trusts this response (the /users profile-save flow) would act
+        // on a lie about a caller whose access was just revoked.
+        const directory = await callAs(ADMIN, "GET", "/api/v1/nexus_user")
+        assert.equal(directory.status, 200)
+        const viewerRow = directory.body.data.find((r) => r.pub === VIEWER.pub)
+        assert.truthy(viewerRow, "the viewer's directory row is visible to the admin")
+        const cleared = await callAs(ADMIN, "PATCH", `/api/v1/nexus_user/${viewerRow.id}`, { roles: JSON.stringify([]) })
+        assert.equal(cleared.status, 200, "the admin can clear another identity's roles")
+        const session = await callAs(VIEWER, "GET", "/_studio/session")
+        assert.equal(session.status, 200)
+        assert.deepEqual(session.body.data.roles, [], "the SAME token now reports the live (empty) roles, not its stale claims")
+    })
+
+    Test.it("STUDIO-12 /_studio/users add provisions an identity that can actually log in (issue #9 final review, item 2)", async () => {
+        // Before the fix, POST /_studio/users {action: "add"} wrote ONLY to
+        // nexus.config.json. Past first boot (this instance already has
+        // admin+viewer in the directory) that config identity is INERT:
+        // knownPub/rolesForPub only fall back to config while the directory
+        // is empty — so the new identity's handshake would 401 E_AUTH even
+        // though the route answered applied: true. Prove the opposite: add
+        // through the Studio, then complete the REAL ZEN handshake as that
+        // brand-new identity and confirm it receives a working token.
+        const freshPair = await ZEN.pair(null, { seed: "studio-auth-provisioned" })
+        const added = await callAs(ADMIN, "POST", "/_studio/users", { action: "add", pub: freshPair.pub, name: "fresh", roles: ["viewer"] })
+        assert.equal(added.status, 200)
+        assert.equal(added.body.data.applied, true)
+        const token = await loginAs(freshPair)
+        assert.equal(typeof token, "string")
+        assert.truthy(token.length > 0, "the freshly provisioned identity received a real session token")
+        tokenCache.set(freshPair, token) // reuse the handshake above instead of logging in twice
+        const whoami = await callAs(freshPair, "GET", "/_studio/session")
+        assert.equal(whoami.status, 200)
+        assert.equal(whoami.body.data.user, freshPair.pub)
+        assert.deepEqual(whoami.body.data.roles, ["viewer"], "the role granted at provisioning time is live immediately")
     })
 
     Test.it("STUDIO-99 cleanup", async () => {
