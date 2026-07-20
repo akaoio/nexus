@@ -78,27 +78,34 @@ EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
   translate() and covered by the tier chain). Fine-tuning on the filter dialect is the
   intended path (spec notes it); `dtype` for the generator is also not pinned yet. Enabling it no longer requires hand-editing config (MODEL-07..09).
 - **Realtime event replay is not implemented** (`Last-Event-ID` v2 is deferred): reconnecting
-  clients refetch the full list rather than resuming from a checkpoint. The event stream is
-  append-only and durably stored; replay is an optimization.
-- **`after:remove` permission check is document-level** (the row is gone when subscribers check):
-  the asymmetry (removed rows do not leak in the stream, but the permission grammar lists them)
-  is documented in spec §1 as a known tradeoff in the permission model.
+  clients refetch the full list rather than resuming from a checkpoint. The hub is in-memory
+  fan-out only — nothing is stored; a client that misses events recovers by refetching, not replay.
+- **`after:remove` permission check is document-level, and the leak bound is wider than "a row
+  seen moments earlier"**: `Permission.resolve` returns `{allowed:true, filter}` whenever ANY
+  permlevel-0 policy applies to the action; the row-restricting `rule`/`ifOwner` survive only in
+  `filter`, which the doc-level remove check discards. So any subscriber with document-level read
+  on an entity learns the id of ANY removed row of that entity, regardless of row-level
+  restrictions — not bounded to rows that subscriber could actually have read. Documented in spec
+  §1 as a known tradeoff; a `before:remove` hook capturing the row would close the asymmetry
+  entirely (v2 note).
 - **In-browser swap loop (CSS/template/module HMR) is verified by hand** in Chrome, not pinned
   in CI — the module hot-swap mechanism is proven on the real infrastructure (DEVE-02/03), but
   the browser-side application of those swaps (entry point reexecution, style reinjection) are
   joins to the E2E debt alongside login/cascade/hot-reload/accent clauses.
-- **Studio route unsubscribe relies on the router's teardown behavior** (found in Task 3): subscriptions
-  ride ONE shared EventSource and stale routes self-reap on their first event after a navigation.
-  A structural router unmount hook (`src/studio/app.js:181`) is the proper cleanup pattern.
+- **Studio router has NO unmount hook** (`src/studio/app.js:181`): subscriptions ride ONE shared
+  EventSource and stale routes self-reap on their first event after a navigation rather than
+  closing cleanly. A real teardown hook is the structural follow-up (architectural debt, documented).
 - **App-file changes broadcast a full `reload`** (apps/ is not browser-served): only framework files
   (`/_nexus/src/{studio,core}`) hot-swap at the module level. Schema hot-apply triggers `"reload"` to
   ensure app logic sees the new schema before any user action.
-- **Studio router has NO unmount hook** (`src/studio/app.js:181`): subscriptions self-reap on their
-  first event after a navigation rather than closing cleanly. A real teardown hook is the structural
-  follow-up (architectural debt, documented).
 - **Token is re-read from localStorage only on reconnect**: mid-session re-login updates the token,
-  but the shared EventSource connection keeps the old token until the entity union changes and
-  triggers a disconnect (by routing or by permission shift).
+  but the shared EventSource connection keeps the old token until it reconnects (by entity-union
+  change, or, since the final review's fix, automatically when the browser closes the connection
+  on a 401 — see `src/studio/kit/events.js`'s `onerror`).
+- **Subscriber ctx is captured once at connect**: `api.js` calls `context(req)` a single time when
+  the SSE connection opens, so a mid-session revocation or role change does not affect a live
+  subscriber until it reconnects. Exposure is bounded to event metadata (`{entity,event,id,ts}`)
+  only — never row data — and any refetch through the ordinary API re-authorizes from scratch.
 - **nexus_entity is a read view only** (`/_studio/entities`) — item 9's "everything is
   an entity" holds for user/role/policy/view ROWS; entity META stays files by decision,
   but a plane-level `nexus_entity` read adapter (list through /api/v1) is not built.

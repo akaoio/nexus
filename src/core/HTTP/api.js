@@ -117,7 +117,6 @@ export function createApi({ plane, context, base = "/api/v1", endpoints = [], ev
                 const token = url.searchParams.get("token")
                 if (token && !req.headers["authorization"] && !req.headers["x-nexus-key"]) {
                     req.headers["authorization"] = "Bearer " + token
-                    req.headers["x-nexus-key"] = token
                 }
                 const ctx = context(req)
                 const entities = url.searchParams.get("entities")

@@ -313,9 +313,5 @@ export function render(ctx) {
         clearTimeout(reloadTimer)
         reloadTimer = setTimeout(refresh, 250) // collapse bursts into one reload
     })
-    // CONCERN: router has no teardown hook; fallback to beforeunload + host._unsubscribe
-    window.addEventListener("beforeunload", unsubscribe)
-    host._unsubscribe = unsubscribe
-
     return host
 }

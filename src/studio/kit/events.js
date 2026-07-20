@@ -24,7 +24,7 @@ const unionKey = () => {
 
 function ensure() {
     const key = unionKey()
-    if (source && key === connectedKey) return
+    if (source && key === connectedKey && source.readyState !== EventSource.CLOSED) return
     source?.close()
     source = null
     if (!subs.size) { connectedKey = null; return }
@@ -35,6 +35,14 @@ function ensure() {
     const qs = params.toString()
     source = new EventSource("/api/v1/_events" + (qs ? "?" + qs : ""))
     connectedKey = key
+    source.onerror = () => {
+        if (source?.readyState !== EventSource.CLOSED) return // transient; the browser retries on its own
+        console.warn("live events: connection closed — retrying in 5s")
+        source = null
+        connectedKey = null
+        setTimeout(ensure, 5000) // reconnect re-reads the token from localStorage, which is what
+        // makes a post-re-login session (or a mid-session token expiry) recover
+    }
     source.onmessage = (e) => {
         if (!e?.data) return
         try {
