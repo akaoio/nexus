@@ -38,6 +38,30 @@ const INSTALL = {
 /** Every engine name is also its Kysely dialect name. */
 export const engineDialect = (engine) => engine
 
+/**
+ * Engine capabilities (ARCHITECTURE.md §3 "Adapter: Kysely dialects +
+ * capabilities", §4.6a's capability matrix) — declared, never assumed. The
+ * migration engine asks instead of hardcoding dialect names, and an engine
+ * added without a record fails closed rather than inheriting "yes".
+ *
+ * transactionalDDL: can DDL run inside a transaction and be rolled back?
+ *   MySQL implicitly COMMITs on DDL, so its dry run would destroy the very
+ *   table it was asked to measure (issue #9 C5).
+ */
+export const CAPABILITIES = Object.freeze({
+    sqlite: Object.freeze({ transactionalDDL: true, vector: "sqlite-vec", fts: "fts5" }),
+    turso: Object.freeze({ transactionalDDL: true, vector: "native", fts: "experimental" }),
+    postgres: Object.freeze({ transactionalDDL: true, vector: "pgvector", fts: "tsvector" }),
+    mysql: Object.freeze({ transactionalDDL: false, vector: "none", fts: "fulltext" })
+})
+
+/** Capabilities for an engine; unknown engines throw rather than defaulting. */
+export function capabilitiesFor(engine) {
+    const caps = CAPABILITIES[engine]
+    if (!caps) throw err("E_ENGINE", `unknown engine "${engine}" (known: ${ENGINES.join(", ")})`)
+    return caps
+}
+
 async function importDriver(name, engine, root) {
     try {
         return await import(name)
@@ -151,4 +175,4 @@ export async function createExecutor(engine = "sqlite", config = {}) {
     }
 }
 
-export default { ENGINES, engineDialect, createExecutor }
+export default { ENGINES, engineDialect, CAPABILITIES, capabilitiesFor, createExecutor }

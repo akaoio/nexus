@@ -17,9 +17,14 @@
  *  Model.diff refuses to guess (MS-D06): a rename preserves data, drop+add
  *  loses it, and only a person knows which was meant. Applied via the
  *  universal rebuild strategy (temp table → copy → swap → indexes) inside
- *  one transaction, on every engine alike. dryRun (the default) executes
- *  everything, measures impact — rows copied, non-null values lost per
- *  dropped column — then ROLLS BACK.
+ *  one transaction — but only on an engine whose capabilities (adapters.js
+ *  CAPABILITIES) declare transactionalDDL: true. dryRun (the default)
+ *  executes everything, measures impact — rows copied, non-null values lost
+ *  per dropped column — then ROLLS BACK. On a dialect that commits DDL
+ *  implicitly (MySQL), that rollback would be a lie: the DROP TABLE already
+ *  happened. applyMigration refuses to enter the rebuild at all on such a
+ *  dialect (E_NO_TRANSACTIONAL_DDL, issue #9 C5) — this is NOT "on every
+ *  engine alike".
  *
  *  The ledger (_nexus_migrations, Frappe's patches.txt lesson) records
  *  applied migrations: never re-run, replayable on a fresh instance.
@@ -37,6 +42,12 @@ import { validate, diff, SYSTEM_FIELDS } from "../Model.js"
 import { sha256 } from "../Utils.js"
 import { DIALECT_NAMES } from "./kysely.js"
 import { tableDDL, columnType } from "./ddl.js"
+import { capabilitiesFor } from "./adapters.js"
+
+// dialect and engine are 1:1 today (engineDialect = (engine) => engine,
+// adapters.js:39) — named so the day they diverge is a compile-time
+// question, not a silent bug.
+const engineOf = (dialect) => dialect
 
 const err = (code, detail) => new Error(detail ? `${code}: ${detail}` : code)
 const clone = (x) => JSON.parse(JSON.stringify(x))
@@ -201,6 +212,14 @@ export async function applyMigration(executor, kysely, migration, options = {}) 
     const dryRun = options.dryRun !== false // dry-run is the DEFAULT (§4.4)
     if (migration?.migrationVersion !== 1) throw err("E_VERSION_UNKNOWN", `migrationVersion ${migration?.migrationVersion}`)
     checkInputs(migration.from, migration.to, dialect)
+
+    // Capability, not a special case: an engine whose DDL cannot roll back must
+    // never enter this path — its "dry run" would be a real, irreversible drop.
+    if (!capabilitiesFor(engineOf(dialect)).transactionalDDL)
+        throw err(
+            "E_NO_TRANSACTIONAL_DDL",
+            `dialect "${dialect}" commits DDL implicitly — structural migration (and its dry run) cannot be rolled back. Take a backup and apply the migration with the engine's own tooling.`
+        )
 
     await ensureLedger(executor)
     const existing = await executor.all(`SELECT id FROM _nexus_migrations WHERE id = ?`, [migration.id])
