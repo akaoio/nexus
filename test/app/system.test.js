@@ -12,9 +12,29 @@ import { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, isSystem, packPolicy
 import { validate } from "../../src/core/Model.js"
 import { validatePolicy, policiesFor, loadPolicies } from "../../src/core/App/policies.js"
 import { resolve, fields } from "../../src/core/Permission.js"
+import { NEXUS_CTX_POLICIES } from "../../src/core/HTTP/server.js"
+import { DataPlane } from "../../src/core/Data.js"
+import { tableDDL } from "../../src/core/Data/ddl.js"
+import { createCompiler } from "../../src/core/Data/kysely.js"
+import { DatabaseSync } from "node:sqlite"
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
+
+/** A real in-memory SQLite plane over SYSTEM_ENTITIES — for SYS-12, which
+ *  must drive the actual escalation through Permission.fields + Data's
+ *  #validateData, not merely assert over the two in isolation. */
+function makePlane() {
+    const db = new DatabaseSync(":memory:")
+    const kysely = createCompiler("sqlite")
+    for (const schema of SYSTEM_ENTITIES)
+        for (const builder of tableDDL(kysely, schema)) db.exec(builder.compile().sql)
+    const executor = {
+        run: (sql, params = []) => void db.prepare(sql).run(...params),
+        all: (sql, params = []) => db.prepare(sql).all(...params)
+    }
+    return new DataPlane({ executor, schemas: SYSTEM_ENTITIES, dialect: "sqlite" })
+}
 
 Test.describe("System entities (SYS-*)", () => {
     Test.it("SYS-01 every system schema IS a valid Model Schema v1; the registry is pinned", () => {
@@ -176,5 +196,43 @@ Test.describe("System entities (SYS-*)", () => {
             for (const name of restricted)
                 assert.equal(writable.includes(name), false, `${schema.name}.${name} must not be writable by a roleless baseline`)
         }
+    })
+
+    Test.it("SYS-12 the escalation itself: a roleless actor patching its own roles is refused by the plane", async () => {
+        // real in-memory plane over SYSTEM_ENTITIES (copy of the setup in
+        // test/app/jobs.test.js) — SYS-10/11 assert over the baselines and
+        // schema in isolation; this drives the actual attack through the
+        // plane so Permission.fields composing with #validateData is proven,
+        // not merely trusted.
+        const plane = makePlane()
+        const SELF = { user: "pubP", roles: [], shares: [], policies: SYSTEM_BASELINES.filter((p) => !p.roles) }
+        const ADMIN = { user: "pubA", roles: ["admin"], shares: [], policies: SYSTEM_BASELINES.filter((p) => !p.roles || p.roles.includes("admin")) }
+        const row = await plane.create("nexus_user", { pub: "pubP", name: "P", roles: JSON.stringify([]) }, ADMIN)
+        let threw = null
+        try { await plane.update("nexus_user", row.id, { roles: JSON.stringify(["admin"]) }, SELF) } catch (e) { threw = e }
+        assert.truthy(String(threw?.message).includes("E_FIELD_FORBIDDEN"), "the escalation must be refused at the plane")
+        assert.deepEqual(JSON.parse((await plane.get("nexus_user", row.id, ADMIN)).roles), [], "and the row must be unchanged")
+        // the ordinary self-service edit still works — the fix must not break the feature
+        const ok = await plane.update("nexus_user", row.id, { name: "P2" }, SELF)
+        assert.equal(ok.name, "P2")
+        // admin can still manage roles
+        await plane.update("nexus_user", row.id, { roles: JSON.stringify(["editor"]) }, ADMIN)
+        assert.deepEqual(JSON.parse((await plane.get("nexus_user", row.id, ADMIN)).roles), ["editor"])
+    })
+
+    Test.it("SYS-13 NEXUS_CTX stays a narrow internal actor: read+create only, no write, no delete", () => {
+        // NEXUS_CTX_POLICIES is exported from src/core/HTTP/server.js precisely
+        // so this invariant can be pinned rather than trusted by hand.
+        for (const p of NEXUS_CTX_POLICIES) {
+            assert.equal(p.actions.includes("write"), false, `${p.entity} pl${p.permlevel}: no write`)
+            assert.equal(p.actions.includes("delete"), false, `${p.entity} pl${p.permlevel}: no delete`)
+            assert.truthy(["nexus_user", "nexus_policy"].includes(p.entity), "only the bootstrap entities")
+        }
+        // and sufficient: it must cover every permlevel present on nexus_user
+        const user = SYSTEM_ENTITIES.find((s) => s.name === "nexus_user")
+        const levels = new Set(user.fields.map((f) => f.permlevel ?? 0))
+        for (const lvl of levels)
+            assert.truthy(NEXUS_CTX_POLICIES.some((p) => p.entity === "nexus_user" && (p.permlevel ?? 0) === lvl),
+                `bootstrap must cover permlevel ${lvl} or identity import breaks`)
     })
 })

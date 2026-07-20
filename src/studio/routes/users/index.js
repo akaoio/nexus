@@ -107,7 +107,17 @@ export function render(ctx) {
         const save = button({
             variant: "primary",
             onclick: async () => {
-                const r = await ctx.api.update("nexus_user", row.id, { ...values, roles: JSON.stringify([...held]) })
+                // roles sits behind permlevel 1 (C1) — a non-admin sending it at
+                // all throws E_FIELD_FORBIDDEN and takes the WHOLE save down with
+                // it, even for an ordinary name/bio/email edit. This route has no
+                // roles of its own to check (ctx carries no session), so it asks
+                // the one place that already knows: /_studio/session. Only an
+                // admin's patch ever carries the key.
+                const session = await ctx.api.session()
+                const isAdmin = session.ok && (session.data.roles || []).includes("admin")
+                const patch = { ...values }
+                if (isAdmin) patch.roles = JSON.stringify([...held])
+                const r = await ctx.api.update("nexus_user", row.id, patch)
                 toast(r.ok ? "Saved — live" : r.error.code + ": " + (r.error.message || ""), r.ok ? "ok" : "err")
                 ctx.closeDrawer()
                 load()

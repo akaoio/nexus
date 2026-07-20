@@ -59,6 +59,23 @@ function lazyTransformers(model, root) {
     }
 }
 
+/**
+ * NEXUS_CTX's own policy set — the narrow internal bootstrap actor that
+ * maintains the directory itself (one-time identity import, the live
+ * usersByPub/dbPolicies cache): read + create only, over nexus_policy and
+ * nexus_user, never write or delete. It needs the SAME permlevel-1 field
+ * access to nexus_user.roles the admin bundle grants (C1, SYS-10) — but only
+ * on nexus_user, since nexus_policy has no permlevel-restricted fields and
+ * gets no companion (reviewer Minor 4: no field access this actor has no use
+ * for). Exported (SYS-13) so this invariant is pinned by a test, not merely
+ * trusted by hand the next time a permlevel moves.
+ */
+export const NEXUS_CTX_POLICIES = Object.freeze([
+    ...["nexus_policy", "nexus_user"].map((entity) =>
+        Object.freeze({ entity, actions: ["read", "create"], rule: null, permlevel: 0, ifOwner: false })),
+    Object.freeze({ entity: "nexus_user", actions: ["read", "create"], rule: null, permlevel: 1, ifOwner: false })
+])
+
 /** The wide-open DEV policy set — every action, every permlevel (dev only). */
 function devPolicies(schemas) {
     const policies = []
@@ -201,16 +218,7 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         // baselines); nexus_user rows are the directory (many roles per user).
         // Both are cached here and refreshed through the SAME hook mechanism
         // apps use — a Studio write is instantly a live grant, no restart.
-        const NEXUS_CTX = {
-            user: "nexus", roles: [], shares: [],
-            policies: ["nexus_policy", "nexus_user"].flatMap((entity) => [
-                { entity, actions: ["read", "create"], rule: null, permlevel: 0, ifOwner: false },
-                // this internal actor maintains the directory itself (bootstrap
-                // import, the live cache) — it needs the SAME permlevel-1 field
-                // access to nexus_user.roles the admin bundle grants (C1, SYS-10)
-                { entity, actions: ["read", "create"], rule: null, permlevel: 1, ifOwner: false }
-            ])
-        }
+        const NEXUS_CTX = { user: "nexus", roles: [], shares: [], policies: NEXUS_CTX_POLICIES }
         const dbPolicies = []
         const usersByPub = new Map()
         const refreshPolicies = async () => {
