@@ -309,6 +309,17 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
                 { code: "E_NO_AUTH" }
             )
 
+        // A real, persistent token_secret — never an ephemeral one (issue #9
+        // I5): an ephemeral secret invalidates every session on restart and
+        // cannot be shared across processes behind a load balancer. Checked
+        // AFTER E_NO_AUTH so an instance with neither auth nor a secret still
+        // reports the more fundamental E_NO_AUTH first.
+        if (mode === "production" && !config.token_secret)
+            throw Object.assign(
+                new Error("E_NO_SECRET: production requires token_secret in nexus.config.json — an ephemeral secret invalidates every session on restart and cannot be shared across processes"),
+                { code: "E_NO_SECRET" }
+            )
+
         const devPols = devPolicies(allSchemas)
         // effective policy set = app-file baselines + nexus-shipped baselines
         // (self-service as DATA: $CURRENT_USER rules; the admin bundle over

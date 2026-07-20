@@ -130,12 +130,25 @@ export async function dev(args, flags, out) {
         res.writeHead(code, { "content-type": "application/json; charset=utf-8" })
         res.end(JSON.stringify(obj))
     }
+    // BODY_LIMIT (issue #9 I2): the old cap here destroyed the request past
+    // 256KB but never resolved the promise — "end" never fires after
+    // destroy(), so the handler hung forever instead of answering. Same
+    // sentinel fix as start.js/api.js: resolve immediately, never hang.
+    const BODY_LIMIT = 1024 * 1024 // 1MB — aligned with api.js's authenticated limit
+    // CHALLENGE_CAP (issue #9 I3): swept on insert + capped, same as start.js.
+    const CHALLENGE_CAP = 1000
     const readJson = (req) =>
         new Promise((resolve) => {
             let raw = ""
+            let size = 0
             req.on("data", (c) => {
-                raw += c
-                if (raw.length > 262144) req.destroy()
+                size += c.length
+                // sentinel, not a hang — and NOT req.destroy() here: destroying
+                // the request kills the underlying socket immediately, taking
+                // the response down with it before the call site can write the
+                // 413 (destroy happens AFTER the response, at the call site)
+                if (size > BODY_LIMIT) resolve(Symbol.for("E_BODY_SIZE"))
+                else raw += c
             })
             req.on("end", () => {
                 try {
@@ -144,6 +157,7 @@ export async function dev(args, flags, out) {
                     resolve(null)
                 }
             })
+            req.on("error", () => resolve(null))
         })
 
     // The Studio's route table — the same patterns the client router uses.
@@ -191,12 +205,22 @@ export async function dev(args, flags, out) {
 
         // ZEN auth handshake — issue a nonce, verify a signature, mint a token.
         if (authState.secret && url.pathname === "/api/v1/_auth/challenge" && req.method === "POST") {
+            // sweep expired entries first (issue #9 I3) so a steady flood cannot
+            // pin the cap forever, then cap rather than growing unbounded
+            for (const [n, exp] of challenges) if (exp < Date.now()) challenges.delete(n)
+            if (challenges.size >= CHALLENGE_CAP)
+                return json(res, 503, { ok: false, error: { code: "E_BUSY", message: "too many pending challenges" } })
             const nonce = randomBytes(24).toString("base64url")
             challenges.set(nonce, Date.now() + 60000)
             return json(res, 200, { ok: true, data: { nonce } })
         }
         if (authState.secret && url.pathname === "/api/v1/_auth/verify" && req.method === "POST") {
             const b = await readJson(req)
+            if (b === Symbol.for("E_BODY_SIZE")) {
+                json(res, 413, { ok: false, error: { code: "E_BODY_SIZE" } })
+                req.destroy() // AFTER the response — see readJson's comment
+                return
+            }
             if (!b || typeof b.pub !== "string") return json(res, 400, { ok: false, error: { code: "E_REQUEST" } })
             const expiry = challenges.get(b.nonce)
             if (!expiry || expiry < Date.now()) return json(res, 401, { ok: false, error: { code: "E_CHALLENGE", message: "no live challenge" } })
@@ -229,6 +253,11 @@ export async function dev(args, flags, out) {
         }
         if (url.pathname === "/_studio/model" && req.method === "POST") {
             const doc = await readJson(req)
+            if (doc === Symbol.for("E_BODY_SIZE")) {
+                json(res, 413, { ok: false, error: { code: "E_BODY_SIZE" } })
+                req.destroy()
+                return
+            }
             if (!doc || typeof doc.name !== "string" || !/^[a-z][a-z0-9_]*$/.test(doc.name))
                 return json(res, 400, { ok: false, error: { code: "E_NAME", message: "a lowercase collection name is required" } })
             const model = { schemaVersion: 1, ...doc }
@@ -270,6 +299,11 @@ export async function dev(args, flags, out) {
         // on execute, performs EXACTLY what the plan named.
         if (url.pathname === "/_studio/entity-delete" && (req.method === "GET" || req.method === "POST")) {
             const body = req.method === "POST" ? await readJson(req) : null
+            if (body === Symbol.for("E_BODY_SIZE")) {
+                json(res, 413, { ok: false, error: { code: "E_BODY_SIZE" } })
+                req.destroy()
+                return
+            }
             const name = req.method === "GET" ? url.searchParams.get("name") : body?.name
             try {
                 const { entityDeletePlan } = await import("../../core/App/lifecycle.js")
@@ -348,6 +382,11 @@ export async function dev(args, flags, out) {
         }
         if (url.pathname === "/_studio/users" && req.method === "POST") {
             const body = await readJson(req)
+            if (body === Symbol.for("E_BODY_SIZE")) {
+                json(res, 413, { ok: false, error: { code: "E_BODY_SIZE" } })
+                req.destroy()
+                return
+            }
             if (!body || typeof body.action !== "string") return json(res, 400, { ok: false, error: { code: "E_REQUEST" } })
             try {
                 const cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
@@ -378,6 +417,11 @@ export async function dev(args, flags, out) {
         }
         if (url.pathname === "/_studio/ai" && req.method === "POST") {
             const body = await readJson(req)
+            if (body === Symbol.for("E_BODY_SIZE")) {
+                json(res, 413, { ok: false, error: { code: "E_BODY_SIZE" } })
+                req.destroy()
+                return
+            }
             let cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
             // each slot is applied only when its key is present — independent slots
             if (body && "model" in body) cfg = withModel(cfg, body.model || null)
@@ -394,6 +438,11 @@ export async function dev(args, flags, out) {
         }
         if (url.pathname === "/_studio/config" && req.method === "POST") {
             const body = await readJson(req)
+            if (body === Symbol.for("E_BODY_SIZE")) {
+                json(res, 413, { ok: false, error: { code: "E_BODY_SIZE" } })
+                req.destroy()
+                return
+            }
             if (!body || typeof body.key !== "string") return json(res, 400, { ok: false, error: { code: "E_REQUEST" } })
             const cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
             const next = body.remove ? unsetPath(cfg, body.key) : setPath(cfg, body.key, body.value)

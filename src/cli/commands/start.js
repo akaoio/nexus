@@ -63,6 +63,11 @@ export async function start(args, flags, out) {
             process.exitCode = 1
             return
         }
+        if (error.code === "E_NO_SECRET") {
+            out.error(error.message, { code: "E_NO_SECRET" })
+            process.exitCode = 1
+            return
+        }
         throw error
     }
 
@@ -88,10 +93,28 @@ export async function start(args, flags, out) {
         res.writeHead(code, { "content-type": "application/json; charset=utf-8" })
         res.end(JSON.stringify(obj))
     }
+    // BODY_LIMIT (issue #9 I2): this reader feeds the PRE-AUTH /_auth/verify
+    // route, so it must cap itself the same as api.js's authenticated body
+    // reader (api.js:23) — nothing here waits for a credential first.
+    const BODY_LIMIT = 1024 * 1024 // 1MB
+    // CHALLENGE_CAP (issue #9 I3): the challenge Map grows on every
+    // unauthenticated /_auth/challenge call; entries are removed only on a
+    // SUCCESSFUL verify. Swept on insert + capped so a flood cannot OOM it.
+    const CHALLENGE_CAP = 1000
     const readJson = (req) =>
         new Promise((done) => {
             let raw = ""
-            req.on("data", (c) => (raw += c))
+            let size = 0
+            req.on("data", (c) => {
+                size += c.length
+                // sentinel, not a hang — and NOT req.destroy() here: destroying
+                // the request kills the underlying socket immediately, which
+                // takes the response down with it before the call site ever
+                // gets to write the 413 (destroy happens AFTER the response,
+                // at the call site, once it is safe to close the connection)
+                if (size > BODY_LIMIT) done(Symbol.for("E_BODY_SIZE"))
+                else raw += c
+            })
             req.on("end", () => {
                 try {
                     done(raw ? JSON.parse(raw) : {})
@@ -99,6 +122,7 @@ export async function start(args, flags, out) {
                     done(null)
                 }
             })
+            req.on("error", () => done(null))
         })
 
     const handler = async (req, res) => {
@@ -112,12 +136,22 @@ export async function start(args, flags, out) {
 
         // ZEN auth handshake — issue a nonce, verify a signature, mint a token.
         if (authState.secret && url.pathname === "/api/v1/_auth/challenge" && req.method === "POST") {
+            // sweep expired entries first (issue #9 I3) so a steady flood cannot
+            // pin the cap forever, then cap rather than growing unbounded
+            for (const [n, exp] of challenges) if (exp < Date.now()) challenges.delete(n)
+            if (challenges.size >= CHALLENGE_CAP)
+                return json(res, 503, { ok: false, error: { code: "E_BUSY", message: "too many pending challenges" } })
             const nonce = randomBytes(24).toString("base64url")
             challenges.set(nonce, Date.now() + 60000)
             return json(res, 200, { ok: true, data: { nonce } })
         }
         if (authState.secret && url.pathname === "/api/v1/_auth/verify" && req.method === "POST") {
             const b = await readJson(req)
+            if (b === Symbol.for("E_BODY_SIZE")) {
+                json(res, 413, { ok: false, error: { code: "E_BODY_SIZE" } })
+                req.destroy() // AFTER the response — see readJson's comment
+                return
+            }
             if (!b || typeof b.pub !== "string") return json(res, 400, { ok: false, error: { code: "E_REQUEST" } })
             const expiry = challenges.get(b.nonce)
             if (!expiry || expiry < Date.now()) return json(res, 401, { ok: false, error: { code: "E_CHALLENGE", message: "no live challenge" } })
