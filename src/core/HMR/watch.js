@@ -2,6 +2,14 @@
  * Dev file watcher for HMR (design 2026-07-20 §3): maps changed paths to the
  * asset kinds HMR.js's apply() dispatches on, debounced per path. Node-only,
  * dev-only — production never imports this module.
+ *
+ * onChange payload: { dir, path, asset, timestamp } — `dir` is the exact
+ * entry from `dirs` this watcher was created for (Node's fs.watch reports
+ * `path` RELATIVE to that root, not to any shared ancestor), `path` is that
+ * root-relative filename, `asset` is assetKind(path), `timestamp` is
+ * Date.now() at debounce-fire time. devMessage() below turns this into the
+ * actual dev-stream message, since only the caller knows which watched root
+ * maps to which servable URL (or to none, for apps/).
  */
 
 import { watch } from "fs"
@@ -30,7 +38,7 @@ export function createWatcher({ dirs = [], onChange, debounceMs = 80 } = {}) {
                 clearTimeout(timers.get(filename))
                 timers.set(filename, setTimeout(() => {
                     timers.delete(filename)
-                    onChange({ path: filename.replaceAll("\\", "/"), asset, timestamp: Date.now() })
+                    onChange({ dir, path: filename.replaceAll("\\", "/"), asset, timestamp: Date.now() })
                 }, debounceMs))
             })
             w.on("error", (error) => console.warn(`hmr watcher (${dir}): ${error.message} — watching disabled for this dir`))
@@ -49,4 +57,15 @@ export function createWatcher({ dirs = [], onChange, debounceMs = 80 } = {}) {
     }
 }
 
-export default { assetKind, createWatcher }
+/** Map a watch hit to the dev-stream message: framework dirs hot-swap via
+ *  their servable /_nexus URLs; app dirs (not browser-served) full-reload. */
+export function devMessage({ dir, path, asset, timestamp }, { nexusRoot, appsDir }) {
+    const p = String(dir).replaceAll("\\", "/")
+    const nr = String(nexusRoot).replaceAll("\\", "/")
+    if (p === nr + "/src/studio") return { type: "hmr", path: "/_nexus/src/studio/" + path, asset, timestamp }
+    if (p === nr + "/src/core") return { type: "hmr", path: "/_nexus/src/core/" + path, asset, timestamp }
+    if (p === String(appsDir).replaceAll("\\", "/")) return "reload"
+    return null // unknown root — emit nothing
+}
+
+export default { assetKind, createWatcher, devMessage }

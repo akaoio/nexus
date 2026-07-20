@@ -25,7 +25,7 @@ import { redact, setPath, unsetPath } from "../../core/App/config.js"
 import { randomBytes } from "crypto"
 import { fileURLToPath } from "url"
 import { Router } from "../../core/Router.js"
-import { createWatcher } from "../../core/HMR/watch.js"
+import { createWatcher, devMessage } from "../../core/HMR/watch.js"
 
 const MIME = {
     ".html": "text/html; charset=utf-8",
@@ -105,9 +105,21 @@ export async function dev(args, flags, out) {
             try { res.write(`data:${data}\n\n`) } catch { devSubscribers.delete(res); try { res.end() } catch {} }
         }
     }
+    // dirs→message scheme (design 2026-07-20 §3, HMR-03): framework hits ride
+    // their servable /_nexus URLs; apps/ has no HTTP route (SEC discipline),
+    // so an apps/ change is an honest full reload, never an unresolvable
+    // hmr path. devMessage() is the pure, unit-tested clause; this closure
+    // only supplies which root means what.
     const watcher = createWatcher({
         dirs: [join(NEXUS_ROOT, "src", "studio"), join(NEXUS_ROOT, "src", "core"), join(root, "apps")],
-        onChange: ({ path, asset, timestamp }) => devBroadcast({ type: "hmr", path: "/" + path, asset, timestamp })
+        onChange: (change) => {
+            // NEXUS_ROOT (from fileURLToPath of a directory URL) carries a
+            // trailing separator; devMessage's dir comparison is exact, so
+            // strip it here rather than fuzz the pure helper's match rule.
+            const nexusRoot = NEXUS_ROOT.replace(/[\\/]+$/, "")
+            const msg = devMessage(change, { nexusRoot, appsDir: join(root, "apps") })
+            if (msg) devBroadcast(msg)
+        }
     })
 
     // internal plane context for _studio reads/executions (dev-only surface)

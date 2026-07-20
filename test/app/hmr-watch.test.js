@@ -6,7 +6,7 @@
  */
 
 import Test, { assert } from "../../src/core/Test.js"
-import { assetKind, createWatcher } from "../../src/core/HMR/watch.js"
+import { assetKind, createWatcher, devMessage } from "../../src/core/HMR/watch.js"
 import { mkdtempSync, writeFileSync, rmSync } from "fs"
 import { join } from "path"
 import { tmpdir } from "os"
@@ -41,5 +41,14 @@ Test.describe("App — HMR watcher (HMR)", () => {
         await new Promise((r) => setTimeout(r, 200))
         assert.equal(seen.filter((c) => c.path.endsWith("template.js")).length, 1) // stopped means stopped
         rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    })
+
+    Test.it("HMR-03 devMessage: framework hits become servable /_nexus hmr paths; app hits become reload; unknown roots emit nothing", () => {
+        const env = { nexusRoot: "C:\\nx", appsDir: "C:\\inst\\apps" }
+        const hit = (dir, path) => devMessage({ dir, path, asset: "template", timestamp: 5 }, env)
+        assert.deepEqual(hit("C:\\nx\\src\\studio", "components/x/template.js"), { type: "hmr", path: "/_nexus/src/studio/components/x/template.js", asset: "template", timestamp: 5 })
+        assert.deepEqual(hit("C:\\nx\\src\\core", "UI.js"), { type: "hmr", path: "/_nexus/src/core/UI.js", asset: "template", timestamp: 5 })
+        assert.equal(hit("C:\\inst\\apps", "starter/probe/template.js"), "reload")
+        assert.equal(hit("C:\\elsewhere", "x.js"), null)
     })
 })

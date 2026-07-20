@@ -74,14 +74,18 @@ Test.describe("Dev event stream (DEVE)", () => {
         c.stop()
     })
 
-    Test.it("DEVE-02 a watched file change arrives as { type: hmr, path, asset, timestamp }", async () => {
+    Test.it("DEVE-02 an apps/ file change arrives as a plain reload frame (apps/ is not browser-served); framework /_nexus paths are fetchable", async () => {
         const c = await rawSseConsumer((await ensure()) + "/__dev_events")
-        // the dev server watches the INSTANCE's apps/ dir — touch a template file there
+        // the dev server watches the INSTANCE's apps/ dir — touch a template file there.
+        // apps/ has no HTTP route (SEC discipline), so this is a full reload, not an hmr swap.
         const file = join(instance, "apps", "starter", "probe", "template.js")
         mkdirSync(dirname(file), { recursive: true })
         writeFileSync(file, "export default null")
-        assert.truthy(await until(() => c.frames.some((f) => { try { const m = JSON.parse(f); return m.type === "hmr" && m.asset === "template" && m.timestamp > 0 } catch { return false } })))
+        assert.truthy(await until(() => c.frames.some((f) => f === "reload")))
         c.stop()
+        // pins the /_nexus/src/studio/... scheme framework hmr paths use: it must actually be fetchable
+        const r = await fetch((await ensure()) + "/_nexus/src/studio/app.js")
+        assert.equal(r.status, 200)
     })
 
     Test.it("DEVE-03 the served Studio HTML carries the dev bootstrap; and only in dev", async () => {
