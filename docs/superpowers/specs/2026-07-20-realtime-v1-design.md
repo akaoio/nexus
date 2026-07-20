@@ -40,8 +40,15 @@ endpoints).
   learns nothing, not even the id's existence. For `after:remove` the row
   is gone, so the check is doc-level instead:
   `Permission.resolve(subscriberCtx.policies, { entity, action: "read", … })`
-  — an unavoidable, documented asymmetry (a remove event leaks only the id
-  of a row the subscriber could have read moments earlier).
+  — an unavoidable, documented asymmetry, and it is WIDER than "a row the
+  subscriber could have read moments earlier": `Permission.resolve` returns
+  `{allowed:true, filter}` whenever any permlevel-0 policy applies; the
+  row-restricting `rule`/`ifOwner` survive only in `filter`, which this
+  doc-level check discards. So any subscriber with document-level read on an
+  entity learns the id of ANY removed row of that entity, irrespective of
+  row-level restrictions. A `before:remove` hook capturing the row (so the
+  check could re-apply `filter` against the pre-deletion row) would close
+  the asymmetry entirely — v2 note.
 - **Wire format:** standard SSE. Each event:
   `data: { "entity", "event": "create"|"update"|"remove", "id", "ts" }`.
   No row data ever rides the stream — subscribers refetch through the
