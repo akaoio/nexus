@@ -3,9 +3,18 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 540/593 node clauses, 0 red.**
+**Green: 564/617 node clauses, 0 red.**
 (53 node "skips" are browser-only clauses plus the gated real-model suites —
 EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
+
+**Issue #9's Criticals are closed.** A skeptical audit (issue #9) found 5
+Critical and 11 Important findings, none covered by any clause at the time.
+The security-hardening spec (`docs/superpowers/specs/2026-07-20-security-hardening-design.md`)
+closed all 5 Criticals and the security-class Importants (I1, I2, I3, I4, I5,
+I10) — see the **Security hardening** row below. The remaining Importants are
+correctness/robustness findings, not security holes reachable by an outside
+actor; they are deliberately deferred to a follow-up spec and listed honestly
+under Unfinished below, not silently dropped.
 
 ## Implemented & proven
 
@@ -35,9 +44,86 @@ EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
 | **Entity identity** | **schema `icon:` (any bootstrap-icons name — vendored 1.1 MB sprite, nx-icon registry-first with sprite fallback); picker in the /entities editor** | MS-S14 |
 | **Effect engine** | **durable jobs as `nexus_job` rows (token-CAS claim, backoff, DLQ, recurring), Threads execution behind the narrow plane-RPC, webhook/mail/notification consumers as the effect app, Studio /jobs** | SYS-09, JOB-*, EXT-J1, THR-*, JOBL-*, WH-*, MAIL-*, NOTIF-* |
 | **Realtime** | **public SSE `/api/v1/_events` (auth'd incl. `?token=`, per-subscriber plane-gated, no row data on the wire, heartbeat); Studio live refresh on every list route via the public stream; dev `/__dev_events` + watcher + full module hot-swap + `"reload"` on schema hot-apply** | **EVT-U*, EVT-*, HMR-*, DEVE-*** |
+| **Security hardening (issue #9 Criticals + security Importants)** | **`nexus_user.roles` behind `permlevel:1` with an admin permlevel-1 companion policy, so self-service cannot promote itself, pinned by driving the actual escalation through the plane; `/_auth/verify` refuses an unprovisioned pub — holding a keypair is not membership; create/update return through the actor's READ-scoped field set, not the write set; backup carries the system entities (users/roles/policies/views/webhooks/notifications) and redacts config secrets AND declared row-level secret columns, failing loudly (not silently) on an app-schema read error; `/_studio/*` authorizes from a declared per-route table with an admin-only default and roles resolved from the live directory, not the token; engine capabilities are declared (`CAPABILITIES`/`capabilitiesFor`, fail-closed for unknown engines) and a non-transactional-DDL dialect refuses the structural path — dry-run included — before any statement runs; roles resolve per REQUEST from the live directory, so revoking/deleting a user's row takes effect on their very next call without re-issuing the token; webhooks are http(s)-only at write and dispatch time, timeout-bounded, non-redirecting, and the signing secret never enters the job ledger; both servers cap pre-auth request bodies, the challenge map is swept and capped under a flood, and production refuses to boot without a real `token_secret`** | **SYS-10/11/12/13, AUTH-STRANGER, DPL-PERMLEVEL, DPL-ASYMMETRIC, SITE-BACKUP, OPS-10, STUDIO-08/09/09a/10, ADP-CAP, MIG-NOTX, AUTH-REVOKE, AUTH-REVOKE-DELETE, WH-04/05/06/07, START-BODY/CHALLENGE/SECRET** |
 
-## Unfinished / known drift (honest list, 2026-07-19)
+## Unfinished / known drift (honest list, 2026-07-20)
 
+- **Issue #9's Criticals are closed; the rest is tracked, not fixed.** The
+  security-hardening spec closed C1-C5 and the security-class Importants
+  (I1-I5, I10). Everything below in this section that traces back to issue
+  #9 — I6 through I9, I11, backup streaming, WAL/busy_timeout, rate
+  limiting, TOCTOU, SSE fan-out cost, and the `Test.js` hazard — is
+  deliberately **deferred to a follow-up spec**, not silently dropped. None
+  of it is a privilege-escalation or auth-bypass path; all of it is
+  correctness/robustness debt.
+- **I6 — `Threads.queues` can leak on job timeout**: a job whose handler hangs
+  past its own timeout leaves its entry in the in-memory `Threads.queues` map;
+  nothing currently reaps it. Not fixed by this spec.
+- **I7 — writes are not atomic with embeddings/hooks**: `Data.create`/`update`
+  commit the row first, then run embedding generation and `after:` hooks; a
+  crash or throw between them leaves the row persisted without its embedding
+  or without the hook's side effect having run. Not fixed by this spec.
+- **I8 — entity delete is non-atomic and swallows errors**: cascade delete
+  removes rows entity-by-entity rather than in one transaction, and a
+  mid-cascade failure on one entity does not roll back rows already removed
+  from prior entities in the same cascade. Not fixed by this spec.
+- **I9 — `hotApply` runs outside a transaction**: applying a schema change to
+  a live table is a sequence of DDL statements with no transactional envelope
+  on engines that support one; a failure partway leaves the table between
+  states. Not fixed by this spec (related to, but distinct from, C5's
+  `transactionalDDL` capability check, which guards the *migration* path, not
+  hot-apply).
+- **I11 — `after:remove` id leak — already disclosed above**: see the
+  "document-level" bullet further down in this list (unchanged by this spec;
+  restated here only so issue #9's Importants are all accounted for in one
+  place).
+- **Backup streaming/memory is unfixed, and now touches MORE tables**: C3
+  made backup complete (system entities are now included) and secret-safe,
+  but did not change its shape — it still `SELECT *`s an entire table into
+  one in-memory JSON document per entity, now across a strictly larger table
+  set than before. A large `nexus_job`/`nexus_notification` table makes this
+  worse, not better. Streaming is the fix; not built here.
+- **SQLite WAL mode + `busy_timeout` are not configured**: concurrent writers
+  against the built-in sqlite engine can hit `SQLITE_BUSY` under contention;
+  no journal mode or busy-timeout tuning has been added.
+- **No rate limiting anywhere**: `/_auth/challenge`, `/_auth/verify`, and
+  every `/api/v1/*` route accept requests at whatever rate the network
+  allows. The body-size and challenge-map caps (START-BODY/CHALLENGE, this
+  spec) bound memory, not request rate — a client can still hammer the
+  endpoints as fast as it can open connections.
+- **TOCTOU on update/remove**: the permission check and the write are not one
+  atomic operation — a row's data (and therefore whether a row-level `rule`
+  or `ifOwner` still matches) can change between the read that authorizes the
+  request and the write that executes it.
+- **SSE fan-out cost is unbounded by subscriber count**: `/api/v1/_events`
+  broadcasts every eligible event to every open subscriber with no backlog
+  cap or slow-consumer handling; a large number of idle-but-connected
+  subscribers all pay the cost of every write.
+- **`Test.js` hazard: an all-skipped run reports green**: if every `it()` in
+  a run is skipped (e.g. a misconfigured filter, or every gated real-model
+  suite skipping because `test/.engines` is absent), the runner currently
+  prints a passing summary rather than flagging that zero assertions
+  actually ran. Small, load-bearing, and explicitly called out as the item
+  that should land first in the follow-up spec.
+- **The honest SSRF scope on webhooks (I1's fix is a narrowing, not a
+  boundary)**: rejecting non-`http(s)` schemes does NOT stop
+  `http://169.254.169.254/` (cloud metadata) or `http://localhost:<port>`
+  (internal services) — both are perfectly valid http(s) URLs. `allow_hosts`
+  is opt-in and defaults to permissive (empty = no allowlist), and even when
+  configured it matches on `parsed.hostname` as a **string**, never a
+  resolved address — a hostname that is allowed today and resolves elsewhere
+  tomorrow (DNS rebinding) sails straight through. See the comments in
+  `src/core/App/effects.js` (`validateWebhookRow`) for the exact boundary.
+- **The revocation edge: a sole admin cannot durably revoke itself.**
+  AUTH-REVOKE-DELETE makes deleting a directory row revoke immediately in
+  the normal case, but the fallback to the config seed is keyed on
+  `usersByPub.size === 0` (read live) — so deleting the LAST remaining
+  directory row empties the directory and **re-arms the config seed** on the
+  very next request. This is deliberate anti-brick behavior (nobody can lock
+  themselves out of a running instance by deleting their own only row), but
+  it means revocation is durable for every case with ≥1 row left, not the
+  degenerate "delete the last admin" case. See `src/core/HTTP/server.js`
+  around `rolesForPub` for the pinned comment (AUTH-REVOKE-DELETE).
 - **Effect engine at-least-once semantics**: the job/webhook/notification pipeline is
   at-least-once; exactly-once is documented as NOT a goal (spec note: multi-process
   deduplication is complex, rare in practice). Consumers must be idempotent.
