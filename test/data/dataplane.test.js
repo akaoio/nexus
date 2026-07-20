@@ -211,5 +211,31 @@ Test.describe("Data Plane — CRUD API (DPL-*)", () => {
         assert.equal("salary" in patched, false, "update must not leak the gated field")
         const asAdmin = await plane.update("staff", row.id, { name: "A3" }, ADMIN)
         assert.equal(asAdmin.salary, 999, "admin still sees it")
+        assert.truthy(madeBasic.id, "system fields never disappear from the projection")
+    })
+
+    Test.it("DPL-ASYMMETRIC a field the actor may WRITE but not READ is never echoed back", async () => {
+        const STAFF = schema({ name: "staff", fields: [
+            field("name", "text", { required: true }),
+            field("salary", "integer", { permlevel: 1 })
+        ] })
+        const { plane } = makePlane({ schemaDoc: STAFF })
+        const ctxWith = (policies) => ({ user: "u1", roles: [], policies, shares: [] })
+        const ADMIN = ctxWith([
+            { entity: "staff", actions: ["read", "write", "create"], permlevel: 0, rule: null, ifOwner: false },
+            { entity: "staff", actions: ["read", "write", "create"], permlevel: 1, rule: null, ifOwner: false }
+        ])
+        // policies: write at pl0 AND pl1 (so the gated field is writable),
+        // but read at pl0 only (so it is not readable)
+        const WRITER = ctxWith([
+            { entity: "staff", actions: ["read", "write", "create"], permlevel: 0, rule: null, ifOwner: false },
+            { entity: "staff", actions: ["write", "create"], permlevel: 1, rule: null, ifOwner: false }   // write-only at pl1
+        ])
+        const made = await plane.create("staff", { name: "W", salary: 500 }, WRITER)
+        assert.equal("salary" in made, false, "written but unreadable → never echoed")
+        const patched = await plane.update("staff", made.id, { salary: 600 }, WRITER)
+        assert.equal("salary" in patched, false)
+        // and the write really landed — verify with an actor that CAN read it
+        assert.equal((await plane.get("staff", made.id, ADMIN)).salary, 600)
     })
 })

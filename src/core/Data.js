@@ -99,7 +99,15 @@ export class DataPlane {
         const { allowed, filter } = Permission.resolve(ctx.policies ?? [], permCtx, ctx.shares ?? [])
         if (!allowed) throw err("E_FORBIDDEN", `${action} on ${entity}`)
         const fields = Permission.fields(ctx.policies ?? [], permCtx, schema)
-        return { schema, filter, fields }
+        // SECURITY (DPL-ASYMMETRIC): a write/create grant does not imply a
+        // matching read grant at the same permlevel — the two are gated
+        // independently (see Permission.fields). Whatever this action
+        // returns to the caller must be cut to what the actor may READ,
+        // never to what it may write.
+        const readable = action === "read"
+            ? fields
+            : Permission.fields(ctx.policies ?? [], { ...permCtx, action: "read" }, schema)
+        return { schema, filter, fields, readable }
     }
 
     // ─── row-data validation & shaping ───────────────────────────────────────
@@ -182,7 +190,7 @@ export class DataPlane {
 
     /** Create a row. options.id is the sync-fold seam (fixed rowIds on replay). */
     async create(entity, data, ctx = {}, options = {}) {
-        const { schema, filter, fields } = this.#gate(entity, "create", ctx)
+        const { schema, filter, fields, readable } = this.#gate(entity, "create", ctx)
         if (this.hooks) {
             const payload = { data }
             await this.hooks.run("before:create", entity, payload, ctx)
@@ -206,9 +214,12 @@ export class DataPlane {
         await this.#run(this.kysely.insertInto(entity).values(values).compile())
         await this.#maintainEmbedding(entity, row) // embedding needs the FULL row
         if (this.hooks) await this.hooks.run("after:create", entity, { row }, ctx) // hooks see the FULL row too
-        // SECURITY (C2): only the caller's permitted field set is returned —
-        // the full `row` above is for embedding/hooks only, never the reply.
-        return Object.fromEntries(Object.entries(row).filter(([k]) => fields.includes(k)))
+        // SECURITY (C2/DPL-ASYMMETRIC): the reply is cut to what the actor may
+        // READ, not what it was allowed to write — the full `row` above is
+        // for embedding/hooks only, never the reply. A write-only grant with
+        // no matching read grant yields an empty projection here (see
+        // DPL-ASYMMETRIC): that is the honest answer, not a bug to paper over.
+        return Object.fromEntries(Object.entries(row).filter(([k]) => readable.includes(k)))
     }
 
     /** Read one row by id — null when missing OR forbidden (no existence leak). */
@@ -255,7 +266,7 @@ export class DataPlane {
 
     /** Patch a row. Pre-image gated by the injected WHERE, post-image by the predicate. */
     async update(entity, id, patch, ctx = {}) {
-        const { schema, filter, fields } = this.#gate(entity, "write", ctx)
+        const { schema, filter, fields, readable } = this.#gate(entity, "write", ctx)
         if (this.hooks) {
             const payload = { id, patch }
             await this.hooks.run("before:update", entity, payload, ctx)
@@ -277,9 +288,12 @@ export class DataPlane {
         await this.#run(this.kysely.updateTable(entity).set(set).where("id", "=", id).compile())
         await this.#maintainEmbedding(entity, post) // embedding needs the FULL post-image
         if (this.hooks) await this.hooks.run("after:update", entity, { row: post }, ctx) // hooks see the FULL post-image too
-        // SECURITY (C2): only the caller's permitted field set is returned —
-        // the full `post` above is for embedding/hooks/predicate only, never the reply.
-        return Object.fromEntries(Object.entries(post).filter(([k]) => fields.includes(k)))
+        // SECURITY (C2/DPL-ASYMMETRIC): the reply is cut to what the actor may
+        // READ, not what it was allowed to write — the full `post` above is
+        // for embedding/hooks/predicate only, never the reply. A write-only
+        // grant with no matching read grant yields an empty projection here
+        // (see DPL-ASYMMETRIC): that is the honest answer, not a bug to paper over.
+        return Object.fromEntries(Object.entries(post).filter(([k]) => readable.includes(k)))
     }
 
     /** Delete a row — same not-found/forbidden opacity as update. */
