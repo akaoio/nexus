@@ -153,6 +153,9 @@ import "./test/studio/roles.test.js"
 import "./test/app/system.test.js"
 import "./test/app/lifecycle.test.js"
 
+// App — HMR file watcher (clauses HMR-*)
+import "./test/app/hmr-watch.test.js"
+
 // App — effect engine core: claim/backoff/DLQ/recurring (clauses JOB-*)
 import "./test/app/jobs.test.js"
 
