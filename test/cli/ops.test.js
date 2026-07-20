@@ -7,7 +7,7 @@
  */
 
 import { fileURLToPath } from "url"
-import { spawnSync } from "child_process"
+import { spawnSync, spawn } from "child_process"
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, readdirSync, copyFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
@@ -195,6 +195,75 @@ Test.describe("CLI operations (OPS-*)", () => {
         assert.equal(result.data.rejected.task, 1, "R-notag rejects (required tag cannot be invented)")
         const rows = await sqlite(dst, "SELECT id, tag FROM task ORDER BY id")
         assert.deepEqual(rows, [{ id: "R-fit", tag: "urgent" }], "only the fitted row, its dropped column gone")
+        rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    })
+
+    Test.it("OPS-10 SITE-BACKUP includes system entities and never writes a secret in cleartext", async () => {
+        const home = mkdtempSync(join(tmpdir(), "nexus-ops-secret-"))
+        run(["create", "shop"], home)
+        const cwd = join(home, "shop")
+
+        // Boot the real dev server on a FRESH instance (no configured
+        // identities yet, so the dev pseudo-user is wide open) — it's the
+        // path that ensures the SYSTEM tables exist, and lets us seed rows
+        // through the same generic API the Studio uses.
+        const server = spawn(process.execPath, [BIN, "dev", "--port", "0", "--json"], { cwd })
+        try {
+            const base = await new Promise((resolve, reject) => {
+                const timer = setTimeout(() => reject(new Error("dev did not start")), 6000)
+                let buf = ""
+                server.stdout.on("data", (c) => { buf += c; try { clearTimeout(timer); resolve(JSON.parse(buf).url) } catch {} })
+                server.on("exit", () => reject(new Error("dev exited early")))
+            })
+            const post = (path, body) => fetch(base + path, {
+                method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body)
+            }).then((r) => r.json())
+
+            // order matters: the directory IS the auth source of truth — the
+            // moment a nexus_user row exists, authState.required flips live
+            // and the wide-open dev pseudo-user goes away. Create the policy
+            // row first, the directory row last.
+            const policy = await post("/api/v1/nexus_policy", {
+                entity: "task", actions: JSON.stringify(["read"]), rule: null, permlevel: 0, ifowner: false
+            })
+            assert.equal(policy.ok, true, "the policy row was created via the API")
+            const webhook = await post("/api/v1/nexus_webhook", {
+                url: "https://example.com/hook", entity: "task", events: JSON.stringify(["create"]), secret: "whsec_topsecret", enabled: true
+            })
+            assert.equal(webhook.ok, true, "the webhook row was created via the API")
+            const job = await post("/api/v1/nexus_job", {
+                name: "mail.send", payload: JSON.stringify({ to: "a@b.co" }), lease_token: "lease-topsecret"
+            })
+            assert.equal(job.ok, true, "the job row was created via the API")
+            const user = await post("/api/v1/nexus_user", { pub: "test-pub-key-1", name: "Ada", roles: JSON.stringify(["admin"]) })
+            assert.equal(user.ok, true, "the directory row was created via the API")
+        } finally {
+            await new Promise((resolve) => { server.once("exit", resolve); server.kill("SIGKILL") })
+        }
+
+        // Secrets, seeded directly in nexus.config.json (as an operator would)
+        const configPath = join(cwd, "nexus.config.json")
+        const config = JSON.parse(readFileSync(configPath, "utf8"))
+        config.token_secret = "super-secret-jwt-signing-key"
+        config.api_keys = [{ key: "sk-live-topsecret", roles: ["admin"] }]
+        writeFileSync(configPath, JSON.stringify(config, null, 4))
+
+        const backupFile = "dump-secret.json"
+        const result = run(["site", "backup", backupFile], cwd)
+        assert.equal(result.code, 0)
+        const doc = JSON.parse(readFileSync(join(cwd, backupFile), "utf8"))
+        assert.truthy(doc.data.nexus_user?.length, "the directory is in the backup")
+        assert.truthy(doc.data.nexus_policy?.length, "the policy rows are in the backup")
+        assert.truthy(doc.data.nexus_webhook?.length, "webhook rows are backed up")
+        assert.equal(doc.data.nexus_webhook[0].secret, "***", "but never its signing secret")
+        assert.truthy(doc.data.nexus_webhook[0].url, "the non-secret columns survive")
+        assert.truthy(doc.data.nexus_job?.length, "job rows are backed up")
+        assert.equal(doc.data.nexus_job[0].lease_token, "***", "but never its lease token")
+        assert.truthy(doc.data.nexus_job[0].name, "the non-secret columns survive")
+        assert.equal(doc.config.token_secret, "***")
+        assert.equal(doc.config.api_keys[0].key, "***")
+        assert.equal(doc.secretsRedacted, true, "the restore path must know")
+
         rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
 

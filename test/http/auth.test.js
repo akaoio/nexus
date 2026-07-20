@@ -70,12 +70,66 @@ Test.describe("AuthN — assignment helpers (AUTH)", () => {
         assert.equal(await verifyChallenge(pair.pub, nonce, "garbage"), false)
     })
 
+    Test.it("AUTH-STRANGER a keypair that is not provisioned gets no token, even with a valid signature", async () => {
+        const scratch = mkdtempSync(join(tmpdir(), "nexus-stranger-"))
+        spawnSync(process.execPath, [BIN, "create", "shop"], { cwd: scratch })
+        const instance = join(scratch, "shop")
+        const admin = await ZEN.pair(null, { seed: "auth-stranger-admin" })
+        const stranger = await ZEN.pair(null, { seed: "auth-stranger-unprovisioned" })
+
+        // auth is REQUIRED only once an identity/key exists — seed a single
+        // admin so the stranger's unprovisioned pub is tested against a real
+        // auth-on server, not the wide-open DEV fallback
+        const configPath = join(instance, "nexus.config.json")
+        const config = JSON.parse(readFileSync(configPath, "utf8"))
+        config.token_secret = "fixed-test-secret"
+        config.identities = [{ pub: admin.pub, roles: ["admin"] }]
+        writeFileSync(configPath, JSON.stringify(config, null, 4))
+
+        const dev = spawn(process.execPath, [BIN, "dev", "--port", "0", "--json"], { cwd: instance })
+        try {
+            const base = await new Promise((resolve, reject) => {
+                const timer = setTimeout(() => reject(new Error("dev did not start")), 5000)
+                let buffer = ""
+                dev.stdout.on("data", (chunk) => {
+                    buffer += chunk
+                    try {
+                        clearTimeout(timer)
+                        resolve(JSON.parse(buffer).url)
+                    } catch {}
+                })
+                dev.on("exit", () => reject(new Error("dev exited early")))
+            })
+            const post = async (path, bodyObj) => {
+                const r = await fetch(base + path, {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify(bodyObj ?? {})
+                })
+                return { status: r.status, body: await r.json() }
+            }
+
+            const { body: chal } = await post("/api/v1/_auth/challenge", {})
+            const signature = await ZEN.sign(chal.data.nonce, stranger)
+            const r = await post("/api/v1/_auth/verify", { pub: stranger.pub, nonce: chal.data.nonce, signature })
+            assert.equal(r.status, 401)
+            assert.equal(r.body.error.code, "E_AUTH")
+            assert.equal(r.body.data?.token, undefined, "nothing minted")
+        } finally {
+            await new Promise((resolve) => { dev.once("exit", resolve); dev.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
     Test.it("AUTH-07 E2E: challenge → sign → token → authorized request; role-mapped identity gets its policies", async () => {
         const scratch = mkdtempSync(join(tmpdir(), "nexus-zen-auth-"))
         spawnSync(process.execPath, [BIN, "create", "shop"], { cwd: scratch })
         const instance = join(scratch, "shop")
         const admin = await ZEN.pair(null, { seed: "the-admin-passkey" })
-        const stranger = await ZEN.pair(null, { seed: "a-stranger" })
+        // provisioned but role-less (C1b: a keypair alone is never membership —
+        // this identity must be seeded in config.identities to authenticate at
+        // all; it is unmapped only in the sense that it gets no ROLE)
+        const member = await ZEN.pair(null, { seed: "a-stranger" })
 
         // App policy: only the admin ROLE may create; everyone reads own rows
         mkdirSync(join(instance, "apps", "starter", "permissions"), { recursive: true })
@@ -90,7 +144,7 @@ Test.describe("AuthN — assignment helpers (AUTH)", () => {
         const configPath = join(instance, "nexus.config.json")
         const config = JSON.parse(readFileSync(configPath, "utf8"))
         config.token_secret = "fixed-test-secret"
-        config.identities = [{ pub: admin.pub, roles: ["admin"] }]
+        config.identities = [{ pub: admin.pub, roles: ["admin"] }, { pub: member.pub, roles: [] }]
         writeFileSync(configPath, JSON.stringify(config, null, 4))
 
         const dev = spawn(process.execPath, [BIN, "dev", "--port", "0", "--json"], { cwd: instance })
@@ -132,10 +186,10 @@ Test.describe("AuthN — assignment helpers (AUTH)", () => {
             assert.equal(created.status, 201)
             assert.equal(created.body.data.owner, admin.pub, "identity is the ZEN pub, cryptographically proven")
 
-            // a stranger logs in (valid key, unmapped) → baseline only → cannot create
-            const strangerSession = await login(stranger)
-            assert.deepEqual(strangerSession.roles, [], "an unmapped identity gets no roles")
-            const denied = await post("/api/v1/task", { title: "nope" }, strangerSession.token)
+            // a provisioned identity with no role mapping logs in → baseline only → cannot create
+            const memberSession = await login(member)
+            assert.deepEqual(memberSession.roles, [], "a role-less identity gets no roles")
+            const denied = await post("/api/v1/task", { title: "nope" }, memberSession.token)
             assert.equal(denied.status, 403, "baseline policy has no create")
 
             // a replayed nonce cannot mint a second token

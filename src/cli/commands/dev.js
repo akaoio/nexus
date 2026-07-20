@@ -14,7 +14,7 @@ import { createServer } from "http"
 import { existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from "fs"
 import { join, resolve, extname, sep } from "path"
 import { loadInstance } from "../instance.js"
-import { buildInstanceApi } from "../../core/HTTP/server.js"
+import { buildInstanceApi, NEXUS_CTX_POLICIES } from "../../core/HTTP/server.js"
 import { studioIndex } from "../../studio/layouts/studio/shell.js"
 import { validate } from "../../core/Model.js"
 import { loadDictionary, mergeDictionaries, coveredLocales } from "../../i18n/i18n.js"
@@ -26,6 +26,7 @@ import { randomBytes } from "crypto"
 import { fileURLToPath } from "url"
 import { Router } from "../../core/Router.js"
 import { createWatcher, devMessage } from "../../core/HMR/watch.js"
+import { accessFor } from "../dev-access.js"
 
 const MIME = {
     ".html": "text/html; charset=utf-8",
@@ -124,17 +125,38 @@ export async function dev(args, flags, out) {
 
     // internal plane context for _studio reads/executions (dev-only surface)
     const nexusCtx = (entity, actions) => ({ user: "nexus", roles: [], shares: [], policies: [{ entity, actions, rule: null, permlevel: 0, ifOwner: false }] })
+    // internal plane context for DIRECTORY writes specifically (item 2, issue
+    // #9 final review): /_studio/users provisions through nexus.config.json
+    // AND the nexus_user row now that the row is the truth past first boot —
+    // it needs the SAME permlevel-1 grant on nexus_user.roles the admin
+    // bundle carries (C1, SYS-10), so it reuses the exact policy set the
+    // server's own internal directory actor uses (NEXUS_CTX_POLICIES),
+    // rather than hand-rolling a parallel one that can drift from it.
+    const nexusUserCtx = { user: "nexus", roles: [], shares: [], policies: NEXUS_CTX_POLICIES }
 
     const json = (res, code, obj) => {
         res.writeHead(code, { "content-type": "application/json; charset=utf-8" })
         res.end(JSON.stringify(obj))
     }
+    // BODY_LIMIT (issue #9 I2): the old cap here destroyed the request past
+    // 256KB but never resolved the promise — "end" never fires after
+    // destroy(), so the handler hung forever instead of answering. Same
+    // sentinel fix as start.js/api.js: resolve immediately, never hang.
+    const BODY_LIMIT = 1024 * 1024 // 1MB — aligned with api.js's authenticated limit
+    // CHALLENGE_CAP (issue #9 I3): swept on insert + capped, same as start.js.
+    const CHALLENGE_CAP = 1000
     const readJson = (req) =>
         new Promise((resolve) => {
             let raw = ""
+            let size = 0
             req.on("data", (c) => {
-                raw += c
-                if (raw.length > 262144) req.destroy()
+                size += c.length
+                // sentinel, not a hang — and NOT req.destroy() here: destroying
+                // the request kills the underlying socket immediately, taking
+                // the response down with it before the call site can write the
+                // 413 (destroy happens AFTER the response, at the call site)
+                if (size > BODY_LIMIT) resolve(Symbol.for("E_BODY_SIZE"))
+                else raw += c
             })
             req.on("end", () => {
                 try {
@@ -143,6 +165,7 @@ export async function dev(args, flags, out) {
                     resolve(null)
                 }
             })
+            req.on("error", () => resolve(null))
         })
 
     // The Studio's route table — the same patterns the client router uses.
@@ -190,18 +213,30 @@ export async function dev(args, flags, out) {
 
         // ZEN auth handshake — issue a nonce, verify a signature, mint a token.
         if (authState.secret && url.pathname === "/api/v1/_auth/challenge" && req.method === "POST") {
+            // sweep expired entries first (issue #9 I3) so a steady flood cannot
+            // pin the cap forever, then cap rather than growing unbounded
+            for (const [n, exp] of challenges) if (exp < Date.now()) challenges.delete(n)
+            if (challenges.size >= CHALLENGE_CAP)
+                return json(res, 503, { ok: false, error: { code: "E_BUSY", message: "too many pending challenges" } })
             const nonce = randomBytes(24).toString("base64url")
             challenges.set(nonce, Date.now() + 60000)
             return json(res, 200, { ok: true, data: { nonce } })
         }
         if (authState.secret && url.pathname === "/api/v1/_auth/verify" && req.method === "POST") {
             const b = await readJson(req)
+            if (b === Symbol.for("E_BODY_SIZE")) {
+                json(res, 413, { ok: false, error: { code: "E_BODY_SIZE" } })
+                req.destroy() // AFTER the response — see readJson's comment
+                return
+            }
             if (!b || typeof b.pub !== "string") return json(res, 400, { ok: false, error: { code: "E_REQUEST" } })
             const expiry = challenges.get(b.nonce)
             if (!expiry || expiry < Date.now()) return json(res, 401, { ok: false, error: { code: "E_CHALLENGE", message: "no live challenge" } })
             challenges.delete(b.nonce) // one-time use
             if (!(await verifyChallenge(b.pub, b.nonce, b.signature)))
                 return json(res, 401, { ok: false, error: { code: "E_AUTH", message: "signature does not prove the key" } })
+            if (!authState.knownPub(b.pub))
+                return json(res, 401, { ok: false, error: { code: "E_AUTH", message: "this identity is not provisioned on this instance" } })
             const roles = authState.rolesForPub(b.pub)
             const token = issueToken({ user: b.pub, roles }, authState.secret)
             return json(res, 200, { ok: true, data: { token, roles } })
@@ -210,17 +245,34 @@ export async function dev(args, flags, out) {
         // Studio writes (DEV-ONLY): persist a content type or a permission set
         // the admin UI edited. Editing the schema is a dev activity (Strapi
         // parity) — `nexus start` never exposes these routes.
-        // When the server BOOTED with auth on, every /_studio route except the
-        // whoami probe needs a signed-in identity. A session that booted open
-        // stays open until restart (adding identities flips the DATA API live,
-        // but not the studio surface you are configuring it from).
-        if (url.pathname.startsWith("/_studio/") && url.pathname !== "/_studio/session" && studioAuthAtBoot) {
+        // When the server BOOTED with auth on, every /_studio route needs a
+        // signed-in identity EXCEPT the ones STUDIO_ACCESS declares "any" (the
+        // whoami probe — the login UI must be able to ask "is auth on?"
+        // before it holds any token, STUDIO-09a). ONE source of truth: this
+        // gate never names a path itself (issue #9 final review, item 3) — a
+        // hardcoded `&& url.pathname !== "/_studio/" + someNewPath` here would make
+        // that route fully UNAUTHENTICATED, not merely open-to-any-role; the
+        // exemption belongs ONLY in dev-access.js's declared table. A session
+        // that booted open stays open until restart (adding identities flips
+        // the DATA API live, but not the studio surface you are configuring
+        // it from).
+        if (url.pathname.startsWith("/_studio/") && studioAuthAtBoot && accessFor(url.pathname) !== "any") {
             const authz = req.headers["authorization"] ?? ""
             const claims = authz.startsWith("Bearer ") ? verifyToken(authz.slice(7), authState.secret) : null
             if (!claims) return json(res, 401, { ok: false, error: { code: "E_AUTH", message: "sign in to use the Studio" } })
+            // authorization, not just authentication (issue #9 C4): roles come
+            // from the LIVE directory, never from the token's own claims
+            const roles = authState.rolesForPub(claims.user) ?? []
+            if (accessFor(url.pathname) === "admin" && !roles.includes("admin"))
+                return json(res, 403, { ok: false, error: { code: "E_FORBIDDEN", message: "the Studio needs the admin role" } })
         }
         if (url.pathname === "/_studio/model" && req.method === "POST") {
             const doc = await readJson(req)
+            if (doc === Symbol.for("E_BODY_SIZE")) {
+                json(res, 413, { ok: false, error: { code: "E_BODY_SIZE" } })
+                req.destroy()
+                return
+            }
             if (!doc || typeof doc.name !== "string" || !/^[a-z][a-z0-9_]*$/.test(doc.name))
                 return json(res, 400, { ok: false, error: { code: "E_NAME", message: "a lowercase collection name is required" } })
             const model = { schemaVersion: 1, ...doc }
@@ -262,6 +314,11 @@ export async function dev(args, flags, out) {
         // on execute, performs EXACTLY what the plan named.
         if (url.pathname === "/_studio/entity-delete" && (req.method === "GET" || req.method === "POST")) {
             const body = req.method === "POST" ? await readJson(req) : null
+            if (body === Symbol.for("E_BODY_SIZE")) {
+                json(res, 413, { ok: false, error: { code: "E_BODY_SIZE" } })
+                req.destroy()
+                return
+            }
             const name = req.method === "GET" ? url.searchParams.get("name") : body?.name
             try {
                 const { entityDeletePlan } = await import("../../core/App/lifecycle.js")
@@ -329,25 +386,60 @@ export async function dev(args, flags, out) {
             let signed = null
             const authz = req.headers["authorization"]
             if (authz?.startsWith("Bearer ")) signed = verifyToken(authz.slice(7), authState.secret)
-            return json(res, 200, { ok: true, data: { authRequired: authState.required, user: signed?.user ?? null, roles: signed?.roles ?? [] } })
+            // roles come from the LIVE directory, never from the token's own
+            // claims (same law as the /_studio gate below) — otherwise a
+            // revoked/cleared role keeps answering with the STALE token roles
+            // until the token expires, and callers that gate a whole write on
+            // this response (e.g. the /users profile save) act on a lie.
+            const roles = signed ? authState.rolesForPub(signed.user) ?? [] : []
+            return json(res, 200, { ok: true, data: { authRequired: authState.required, user: signed?.user ?? null, roles } })
         }
-        // Studio user management (DEV-ONLY) — list/add/remove/role identities in
-        // nexus.config.json. Applied on restart (which rebuilds auth). Adding an
-        // identity turns on required auth.
+        // Studio user management (DEV-ONLY) — add/remove/role identities in
+        // nexus.config.json AND (add/role) the nexus_user directory row that
+        // actually grants login past first boot (issue #9 final review, item
+        // 2). Adding the first identity turns required auth ON immediately.
         if (url.pathname === "/_studio/users" && req.method === "GET") {
             const cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
             return json(res, 200, { ok: true, data: { identities: listUsers(cfg), authRequired: authState.required } })
         }
         if (url.pathname === "/_studio/users" && req.method === "POST") {
             const body = await readJson(req)
+            if (body === Symbol.for("E_BODY_SIZE")) {
+                json(res, 413, { ok: false, error: { code: "E_BODY_SIZE" } })
+                req.destroy()
+                return
+            }
             if (!body || typeof body.action !== "string") return json(res, 400, { ok: false, error: { code: "E_REQUEST" } })
             try {
                 const cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
                 let next = listUsers(cfg)
-                if (body.action === "add") next = addUser(next, { pub: body.pub, name: body.name, roles: body.roles ?? [] })
-                else if (body.action === "remove") next = removeUser(next, body.pub)
-                else if (body.action === "role") next = setRoles(next, body.pub, body.roles ?? [])
-                else return json(res, 400, { ok: false, error: { code: "E_ACTION" } })
+                // The DIRECTORY (nexus_user rows) is the truth past first boot
+                // (issue #9 I4): knownPub/rolesForPub consult config identities
+                // ONLY while the directory is still empty. Writing
+                // nexus.config.json alone therefore provisions an identity
+                // that CANNOT log in on any instance past that point — yet the
+                // old code returned applied: true regardless. "add"/"role" now
+                // mirror the write into the plane too, through the same
+                // internal ctx the server's own directory actor uses
+                // (nexusUserCtx/NEXUS_CTX_POLICIES) — the config array stays
+                // CLI-facing bookkeeping; the row is what actually grants login.
+                const findRow = async (pub) => {
+                    const rows = await plane.list("nexus_user", { filter: { astVersion: 1, root: { field: "pub", operator: "eq", value: pub } } }, nexusUserCtx)
+                    return rows[0] ?? null
+                }
+                if (body.action === "add") {
+                    next = addUser(next, { pub: body.pub, name: body.name, roles: body.roles ?? [] })
+                    // guard against a row already existing outside config (e.g.
+                    // created directly through /api/v1/nexus_user) — create only
+                    // when the directory doesn't already know this pub
+                    if (!(await findRow(body.pub)))
+                        await plane.create("nexus_user", { pub: body.pub, name: body.name || body.pub, roles: JSON.stringify(body.roles ?? []) }, nexusUserCtx)
+                } else if (body.action === "remove") next = removeUser(next, body.pub)
+                else if (body.action === "role") {
+                    next = setRoles(next, body.pub, body.roles ?? [])
+                    const row = await findRow(body.pub)
+                    if (row) await plane.update("nexus_user", row.id, { roles: JSON.stringify(body.roles ?? []) }, nexusUserCtx)
+                } else return json(res, 400, { ok: false, error: { code: "E_ACTION" } })
                 writeFileSync(join(root, "nexus.config.json"), JSON.stringify({ ...cfg, identities: next }, null, 4) + "\n")
                 // hot-apply: the auth layer reads this live array per request —
                 // adding the first identity turns required auth ON immediately
@@ -370,6 +462,11 @@ export async function dev(args, flags, out) {
         }
         if (url.pathname === "/_studio/ai" && req.method === "POST") {
             const body = await readJson(req)
+            if (body === Symbol.for("E_BODY_SIZE")) {
+                json(res, 413, { ok: false, error: { code: "E_BODY_SIZE" } })
+                req.destroy()
+                return
+            }
             let cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
             // each slot is applied only when its key is present — independent slots
             if (body && "model" in body) cfg = withModel(cfg, body.model || null)
@@ -386,6 +483,11 @@ export async function dev(args, flags, out) {
         }
         if (url.pathname === "/_studio/config" && req.method === "POST") {
             const body = await readJson(req)
+            if (body === Symbol.for("E_BODY_SIZE")) {
+                json(res, 413, { ok: false, error: { code: "E_BODY_SIZE" } })
+                req.destroy()
+                return
+            }
             if (!body || typeof body.key !== "string") return json(res, 400, { ok: false, error: { code: "E_REQUEST" } })
             const cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
             const next = body.remove ? unsetPath(cfg, body.key) : setPath(cfg, body.key, body.value)

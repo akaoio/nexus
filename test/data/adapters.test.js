@@ -12,7 +12,7 @@ import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import Test, { assert } from "../../src/core/Test.js"
-import { createExecutor, ENGINES, engineDialect } from "../../src/core/Data/adapters.js"
+import { createExecutor, ENGINES, engineDialect, capabilitiesFor } from "../../src/core/Data/adapters.js"
 import { DataPlane } from "../../src/core/Data.js"
 import { tableDDL } from "../../src/core/Data/ddl.js"
 import { createCompiler } from "../../src/core/Data/kysely.js"
@@ -88,5 +88,22 @@ Test.describe("Data Plane — engine adapters (ADP-*)", () => {
             assert.truthy(error.message.startsWith("E_DRIVER"), `${engine}: ${error.message}`)
             assert.truthy(error.message.includes(`npm install ${pkg}`), `${engine} must name its install command`)
         }
+    })
+
+    Test.it("ADP-CAP every known engine declares capabilities; unknown engines throw", () => {
+        for (const engine of ENGINES) {
+            const caps = capabilitiesFor(engine)
+            assert.equal(typeof caps.transactionalDDL, "boolean", `${engine} declares transactionalDDL`)
+            assert.truthy(Object.isFrozen(caps))
+        }
+        assert.equal(capabilitiesFor("mysql").transactionalDDL, false) // the one that bites
+        assert.equal(capabilitiesFor("sqlite").transactionalDDL, true)
+        let threw = null
+        try {
+            capabilitiesFor("oracle")
+        } catch (e) {
+            threw = e
+        }
+        assert.truthy(String(threw?.message).startsWith("E_ENGINE"))
     })
 })

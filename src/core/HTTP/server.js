@@ -20,7 +20,7 @@ import { loadExtensions } from "../App/extensions.js"
 import { policiesFor } from "../App/policies.js"
 import { enqueue, runnerTick } from "../App/jobs.js"
 import { bindPlaneRpc, startJobThread } from "../App/jobthread.js"
-import effectsApp from "../App/effects.js"
+import effectsApp, { validateWebhookRow } from "../App/effects.js"
 import { verifyToken } from "../App/auth.js"
 import { timingSafeStringEqual } from "../../cli/output.js"
 import { ACTIONS } from "../Permission.js"
@@ -59,6 +59,23 @@ function lazyTransformers(model, root) {
     }
 }
 
+/**
+ * NEXUS_CTX's own policy set — the narrow internal bootstrap actor that
+ * maintains the directory itself (one-time identity import, the live
+ * usersByPub/dbPolicies cache): read + create only, over nexus_policy and
+ * nexus_user, never write or delete. It needs the SAME permlevel-1 field
+ * access to nexus_user.roles the admin bundle grants (C1, SYS-10) — but only
+ * on nexus_user, since nexus_policy has no permlevel-restricted fields and
+ * gets no companion (reviewer Minor 4: no field access this actor has no use
+ * for). Exported (SYS-13) so this invariant is pinned by a test, not merely
+ * trusted by hand the next time a permlevel moves.
+ */
+export const NEXUS_CTX_POLICIES = Object.freeze([
+    ...["nexus_policy", "nexus_user"].map((entity) =>
+        Object.freeze({ entity, actions: ["read", "create"], rule: null, permlevel: 0, ifOwner: false })),
+    Object.freeze({ entity: "nexus_user", actions: ["read", "create"], rule: null, permlevel: 1, ifOwner: false })
+])
+
 /** The wide-open DEV policy set — every action, every permlevel (dev only). */
 function devPolicies(schemas) {
     const policies = []
@@ -81,7 +98,7 @@ function devPolicies(schemas) {
  */
 export async function buildInstanceApi({ root, config, schemas, apps, appPolicies = [], mode = "dev" }) {
     const extensions = await loadExtensions(root, apps)
-    const authState = { required: false, secret: null, rolesForPub: () => [] }
+    const authState = { required: false, secret: null, rolesForPub: () => [], knownPub: () => false }
     const challenges = new Map() // nonce → expiry (one-time, 60s)
     let api = null
     let plane = null
@@ -201,10 +218,7 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         // baselines); nexus_user rows are the directory (many roles per user).
         // Both are cached here and refreshed through the SAME hook mechanism
         // apps use — a Studio write is instantly a live grant, no restart.
-        const NEXUS_CTX = {
-            user: "nexus", roles: [], shares: [],
-            policies: ["nexus_policy", "nexus_user"].map((entity) => ({ entity, actions: ["read", "create"], rule: null, permlevel: 0, ifOwner: false }))
-        }
+        const NEXUS_CTX = { user: "nexus", roles: [], shares: [], policies: NEXUS_CTX_POLICIES }
         const dbPolicies = []
         const usersByPub = new Map()
         const refreshPolicies = async () => {
@@ -239,6 +253,18 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             if (!result.valid) throw new Error("E_INVALID: " + JSON.stringify(result.errors))
         })
 
+        // write-side defense: a nexus_webhook row must target http(s) — anything
+        // else is an SSRF vector (issue #9 I1). Vetoed here (before the row ever
+        // lands) AND re-checked at dispatch time in effects.js, since a row can
+        // change between write and fire.
+        for (const event of ["before:create", "before:update"])
+            extensions.hook("nexus_webhook", event, (payload) => {
+                const data = payload.data ?? payload.patch ?? {}
+                if (data.url === undefined) return
+                const result = validateWebhookRow(data, config)
+                if (!result.valid) throw new Error("E_INVALID: " + JSON.stringify(result.errors))
+            })
+
         const keys = Array.isArray(config.api_keys) ? config.api_keys : []
         // LIVE auth state: the user DIRECTORY (nexus_user rows) decides roles;
         // config identities remain the bootstrap seed and the lockout-proof
@@ -247,7 +273,25 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         authState.identities = Array.isArray(config.identities) ? [...config.identities] : [] // [{ pub, roles }]
         Object.defineProperty(authState, "required", { get: () => keys.length > 0 || authState.identities.length > 0 || usersByPub.size > 0 })
         authState.secret = config.token_secret || randomBytes(32).toString("hex") // ephemeral if unset
-        authState.rolesForPub = (pub) => usersByPub.get(pub)?.roles ?? authState.identities.find((i) => i.pub === pub)?.roles ?? []
+        // The directory is the truth once it exists. The config seed is a
+        // BOOTSTRAP fallback for an empty directory only — otherwise deleting a
+        // config-seeded row would silently fail to revoke (issue #9 I4 follow-up),
+        // contradicting "from then on the table IS the truth" below.
+        //
+        // KNOWN EDGE (deliberate, pinned by AUTH-REVOKE-DELETE): `usersByPub.size`
+        // is read live, so deleting the LAST remaining row empties the directory
+        // and RE-ARMS the seed on the very next request — a sole config-seeded
+        // admin therefore cannot durably revoke itself. That is the lockout
+        // proofing: nobody can brick a running instance by deleting themselves.
+        // Revocation is durable for every case with ≥1 row left. If this ever
+        // needs to change, decide the lockout story first.
+        authState.rolesForPub = (pub) =>
+            usersByPub.get(pub)?.roles ??
+            (usersByPub.size === 0 ? authState.identities.find((i) => i.pub === pub)?.roles ?? [] : [])
+        // membership: a token is for a PROVISIONED user — holding a keypair is
+        // not membership (issue #9 C1b)
+        authState.knownPub = (pub) =>
+            usersByPub.has(pub) || (usersByPub.size === 0 && authState.identities.some((i) => i.pub === pub))
 
         // bootstrap: an empty directory imports the config identities ONCE —
         // from then on the table IS the truth the Studio edits
@@ -263,6 +307,17 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             throw Object.assign(
                 new Error("E_NO_AUTH: production requires api_keys or identities in nexus.config.json — refusing to serve the wide-open DEV identity"),
                 { code: "E_NO_AUTH" }
+            )
+
+        // A real, persistent token_secret — never an ephemeral one (issue #9
+        // I5): an ephemeral secret invalidates every session on restart and
+        // cannot be shared across processes behind a load balancer. Checked
+        // AFTER E_NO_AUTH so an instance with neither auth nor a secret still
+        // reports the more fundamental E_NO_AUTH first.
+        if (mode === "production" && !config.token_secret)
+            throw Object.assign(
+                new Error("E_NO_SECRET: production requires token_secret in nexus.config.json — an ephemeral secret invalidates every session on restart and cannot be shared across processes"),
+                { code: "E_NO_SECRET" }
             )
 
         const devPols = devPolicies(allSchemas)
@@ -284,7 +339,14 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             // 1) a ZEN session token (issued by /_auth/verify)
             if (bearer) {
                 const claims = verifyToken(bearer, authState.secret)
-                if (claims) return { user: claims.user, roles: claims.roles, policies: policiesFor(livePolicies(), claims.roles), shares: [] }
+                // The token proves IDENTITY; roles come from the LIVE directory
+                // every request, so revocation is immediate and no token state
+                // needs synchronizing (issue #9 I4). claims.roles stays in the
+                // payload for debugging and is never trusted here.
+                if (claims) {
+                    const roles = authState.rolesForPub(claims.user) ?? []
+                    return { user: claims.user, roles, policies: policiesFor(livePolicies(), roles), shares: [] }
+                }
             }
             // 2) a static API key (constant-time, SEC-06)
             const presented = bearer ?? req.headers["x-nexus-key"]

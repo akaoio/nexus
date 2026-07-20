@@ -101,6 +101,56 @@ Test.describe("Production server — nexus start (START)", () => {
         }
     })
 
+    Test.it("START-SECRET production refuses to boot without token_secret", () => {
+        const { scratch, instance } = scaffold({ withAuth: false })
+        const configPath = join(instance, "nexus.config.json")
+        const config = JSON.parse(readFileSync(configPath, "utf8"))
+        config.api_keys = [{ key: "k-admin", user: "alice", roles: ["admin"] }] // auth configured, secret is not
+        writeFileSync(configPath, JSON.stringify(config, null, 4))
+        const r = spawnSync(process.execPath, [BIN, "start", "--json", "--port", "0", "--insecure"], { cwd: instance, encoding: "utf8" })
+        assert.equal(r.status !== 0, true)
+        assert.truthy((r.stdout + r.stderr).includes("E_NO_SECRET"))
+        rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    })
+
+    Test.it("START-BODY the pre-auth verify endpoint refuses an oversized body", async () => {
+        const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true })
+        const { proc, ready } = startServer(instance, ["--insecure"])
+        try {
+            const base = await ready
+            const huge = "x".repeat(2 * 1024 * 1024)
+            const r = await fetch(base + "/api/v1/_auth/verify", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ pub: huge })
+            })
+            assert.equal(r.status, 413)
+            const body = await r.json()
+            assert.equal(body.error.code, "E_BODY_SIZE")
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
+    Test.it("START-CHALLENGE the challenge map is capped and sweeps expiries", async () => {
+        const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true })
+        const { proc, ready } = startServer(instance, ["--insecure"])
+        try {
+            const base = await ready
+            const post = (path, body) =>
+                fetch(base + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+            for (let i = 0; i < 1100; i++) await post("/api/v1/_auth/challenge", {})
+            const r = await post("/api/v1/_auth/challenge", {})
+            assert.equal(r.status, 503, "past the cap the server must refuse, not keep growing the map")
+            const body = await r.json()
+            assert.equal(body.error.code, "E_BUSY")
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
     Test.it("START-04 with a TLS certificate: serves HTTPS", async () => {
         const openssl = spawnSync("openssl", ["version"], { encoding: "utf8" })
         if (openssl.status !== 0) {

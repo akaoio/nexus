@@ -32,7 +32,9 @@ const USER = Object.freeze({
         { name: "bio", type: "text", label: { en: "Bio", vi: "Giới thiệu" } },
         { name: "locale", type: "text", label: { en: "Locale", vi: "Ngôn ngữ" } },
         // many roles per user (Frappe Has Role) — a JSON array of role names
-        { name: "roles", type: "text", label: { en: "Roles", vi: "Vai trò" } }
+        // permlevel 1: self-service (permlevel 0) must never write its own roles —
+        // that path was a two-request escalation to admin (issue #9 C1)
+        { name: "roles", type: "text", permlevel: 1, label: { en: "Roles", vi: "Vai trò" } }
     ]
 })
 
@@ -192,6 +194,9 @@ const ADMIN_ACTIONS = Object.freeze(["read", "write", "create", "delete"])
 export const SYSTEM_BASELINES = Object.freeze([
     ...["nexus_user", "nexus_role", "nexus_policy", "nexus_view", "nexus_job", "nexus_webhook", "nexus_notification"].map((entity) =>
         Object.freeze({ entity, actions: ADMIN_ACTIONS, rule: null, permlevel: 0, ifOwner: false, roles: ["admin"] })),
+    // admin manages roles: field-level grant at permlevel 1 (document access
+    // comes from the permlevel-0 admin bundle above)
+    Object.freeze({ entity: "nexus_user", actions: ADMIN_ACTIONS, rule: null, permlevel: 1, ifOwner: false, roles: ["admin"] }),
     // the directory: any signed-in user can see who exists and which roles exist
     Object.freeze({ entity: "nexus_user", actions: ["read"], rule: null, permlevel: 0, ifOwner: false }),
     Object.freeze({ entity: "nexus_role", actions: ["read"], rule: null, permlevel: 0, ifOwner: false }),

@@ -175,4 +175,26 @@ Test.describe("Data Plane — Migration Engine (MIG-*)", () => {
         assert.equal(ex.all(`SELECT COUNT(*) AS n FROM customer`)[0].n, 1)
         assert.deepEqual(await appliedMigrations(ex), [])
     })
+
+    Test.it("MIG-NOTX a non-transactional-DDL dialect refuses the structural path and runs NO DDL", async () => {
+        const dropped = BASE()
+        dropped.fields = dropped.fields.filter((f) => f.name !== "age")
+        const migration = migrationPlan(BASE(), dropped)
+        const ran = []
+        const executor = {
+            run: async (sql) => {
+                ran.push(sql)
+                return { rows: [] }
+            },
+            all: async () => []
+        }
+        let threw = null
+        try {
+            await applyMigration(executor, kysely, migration, { dialect: "mysql", dryRun: true })
+        } catch (e) {
+            threw = e
+        }
+        assert.truthy(String(threw?.message).startsWith("E_NO_TRANSACTIONAL_DDL"))
+        assert.equal(ran.length, 0, "not one statement may run — the old code DROPPED the table here")
+    })
 })
