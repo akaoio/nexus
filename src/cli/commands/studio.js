@@ -73,16 +73,83 @@ function specifierTo(fromDir, target) {
 }
 
 /**
- * Is this offset inside a comment line? Only used to decide whether a
- * specifier that resolves to a MISSING file is a real broken import or just
- * prose (the vendored zen documents its API in `// import x from "./y"`
- * comments). Erring here can only ever produce a loud false failure, never a
- * silent miss — the scan itself always reads the raw source.
+ * Strip comments out of JavaScript source, respecting string literals — a
+ * small character-scanning state machine (code / line-comment / block-comment
+ * / string), not a regex.
+ *
+ * This replaces a `isCommentLine(source, index)` helper that only checked
+ * whether the text from line-start up to `index` *begins with* `//`, `*`, or
+ * `/*` — it never verified a same-line block comment actually *closes*
+ * before that point. So a real import preceded by an inline block comment on
+ * the same line (`/* c *­/ import x from "./y.js"`) read as commented-out
+ * prose. For collectModules that is the DANGEROUS direction: it is used only
+ * to decide whether a specifier resolving to a MISSING file is a real broken
+ * import or just documentation (the vendored zen documents its API in
+ * `// import x from "./y"` comments) — misreading a real broken import as
+ * prose means `broken` silently drops it, and the build ships an incomplete
+ * Studio instead of failing loudly.
+ *
+ * A naive fix (a regex like `/\/\*.*?\*\//`) would trade that bug for a worse
+ * one: it would corrupt a STRING that happens to contain `/*`-shaped text.
+ * So this walks the source one character at a time and only ever blanks text
+ * that is ACTUALLY inside a `//` or `/* *­/` comment; text inside `"…"` /
+ * '…' / `…` (a `"http://…"` URL, or a specifier string itself) is copied
+ * through untouched. Blanked regions become spaces (block comments keep their
+ * newlines) so match indices in the returned string still line up with the
+ * original source.
+ *
+ * This is a BUILD-TIME SOURCE CHECK, like the rest of this file's regex
+ * scanning — not a full JS tokenizer.
  */
-function isCommentLine(source, index) {
-    const start = source.lastIndexOf("\n", index) + 1
-    const line = source.slice(start, index).trimStart()
-    return line.startsWith("//") || line.startsWith("*") || line.startsWith("/*")
+export function stripComments(source) {
+    let out = ""
+    let i = 0
+    while (i < source.length) {
+        const c = source[i]
+        const c2 = source[i + 1]
+        if (c === "/" && c2 === "/") {
+            while (i < source.length && source[i] !== "\n") {
+                out += " "
+                i++
+            }
+            continue
+        }
+        if (c === "/" && c2 === "*") {
+            out += "  "
+            i += 2
+            while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) {
+                out += source[i] === "\n" ? "\n" : " "
+                i++
+            }
+            if (i < source.length) {
+                out += "  "
+                i += 2
+            }
+            continue
+        }
+        if (c === '"' || c === "'" || c === "`") {
+            const quote = c
+            out += c
+            i++
+            while (i < source.length && source[i] !== quote) {
+                if (source[i] === "\\" && i + 1 < source.length) {
+                    out += source[i] + source[i + 1]
+                    i += 2
+                    continue
+                }
+                out += source[i]
+                i++
+            }
+            if (i < source.length) {
+                out += source[i]
+                i++
+            }
+            continue
+        }
+        out += c
+        i++
+    }
+    return out
 }
 
 /** Resolve a specifier to a package file, or null if it is not ours to ship. */
@@ -119,16 +186,24 @@ export function collectModules(entry, { root = NEXUS_ROOT, staticOnly = false } 
 
         for (const re of NON_STATIC_PATTERNS) if (re.test(source)) nonStatic.push(posix(relative(root, file)))
 
+        // Specifiers are matched against the COMMENT-STRIPPED source (see
+        // stripComments above), not the raw source: a real import preceded by
+        // an inline-closed block comment on the same line must still be seen,
+        // and prose that merely LOOKS like an import (`// import x from
+        // "./y"`) must not be — matching raw source with a line-prefix check
+        // (the bug this replaces) got the second half right and the first
+        // half wrong.
+        const code = stripComments(source)
         for (const re of patterns) {
             re.lastIndex = 0
             let match
-            while ((match = re.exec(source))) {
+            while ((match = re.exec(code))) {
                 const target = resolveSpecifier(match[1], file, root)
                 if (!target) continue
                 const inside = posix(relative(root, target))
                 if (inside.startsWith("..")) continue // outside the package: not ours
                 if (!existsSync(target) || !statSync(target).isFile()) {
-                    if (!isCommentLine(source, match.index)) broken.push(`${posix(relative(root, file))} → ${match[1]}`)
+                    broken.push(`${posix(relative(root, file))} → ${match[1]}`)
                     continue
                 }
                 walk(target)
@@ -314,4 +389,4 @@ export async function studio(args, flags, out) {
     out.emit({ ok: true, out: result.out, files: result.files })
 }
 
-export default { studio, buildStudio, collectModules }
+export default { studio, buildStudio, collectModules, stripComments }

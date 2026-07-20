@@ -17,7 +17,7 @@ import { tmpdir } from "os"
 import { join, dirname, resolve } from "path"
 import { fileURLToPath } from "url"
 import Test, { assert } from "../../src/core/Test.js"
-import { collectModules, buildStudio } from "../../src/cli/commands/studio.js"
+import { collectModules, buildStudio, stripComments } from "../../src/cli/commands/studio.js"
 
 const NEXUS_ROOT = fileURLToPath(new URL("../../", import.meta.url))
 
@@ -52,6 +52,14 @@ function specifiersIn(source) {
     return found
 }
 
+// stripComments (imported above from src/cli/commands/studio.js) is the
+// SINGLE shared implementation STB-01, STB-03 and collectModules all use to
+// tell real code apart from a comment — see its doc comment there for why a
+// character-scanning state machine replaced the line-prefix check
+// (`inComment`) that used to live separately in each of these call sites and
+// could be bypassed by a real import preceded by an inline block comment on
+// the same line (`/* c */ import x from "./y.js"`).
+
 Test.describe("Studio build — nexus studio build (STB-*)", () => {
     Test.it("STB-01 the build stays inside the package and ships nothing that statically imports a Node built-in", async () => {
         const files = collectModules(new URL("../../src/studio/app.js", import.meta.url))
@@ -83,18 +91,13 @@ Test.describe("Studio build — nexus studio build (STB-*)", () => {
         try {
             await buildStudio({ root: NEXUS_ROOT, out })
             const BUILTIN = /^(module|url|path|fs|crypto|os|child_process|node:(?!sqlite))/
-            const inComment = (src, i) => {
-                const line = src.slice(src.lastIndexOf("\n", i) + 1, i).trimStart()
-                return line.startsWith("//") || line.startsWith("*") || line.startsWith("/*")
-            }
             const STATIC_EDGES = [/(?<!["'\w])from\s*["']([^"'\n]+)["']/g, /(?<!["'\w])import\s+["']([^"'\n]+)["']/g]
             for (const file of walkJs(out)) {
-                const src = readFileSync(file, "utf8")
+                const src = stripComments(readFileSync(file, "utf8"))
                 for (const re of STATIC_EDGES) {
                     re.lastIndex = 0
                     let match
-                    while ((match = re.exec(src)))
-                        if (!inComment(src, match.index)) assert.equal(BUILTIN.test(match[1]), false, `${file} statically imports a Node built-in ("${match[1]}")`)
+                    while ((match = re.exec(src))) assert.truthy(!BUILTIN.test(match[1]), `${file} statically imports a Node built-in ("${match[1]}")`)
                 }
             }
             // Prove the invariant above is "clean by construction", not
@@ -136,21 +139,40 @@ Test.describe("Studio build — nexus studio build (STB-*)", () => {
         // removed it from the boot graph entirely — nothing here reaches it.
         const staticGraph = collectModules(new URL("../../src/studio/app.js", import.meta.url), { staticOnly: true })
         const BUILTIN = /^(module|url|path|fs|crypto|os|child_process|node:(?!sqlite))/
-        const inComment = (src, i) => {
-            const line = src.slice(src.lastIndexOf("\n", i) + 1, i).trimStart()
-            return line.startsWith("//") || line.startsWith("*") || line.startsWith("/*")
-        }
         const STATIC_EDGES = [/(?<!["'\w])from\s*["']([^"'\n]+)["']/g, /(?<!["'\w])import\s+["']([^"'\n]+)["']/g]
         for (const f of staticGraph) {
-            const src = readFileSync(f, "utf8")
+            const src = stripComments(readFileSync(f, "utf8"))
             for (const re of STATIC_EDGES) {
                 re.lastIndex = 0
                 let match
-                while ((match = re.exec(src)))
-                    if (!inComment(src, match.index))
-                        assert.equal(BUILTIN.test(match[1]), false, `${f} statically imports a Node built-in ("${match[1]}")`)
+                while ((match = re.exec(src))) assert.truthy(!BUILTIN.test(match[1]), `${f} statically imports a Node built-in ("${match[1]}")`)
             }
         }
+    })
+
+    Test.it("STB-03a the comment-aware scan itself can't be bypassed: a `/* c */`-prefixed import is still caught, a real string literal is still left alone", () => {
+        // Pins the exact bypass a reviewer found: STB-01/STB-03 used to skip a
+        // match whenever the TEXT BEFORE IT on the same line merely STARTED
+        // WITH `//`/`*`/`/*`, never checking whether a same-line block comment
+        // actually closed before the match. So `/* c */ import … from "path"`
+        // read as commented out and slipped through both clauses. This fixture
+        // asserts stripComments() gets both halves of that right: the live
+        // import survives stripping (and so is still visible to a BUILTIN
+        // scan), while a string literal that merely LOOKS comment-shaped
+        // (`"http://…"`, and one holding a literal `/* */` sequence) survives
+        // completely untouched rather than being eaten as a comment.
+        const fixture = ['/* c */ import { join } from "path"', 'const u = "http://x"', 'const weird = "a /* not a comment */ b"'].join("\n")
+        const stripped = stripComments(fixture)
+        const STATIC_EDGES = [/(?<!["'\w])from\s*["']([^"'\n]+)["']/g, /(?<!["'\w])import\s+["']([^"'\n]+)["']/g]
+        const specifiers = []
+        for (const re of STATIC_EDGES) {
+            re.lastIndex = 0
+            let match
+            while ((match = re.exec(stripped))) specifiers.push(match[1])
+        }
+        assert.truthy(specifiers.includes("path"), "the inline-comment-prefixed import must still be found, not read as commented out")
+        assert.truthy(stripped.includes('"http://x"'), "a string literal must survive stripping untouched")
+        assert.truthy(stripped.includes('"a /* not a comment */ b"'), "a comment-shaped sequence INSIDE a string must not be stripped")
     })
 
     Test.it("STB-04 a static build bakes mode:\"production\" into the boot payload (the dev-only surfaces hide themselves)", async () => {
