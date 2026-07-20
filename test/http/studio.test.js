@@ -12,7 +12,7 @@ import { tmpdir } from "os"
 import { join } from "path"
 import Test, { assert } from "../../src/core/Test.js"
 import { validate } from "../../src/core/Model.js"
-import { STUDIO_ACCESS, STUDIO_ROUTE_PATHS } from "../../src/cli/dev-access.js"
+import { STUDIO_ACCESS, STUDIO_ROUTE_PATHS, accessFor } from "../../src/cli/dev-access.js"
 
 const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 const ZEN = (await import("../../vendor/zen/zen.js")).default
@@ -196,10 +196,21 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.equal((await callAs(VIEWER, "GET", "/_studio/session")).status, 200)
     })
 
+    Test.it("STUDIO-09a the reason the gate excludes /_studio/session: an anonymous caller (pre-login, no token) can probe whoami", async () => {
+        // the login UI must be able to ask "is auth on?" before it holds any token
+        const anon = await fetch((await ensureAuth()) + "/_studio/session")
+        assert.equal(anon.status, 200)
+        const body = await anon.json()
+        assert.equal(body.data.user, null)
+        assert.deepEqual(body.data.roles, [])
+        assert.equal(typeof body.data.authRequired, "boolean")
+    })
+
     Test.it("STUDIO-10 INVARIANT: every /_studio route has a declared access level; undeclared is admin-only", () => {
         // pins the fail-closed default so a new route cannot ship open by omission
-        for (const path of STUDIO_ROUTE_PATHS) assert.truthy(STUDIO_ACCESS[path], `${path} must declare access`)
-        assert.equal(STUDIO_ACCESS["/_studio/nonexistent"] ?? "admin", "admin")
+        for (const path of STUDIO_ROUTE_PATHS) assert.truthy(accessFor(path), `${path} resolves`)
+        assert.equal(accessFor("/_studio/nonexistent"), "admin", "an undeclared route is admin-only")
+        assert.equal(accessFor("/_studio/session"), "any", "the declared exception is honoured")
     })
 
     Test.it("STUDIO-99 cleanup", async () => {
