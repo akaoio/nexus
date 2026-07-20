@@ -357,7 +357,7 @@ function checkSyntax(source, label) {
  * with the staging directory removed and the previous public/studio/ exactly
  * as it was. A half-copied UI is worse than no UI.
  */
-export async function buildStudio({ root = NEXUS_ROOT, out, config = {}, schemas = [], meta = {} } = {}) {
+export async function buildStudio({ root = NEXUS_ROOT, out, mount = "./", config = {}, schemas = [], meta = {} } = {}) {
     if (!out) throw new Error("Studio build: an output directory is required")
     const outAbs = resolve(out)
     const staging = outAbs + ".building-" + randomBytes(6).toString("hex")
@@ -394,14 +394,22 @@ export async function buildStudio({ root = NEXUS_ROOT, out, config = {}, schemas
 
         // The shell, with NO dev bootstrap: studioIndex emits none — dev.js is
         // what injects `globalThis._dev` — so a built shell carries none by
-        // construction. /_nexus/ → output-root-relative (index.html sits at
-        // the root, so the document base and the output root coincide).
+        // construction. /_nexus/ → the Studio's URL MOUNT (absolute), NOT a
+        // "./"-relative path: `nexus start` serves this ONE index.html for
+        // EVERY Studio route (/users, /settings/ai, …) via SPA fallthrough,
+        // and a relative ref resolves against the ROUTE — at /settings/ai,
+        // "./src/studio/app.js" → /settings/src/studio/app.js → 404 → blank
+        // page. An absolute "/studio/src/studio/app.js" resolves the same at
+        // any route depth, exactly like dev's absolute "/_nexus/…". Only this
+        // top-level DOCUMENT needs the mount; the copied MODULE files keep
+        // their relative rewriting (rewriteModule), which resolves against
+        // each module's OWN URL and is correct under the mount already.
         const { studioIndex } = await import("../../studio/layouts/studio/shell.js")
         // A static build IS production: bake mode:"production" so the shipped
         // shell hides the dev-only surfaces (schema editing, config writing)
         // whose /_studio endpoints `nexus start` never mounts. Baked the same
         // way as config/schemas/i18n — into the boot payload studioIndex emits.
-        const html = studioIndex(config, schemas, { ...meta, mode: "production" }).replaceAll("/_nexus/", "./")
+        const html = studioIndex(config, schemas, { ...meta, mode: "production" }).replaceAll("/_nexus/", mount)
         writeFileSync(join(staging, "index.html"), html)
 
         // Invariant: nothing in the built tree may still point at the dev-only
@@ -449,6 +457,23 @@ export async function studio(args, flags, out) {
     const root = process.cwd()
     const target = resolve(root, flags.out === true || !flags.out ? join("public", "studio") : String(flags.out))
 
+    // The built shell is served by `nexus start` from under the instance's
+    // public/ dir, for EVERY Studio route — so its asset refs must be ABSOLUTE
+    // to the Studio's URL mount, mirroring how dev uses absolute /_nexus/…
+    // paths (a "./"-relative ref resolves against the current ROUTE and 404s
+    // at any nested route). The mount is the output dir's path under public/:
+    // the default public/studio → "/studio/". A build placed OUTSIDE public/
+    // cannot be served by `nexus start` at all (it serves nothing beyond
+    // public/) — refuse it loudly rather than emit a shell that silently 404s.
+    const publicDir = join(root, "public")
+    const mountRel = posix(relative(publicDir, target))
+    if (mountRel.startsWith("..")) {
+        out.error(`nexus start can only serve a Studio built under ${publicDir}${sep} — got ${target}, which is outside public/`, { code: "E_STUDIO_OUT" })
+        process.exitCode = 2
+        return
+    }
+    const mount = mountRel ? "/" + mountRel + "/" : "/"
+
     // Boot data is BAKED into the built shell (it is a static file now), so a
     // schema change means a rebuild — said plainly rather than discovered.
     let config = {}
@@ -469,7 +494,7 @@ export async function studio(args, flags, out) {
         }
     }
 
-    const result = await buildStudio({ root: NEXUS_ROOT, out: target, config, schemas, meta })
+    const result = await buildStudio({ root: NEXUS_ROOT, out: target, mount, config, schemas, meta })
     out.print(`Studio built → ${relative(root, result.out) || result.out} ${out.dim(`(${result.files} files)`)}`)
     out.hint("`nexus start` serves it from public/ — no framework-source route needed")
     out.emit({ ok: true, out: result.out, files: result.files })

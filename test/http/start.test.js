@@ -244,6 +244,45 @@ Test.describe("Production server — nexus start (START)", () => {
         }
     })
 
+    Test.it("START-STUDIO-BOOTABLE the shell served at a NESTED route resolves its OWN asset refs (a browser can boot it)", async () => {
+        // START-STUDIO proved the shell serves (200) and the asset exists at
+        // its real URL (200) — but NEVER that the shell's OWN references
+        // resolve when it is served at a nested route. A "./"-relative ref
+        // resolves against the ROUTE, not the origin, so at /settings/ai it
+        // fetches /settings/src/studio/app.js → 404 → blank page. This clause
+        // is that missing end-to-end check.
+        const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true })
+        spawnSync(process.execPath, [BIN, "studio", "build"], { cwd: instance })
+        const { proc, ready } = startServer(instance, ["--insecure"])
+        try {
+            const base = await ready
+            // A REAL Studio route TWO segments deep (/settings/[feature],
+            // feature "ai") — deep enough that a single-segment-relative bug
+            // cannot accidentally pass.
+            const route = "/settings/ai"
+            const html = await (await fetch(base + route)).text()
+            assert.truthy(html.includes("nx-boot"), "the shell is served at the nested route")
+            const refs = [...html.matchAll(/(?:src|href)\s*=\s*"([^"]+)"/g)].map((m) => m[1])
+            assert.truthy(
+                refs.some((r) => r.endsWith(".js")) && refs.some((r) => r.endsWith(".css")),
+                `the shell must reference its module + stylesheet; got ${JSON.stringify(refs)}`
+            )
+            for (const ref of refs) {
+                // Resolve exactly as a browser does: against the REQUEST URL
+                // (the nested route), NOT the origin root. "./src/…" from
+                // /settings/ai → /settings/src/… (404); "/studio/src/…" → itself (200).
+                const resolved = new URL(ref, base + route).href
+                const res = await fetch(resolved)
+                assert.equal(res.status, 200, `${ref} → ${resolved} must resolve when the shell is served at ${route}`)
+                const type = res.headers.get("content-type") || ""
+                assert.truthy(/javascript|css/.test(type), `${resolved} served as "${type}", expected a JS/CSS content-type`)
+            }
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
     Test.it("START-STUDIO-ABSENT without a build, production has no Studio and says so with a 404", async () => {
         const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true })
         const { proc, ready } = startServer(instance, ["--insecure"])
