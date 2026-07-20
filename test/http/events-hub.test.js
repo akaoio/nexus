@@ -192,4 +192,31 @@ Test.describe("Realtime event hub (EVT-*)", () => {
         assert.truthy(second.id)
         hub.stop()
     })
+
+    Test.it("EVT-U7 a $NOW-ruled policy never reaps the subscriber: the event is gated, the connection survives", async () => {
+        const plane = setup()
+        const hub = createEventHub({ plane, heartbeatMs: 0 })
+        const timed = fakeRes()
+        const TIMED_CTX = { user: "t", roles: [], shares: [], policies: [
+            { entity: "task", actions: ["read"], rule: { astVersion: 1, root: { field: "created_at", operator: "lte", value: "$NOW" } }, permlevel: 0, ifOwner: false }
+        ] }
+        hub.subscribe({ res: timed, ctx: TIMED_CTX, entities: null })
+        await hub.emit({ entity: "task", event: "remove", id: "whatever" })
+        assert.equal(hub.size(), 1) // NOT reaped — this is the point
+        hub.stop()
+    })
+
+    Test.it("EVT-U8 the write NEVER waits for the fan-out: a hung emit does not block create", async () => {
+        const plane = setup()
+        const hub = createEventHub({ plane, heartbeatMs: 0 })
+        const ext = new Extensions()
+        hub.attach(ext, allSchemas)
+        hub.emit = () => new Promise(() => {}) // a fan-out that never finishes
+        const hooked = new DataPlane({ executor: plane.executor, schemas: allSchemas, hooks: ext, now, dialect: "sqlite" })
+        const t0 = Date.now()
+        const row = await hooked.create("task", { title: "instant" }, ADMIN)
+        assert.truthy(row.id)
+        assert.truthy(Date.now() - t0 < 2000) // returns immediately, not after the fan-out
+        hub.stop()
+    })
 })

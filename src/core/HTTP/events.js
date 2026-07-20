@@ -28,15 +28,24 @@ export function createEventHub({ plane, heartbeatMs = 30000 } = {}) {
         }, heartbeatMs)
         : null
 
-    /** May THIS subscriber see THIS event? The plane decides. */
+    /**
+     * May THIS subscriber see THIS event? The plane decides. This function
+     * must NEVER throw — a denial, a missing row, or a broken policy rule
+     * (e.g. one referencing $NOW with no context) all resolve to `false`.
+     * emit()'s own try/catch exists solely to catch a broken pipe on
+     * `res.write` and reap the subscriber; a policy-evaluation failure here
+     * must never reach that catch and be mistaken for a dead connection.
+     */
     async function visible(sub, { entity, event, id }) {
-        if (sub.entities ? !sub.entities.includes(entity) : DEFAULT_EXCLUDED.includes(entity)) return false
-        if (event === "remove")
-            return Permission.resolve(sub.ctx.policies ?? [], { entity, action: "read", user: sub.ctx.user, roles: sub.ctx.roles ?? [] }).allowed
         try {
+            if (sub.entities ? !sub.entities.includes(entity) : DEFAULT_EXCLUDED.includes(entity)) return false
+            if (event === "remove")
+                return Permission.resolve(sub.ctx.policies ?? [], {
+                    entity, action: "read", user: sub.ctx.user, roles: sub.ctx.roles ?? [], now: plane.now()
+                }).allowed
             return (await plane.get(entity, id, sub.ctx)) != null
         } catch {
-            return false // denied or unreadable — the subscriber learns nothing
+            return false // denied, unreadable, or a policy-evaluation error — the subscriber learns nothing, the connection survives
         }
     }
 
@@ -66,24 +75,35 @@ export function createEventHub({ plane, heartbeatMs = 30000 } = {}) {
             const ts = Date.now()
             const toDelete = []
             for (const sub of [...subscribers]) {
+                // visible() never throws — a policy-evaluation failure denies the
+                // event, it never lands here and is never mistaken for a broken pipe.
+                if (!(await visible(sub, { entity, event, id }))) continue
                 try {
-                    if (!(await visible(sub, { entity, event, id }))) continue
                     sub.res.write(`data:${JSON.stringify({ entity, event, id, ts })}\n\n`)
                 } catch (err) {
-                    toDelete.push(sub)
+                    toDelete.push(sub) // broken pipe — this, and only this, means reap
                 }
             }
             for (const sub of toDelete) reap(sub)
         },
 
-        /** Guarded after-hooks: a realtime failure never fails the write. */
+        /**
+         * Guarded after-hooks: fire-and-forget. The hook fn itself is NOT
+         * async and never awaits emit() — Extensions.run awaits whatever the
+         * hook returns, so an async hook here would make every write wait on
+         * the full subscriber fan-out. Arrow functions keep `this` bound to
+         * the hub (attach() is called as hub.attach(...)) without needing to
+         * hoist emit into a separate named function.
+         */
         attach(extensions, schemas = []) {
-            const fire = (entity, event) => async (payload) => {
+            const fire = (entity, event) => (payload) => {
+                const id = payload.row?.id ?? payload.id
                 try {
-                    const id = payload.row?.id ?? payload.id
-                    await this.emit({ entity, event, id })
+                    this.emit({ entity, event, id }).catch(() => {
+                        // fire-and-forget: an async rejection never fails the write
+                    })
                 } catch {
-                    // fire-and-forget: the write path never awaits or fails on us
+                    // fire-and-forget: a synchronously-throwing emit never fails the write either
                 }
             }
             for (const s of schemas)
