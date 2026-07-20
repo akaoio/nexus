@@ -31,6 +31,13 @@ export function validateWebhookRow(data = {}, config = {}) {
     let parsed
     try { parsed = new URL(String(data.url ?? "")) } catch { return { valid: false, errors: [{ code: "E_URL" }] } }
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { valid: false, errors: [{ code: "E_SCHEME" }] }
+    // NOT a hard boundary: this matches on `parsed.hostname`, a STRING, never
+    // a resolved address — an allowed hostname that later resolves to an
+    // internal IP (DNS rebinding, or just a CNAME repointed after the row was
+    // written) sails straight through. Nor does the http(s)-only check above
+    // stop SSRF: 169.254.169.254 and localhost are perfectly valid http(s)
+    // hosts. Neither mechanism is an SSRF boundary by itself — allow_hosts is
+    // a narrowing knob for cooperative deployments, not a sandbox.
     const allowHosts = config.webhooks?.allow_hosts
     if (Array.isArray(allowHosts) && allowHosts.length && !allowHosts.includes(parsed.hostname)) return { valid: false, errors: [{ code: "E_HOST" }] }
     return { valid: true }

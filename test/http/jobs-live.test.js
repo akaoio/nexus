@@ -120,6 +120,66 @@ Test.describe("Effect runner lives in the server (JOBL-*)", () => {
         assert.truthy(payload.webhookId)
     })
 
+    Test.it("WH-06 a receiver that never responds fails the job by timeout — the slot is never pinned", async () => {
+        // config.webhooks.timeout_ms rides workerData into the job thread at
+        // spawn (App/jobthread.js → threads.register's workerData, read once
+        // in threads/job.js's init()) — boot-time only, no live reconfigure.
+        // Rather than seed a short timeout into nexus.config.json before this
+        // shared server boots (which would also affect every other WH-* clause
+        // sharing the process), this clause keeps the 10s default and simply
+        // sizes its poll window past it.
+        const black = createServer(() => { /* accepts the connection, deliberately never answers */ })
+        await new Promise((r) => black.listen(0, r))
+        try {
+            const url = `http://127.0.0.1:${black.address().port}/hang`
+            const hook = await post("/api/v1/nexus_webhook", { url, entity: "task", events: JSON.stringify(["after:create"]), secret: "s", enabled: true })
+            const webhookId = hook.body.data.id
+            await post("/api/v1/task", { title: "into the void" })
+            const started = Date.now()
+            let job = null
+            // correlate by webhookId, not just name+status — an earlier clause's
+            // (WH-05) failed effects.webhook row can still be sitting in the
+            // table awaiting its own backoff, and would false-match otherwise
+            for (let i = 0; i < 40 && !job; i++) {
+                await new Promise((r) => setTimeout(r, 500))
+                const rows = (await post("/api/v1/nexus_job/query", { filter: null, limit: 50 })).body.data
+                job = rows.find((j) => {
+                    if (j.name !== "effects.webhook" || !["failed", "dead"].includes(j.status)) return false
+                    try { return JSON.parse(j.payload ?? "{}").webhookId === webhookId } catch { return false }
+                }) ?? null
+            }
+            console.log(`      WH-06 observed wall time: ${Date.now() - started}ms`)
+            assert.truthy(job, "the hung delivery must settle as failed/dead, not hang forever")
+            assert.truthy(String(job.last_error).length, "and it must record why")
+        } finally {
+            black.close() // a failed assertion must never leave the receiver socket open (hangs the process)
+        }
+    })
+
+    Test.it("WH-07 a receiver that redirects (302) fails the job — manual redirect status is 0, not ok", async () => {
+        const redirector = createServer((req, res) => { res.writeHead(302, { location: "http://127.0.0.1:9/elsewhere" }).end() })
+        await new Promise((r) => redirector.listen(0, r))
+        try {
+            const url = `http://127.0.0.1:${redirector.address().port}/redir`
+            const hook = await post("/api/v1/nexus_webhook", { url, entity: "task", events: JSON.stringify(["after:create"]), secret: "s", enabled: true })
+            const webhookId = hook.body.data.id
+            await post("/api/v1/task", { title: "follow me" })
+            let job = null
+            for (let i = 0; i < 30 && !job; i++) {
+                await new Promise((r) => setTimeout(r, 500))
+                const rows = (await post("/api/v1/nexus_job/query", { filter: null, limit: 50 })).body.data
+                job = rows.find((j) => {
+                    if (j.name !== "effects.webhook" || !["failed", "dead"].includes(j.status)) return false
+                    try { return JSON.parse(j.payload ?? "{}").webhookId === webhookId } catch { return false }
+                }) ?? null
+            }
+            assert.truthy(job, "a redirecting receiver must settle as failed/dead, not done")
+            assert.truthy(String(job.last_error).length, "and it must record why")
+        } finally {
+            redirector.close()
+        }
+    })
+
     Test.it("WH-03 a malformed webhook row never fails the primary write — the effect degrades, the data lands", async () => {
         const bad = await post("/api/v1/nexus_webhook", { url: "http://127.0.0.1:9/never", entity: null, events: "{not json", secret: "x", enabled: true })
         assert.equal(bad.body.ok, true) // the row itself is legal text
