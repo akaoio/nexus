@@ -73,9 +73,10 @@ function specifierTo(fromDir, target) {
 }
 
 /**
- * Strip comments out of JavaScript source, respecting string literals — a
- * small character-scanning state machine (code / line-comment / block-comment
- * / string), not a regex.
+ * Strip comments out of JavaScript source, respecting string literals AND
+ * template-literal `${}` nesting — a small character-scanning state machine
+ * (code / line-comment / block-comment / string / template-text /
+ * template-expression), not a regex.
  *
  * This replaces a `isCommentLine(source, index)` helper that only checked
  * whether the text from line-start up to `index` *begins with* `//`, `*`, or
@@ -93,18 +94,79 @@ function specifierTo(fromDir, target) {
  * one: it would corrupt a STRING that happens to contain `/*`-shaped text.
  * So this walks the source one character at a time and only ever blanks text
  * that is ACTUALLY inside a `//` or `/* *­/` comment; text inside `"…"` /
- * '…' / `…` (a `"http://…"` URL, or a specifier string itself) is copied
- * through untouched. Blanked regions become spaces (block comments keep their
+ * '…' (a `"http://…"` URL, or a specifier string itself) is copied through
+ * untouched. Blanked regions become spaces (block comments keep their
  * newlines) so match indices in the returned string still line up with the
  * original source.
  *
+ * Template literals get their own state, tracked with a stack (`templates`),
+ * because a backtick is NOT a simple open/close toggle like `'`/`"`: once
+ * inside a template, raw TEXT (`` `a // b` `` — the `//` there is literal
+ * text, not a comment) is a different mode from a `${…}` EXPRESSION it opens
+ * (where normal code rules — comments, strings, and nested backticks that
+ * open a further template literal — apply again, up to the matching `}`).
+ * A single boolean isn't enough: `${ {a: 1} }` nests a `{`/`}` pair the scan
+ * must not mistake for the one that closes the expression (braceDepth), and
+ * `` `outer ${fn(`inner`)}` `` nests a whole second template inside the
+ * expression (hence a stack, one entry per open template, not just one flag).
+ * A leading backslash escapes whatever follows it in EITHER mode — an
+ * escaped backtick does not close the template, and an escaped `${` does not
+ * open an expression, it stays literal template text.
+ *
+ * An unterminated template (or unterminated `${…}`) at end-of-file simply
+ * ends the scan with entries left on the stack — no throw, no hang; the
+ * caller only ever sees this on real, complete source anyway.
+ *
  * This is a BUILD-TIME SOURCE CHECK, like the rest of this file's regex
- * scanning — not a full JS tokenizer.
+ * scanning — not a full JS tokenizer: it still has no notion of regex-literal
+ * contexts (a `/` that starts a regex, versus division, is not disambiguated),
+ * because nothing this file scans for can appear inside one.
  */
 export function stripComments(source) {
     let out = ""
     let i = 0
+    // One entry per currently-open template literal (outermost first). Each
+    // entry is `{ inExpr, braceDepth }`: `inExpr` is false while scanning the
+    // template's raw TEXT and true while scanning a `${…}` expression it
+    // opened; `braceDepth` counts un-matched `{` seen inside that expression
+    // so a `}` that closes an inner object/block isn't mistaken for the one
+    // that closes the expression itself.
+    const templates = []
+
     while (i < source.length) {
+        const top = templates[templates.length - 1]
+
+        if (top && !top.inExpr) {
+            // Inside a template literal's raw TEXT: comments are not comments
+            // here — only an escape, the closing backtick, and an unescaped
+            // `${` (which opens a nested expression) are special.
+            if (source[i] === "\\" && i + 1 < source.length) {
+                out += source[i] + source[i + 1]
+                i += 2
+                continue
+            }
+            if (source[i] === "`") {
+                out += "`"
+                i++
+                templates.pop()
+                continue
+            }
+            if (source[i] === "$" && source[i + 1] === "{") {
+                out += "${"
+                i += 2
+                top.inExpr = true
+                top.braceDepth = 0
+                continue
+            }
+            out += source[i]
+            i++
+            continue
+        }
+
+        // Code context: true top-level code, or inside a `${…}` expression
+        // (top.inExpr === true) — both follow normal lexical rules: comments
+        // are real, `'`/`"` strings are real, and a backtick opens a (possibly
+        // nested) template literal of its own.
         const c = source[i]
         const c2 = source[i + 1]
         if (c === "/" && c2 === "/") {
@@ -127,7 +189,7 @@ export function stripComments(source) {
             }
             continue
         }
-        if (c === '"' || c === "'" || c === "`") {
+        if (c === '"' || c === "'") {
             const quote = c
             out += c
             i++
@@ -144,6 +206,30 @@ export function stripComments(source) {
                 out += source[i]
                 i++
             }
+            continue
+        }
+        if (c === "`") {
+            out += "`"
+            i++
+            templates.push({ inExpr: false, braceDepth: 0 })
+            continue
+        }
+        if (top && top.inExpr && c === "{") {
+            top.braceDepth++
+            out += c
+            i++
+            continue
+        }
+        if (top && top.inExpr && c === "}") {
+            if (top.braceDepth === 0) {
+                // This is the `}` that closes the `${…}` itself — back to
+                // this template's raw-text mode, not a nested brace.
+                top.inExpr = false
+            } else {
+                top.braceDepth--
+            }
+            out += c
+            i++
             continue
         }
         out += c

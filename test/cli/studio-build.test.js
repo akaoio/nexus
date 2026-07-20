@@ -35,19 +35,22 @@ function* walkJs(dir) {
  * is a BUILD CHECK over our own source, not a JavaScript parser: it is allowed
  * to be approximate because the only thing it gates is "does this file exist".
  *
- * Comment lines are skipped for one concrete reason: the vendored zen bundle
+ * Comments are skipped for one concrete reason: the vendored zen bundle
  * DOCUMENTS its API in prose (`// import bridge from "./crypto.js"`) and that
- * file never exists — it is a comment, not an import.
+ * file never exists — it is a comment, not an import. This used to have its
+ * own local `inComment(index)` — the same line-prefix check ("does the text
+ * before this index merely START WITH `//`/`*`/`/*`, never verifying a
+ * same-line block comment actually CLOSES") that stripComments replaced
+ * everywhere else in this file. It was the last copy of that bug. Routed
+ * through the shared `stripComments` (imported above) instead, so there is
+ * exactly one comment implementation, not two.
  */
 function specifiersIn(source) {
     const found = []
-    const inComment = (index) => {
-        const line = source.slice(source.lastIndexOf("\n", index) + 1, index).trimStart()
-        return line.startsWith("//") || line.startsWith("*") || line.startsWith("/*")
-    }
+    const stripped = stripComments(source)
     for (const re of [/(?<!["'\w])from\s*["']([^"'\n]+)["']/g, /\bimport\s*\(\s*["']([^"'\n]+)["']\s*\)/g]) {
         let match
-        while ((match = re.exec(source))) if (!inComment(match.index)) found.push(match[1])
+        while ((match = re.exec(stripped))) found.push(match[1])
     }
     return found
 }
@@ -173,6 +176,31 @@ Test.describe("Studio build — nexus studio build (STB-*)", () => {
         assert.truthy(specifiers.includes("path"), "the inline-comment-prefixed import must still be found, not read as commented out")
         assert.truthy(stripped.includes('"http://x"'), "a string literal must survive stripping untouched")
         assert.truthy(stripped.includes('"a /* not a comment */ b"'), "a comment-shaped sequence INSIDE a string must not be stripped")
+    })
+
+    Test.it("STB-03b stripComments tracks template-literal `${}` nesting: a `//` inside a nested template's expression is NOT a line comment", () => {
+        // A second, DIFFERENT dormant bug a reviewer found in the same helper:
+        // the scanner treated every backtick as a naive open/close toggle and
+        // never tracked `${…}` expression context. So in
+        // `` `outer ${fn(`a // b`)}` `` it believed the OUTER template closed
+        // at the FIRST backtick after `fn(` (misreading the nested template's
+        // opening backtick as the outer template's closer), which put the
+        // scanner back in "code" mode one backtick too early — right in the
+        // middle of `a // b`, whose `//` then read as a real line comment and
+        // ate everything after it to end-of-file, silently deleting a real
+        // import that followed on the same line. This fixture is the
+        // reviewer's exact repro: assert the import specifier SURVIVES.
+        const fixture = 'const x = `outer ${fn(`a // b`)}`; import { readFileSync } from "fs"'
+        const stripped = stripComments(fixture)
+        assert.truthy(stripped.includes('import { readFileSync } from "fs"'), "the real import after the nested template must survive — its text must not be eaten as a line comment")
+        const STATIC_EDGES = [/(?<!["'\w])from\s*["']([^"'\n]+)["']/g, /(?<!["'\w])import\s+["']([^"'\n]+)["']/g]
+        const specifiers = []
+        for (const re of STATIC_EDGES) {
+            re.lastIndex = 0
+            let match
+            while ((match = re.exec(stripped))) specifiers.push(match[1])
+        }
+        assert.truthy(specifiers.includes("fs"), "the import's specifier must still be matchable after stripping")
     })
 
     Test.it("STB-04 a static build bakes mode:\"production\" into the boot payload (the dev-only surfaces hide themselves)", async () => {
