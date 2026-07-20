@@ -83,4 +83,44 @@ Test.describe("Studio build — nexus studio build (STB-*)", () => {
         assert.equal(readFileSync(join(out, "index.html"), "utf8").includes("_dev"), false, "no dev bootstrap in a built shell")
         rmSync(out, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
+
+    Test.it("STB-03 the built Studio's static boot graph never reaches a Node built-in — it boots in a browser", () => {
+        // The browser evaluates the STATIC graph eagerly, so a `from "node:fs"`
+        // (or side-effect `import "node:fs"`) anywhere in it breaks boot. We scan
+        // exactly those two STATIC edges — never dynamic `import()`, which the
+        // kernel uses as an environment-GUARDED lazy fallback the browser never
+        // runs (e.g. FS/shared.js's `if (NODE) fs = await import("fs")`, browser-
+        // safe by construction). Comment lines are skipped: vendored kysely and
+        // core/Data DOCUMENT their Node usage in JSDoc prose (`* import path from
+        // 'node:path'`), which is not an import — the brief's whole-file regex
+        // would false-RED on it, which is why the rest of the STB machinery is
+        // comment-aware too. node:sqlite is allowed by the contract, but Task 6b
+        // removed it from the boot graph entirely — nothing here reaches it.
+        const staticGraph = collectModules(new URL("../../src/studio/app.js", import.meta.url), { staticOnly: true })
+        const BUILTIN = /^(module|url|path|fs|crypto|os|child_process|node:(?!sqlite))/
+        const inComment = (src, i) => {
+            const line = src.slice(src.lastIndexOf("\n", i) + 1, i).trimStart()
+            return line.startsWith("//") || line.startsWith("*") || line.startsWith("/*")
+        }
+        const STATIC_EDGES = [/(?<!["'\w])from\s*["']([^"'\n]+)["']/g, /(?<!["'\w])import\s+["']([^"'\n]+)["']/g]
+        for (const f of staticGraph) {
+            const src = readFileSync(f, "utf8")
+            for (const re of STATIC_EDGES) {
+                re.lastIndex = 0
+                let match
+                while ((match = re.exec(src)))
+                    if (!inComment(src, match.index))
+                        assert.equal(BUILTIN.test(match[1]), false, `${f} statically imports a Node built-in ("${match[1]}")`)
+            }
+        }
+    })
+
+    Test.it("STB-04 a static build bakes mode:\"production\" into the boot payload (the dev-only surfaces hide themselves)", async () => {
+        const out = mkdtempSync(join(tmpdir(), "nexus-studio-"))
+        await buildStudio({ root: NEXUS_ROOT, out })
+        const html = readFileSync(join(out, "index.html"), "utf8")
+        const boot = JSON.parse(html.match(/<script[^>]*id="nx-boot"[^>]*>([^<]*)<\/script>/)[1])
+        assert.equal(boot.mode, "production", "a built shell is production")
+        rmSync(out, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    })
 })

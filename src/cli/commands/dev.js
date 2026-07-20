@@ -474,7 +474,7 @@ export async function dev(args, flags, out) {
         // (SEC-01..04 hold: /nexus.config.json, /.nexus/*, backups stay 404).
         if (routeMatches(url.pathname)) {
             res.writeHead(200, { "content-type": MIME[".html"], "cache-control": "no-cache" })
-            const html = studioIndex(config, schemas, { embedder: embedderInfo, appName, i18n })
+            const html = studioIndex(config, schemas, { embedder: embedderInfo, appName, i18n, mode: "dev" })
             // dev-only bootstrap (design 2026-07-20 §3): wires up the shipped HMR
             // client. `nexus start` never serves the Studio shell at all, so
             // production HTML cannot carry this by construction (START-* pins it).

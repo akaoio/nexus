@@ -10,7 +10,10 @@ import * as themes from "./themes/index.js"
 
 /** The settings children — the sidebar renders these under Settings. */
 export const FEATURES = {
-    ai: { icon: "stars", key: "ai", render: ai.render },
+    // devOnly: the AI panel writes nexus.config.json via /_studio/ai, a route
+    // `nexus start` never mounts — a production build hides it. locales/themes
+    // are pure client-side (i18n, theme channels), so they stay in production.
+    ai: { icon: "stars", key: "ai", render: ai.render, devOnly: true },
     locales: { icon: "translate", key: "languages", render: locales.render },
     themes: { icon: "circle-half", key: "themes", render: themes.render }
 }

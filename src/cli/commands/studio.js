@@ -99,11 +99,17 @@ function resolveSpecifier(spec, fromFile, root) {
  * at no file: that is a broken import, and shipping it would mean a Studio
  * that fails only once it is in front of a user.
  */
-export function collectModules(entry, { root = NEXUS_ROOT } = {}) {
+export function collectModules(entry, { root = NEXUS_ROOT, staticOnly = false } = {}) {
     const entryPath = entry instanceof URL || String(entry).startsWith("file:") ? fileURLToPath(entry) : resolve(root, String(entry))
     const seen = new Set()
     const broken = []
     const nonStatic = []
+    // staticOnly follows ONLY the two static edges — `import … from "x"` /
+    // `export … from "x"` and side-effect `import "x"` — never dynamic import()
+    // or `new URL(…, import.meta.url)`. It is the boot graph the browser
+    // evaluates eagerly on load: the graph STB-03/PROD-01 pin free of Node
+    // built-ins. The default (all four forms) stays what Task 5/6's copiers need.
+    const patterns = staticOnly ? SPECIFIER_PATTERNS.slice(0, 2) : SPECIFIER_PATTERNS
 
     const walk = (file) => {
         if (seen.has(file)) return
@@ -113,7 +119,7 @@ export function collectModules(entry, { root = NEXUS_ROOT } = {}) {
 
         for (const re of NON_STATIC_PATTERNS) if (re.test(source)) nonStatic.push(posix(relative(root, file)))
 
-        for (const re of SPECIFIER_PATTERNS) {
+        for (const re of patterns) {
             re.lastIndex = 0
             let match
             while ((match = re.exec(source))) {
@@ -230,7 +236,11 @@ export async function buildStudio({ root = NEXUS_ROOT, out, config = {}, schemas
         // construction. /_nexus/ → output-root-relative (index.html sits at
         // the root, so the document base and the output root coincide).
         const { studioIndex } = await import("../../studio/layouts/studio/shell.js")
-        const html = studioIndex(config, schemas, meta).replaceAll("/_nexus/", "./")
+        // A static build IS production: bake mode:"production" so the shipped
+        // shell hides the dev-only surfaces (schema editing, config writing)
+        // whose /_studio endpoints `nexus start` never mounts. Baked the same
+        // way as config/schemas/i18n — into the boot payload studioIndex emits.
+        const html = studioIndex(config, schemas, { ...meta, mode: "production" }).replaceAll("/_nexus/", "./")
         writeFileSync(join(staging, "index.html"), html)
 
         // Invariant: nothing in the built tree may still point at the dev-only
