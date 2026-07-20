@@ -265,6 +265,14 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         // BOOTSTRAP fallback for an empty directory only — otherwise deleting a
         // config-seeded row would silently fail to revoke (issue #9 I4 follow-up),
         // contradicting "from then on the table IS the truth" below.
+        //
+        // KNOWN EDGE (deliberate, pinned by AUTH-REVOKE-DELETE): `usersByPub.size`
+        // is read live, so deleting the LAST remaining row empties the directory
+        // and RE-ARMS the seed on the very next request — a sole config-seeded
+        // admin therefore cannot durably revoke itself. That is the lockout
+        // proofing: nobody can brick a running instance by deleting themselves.
+        // Revocation is durable for every case with ≥1 row left. If this ever
+        // needs to change, decide the lockout story first.
         authState.rolesForPub = (pub) =>
             usersByPub.get(pub)?.roles ??
             (usersByPub.size === 0 ? authState.identities.find((i) => i.pub === pub)?.roles ?? [] : [])
