@@ -70,6 +70,9 @@ EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
   the data API immediately, but `/_studio/*` write endpoints only start demanding a token
   after the next dev restart.
 - **Hot reload leaks one sqlite handle per reload** (dev-only, documented in dev.js).
+- **`nexus dev` has no graceful teardown** (pre-existing): the file watcher and dev-events
+  subscribers die with the process rather than unsubscribing cleanly on Ctrl-C. Harmless for
+  a dev-only surface; a real teardown path is owed if dev ever holds anything that must be flushed.
 - **FunctionGemma zero-shot quality is weak** for the recursive filter grammar
   (Vietnamese asks often refuse; compound English often malforms — safely rejected by
   translate() and covered by the tier chain). Fine-tuning on the filter dialect is the
