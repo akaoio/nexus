@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Spec-first TDD: every clause RED before its fix. Baseline: 593 green / 0 red / 53 skipped on this branch's base (main @ b638ee4). End state 0 red.
+- Spec-first TDD: every clause RED before its fix. Baseline: 566 green / 0 red / 53 skipped on this branch's base (main @ b638ee4). End state 0 red.
 - A green verdict must mean assertions executed and held. "Ran nothing" (zero passes) is never green.
 - Do not change what any existing clause asserts; do not implement the `{browser:true}` clauses; no assertion-counting-as-failure (out of scope, false-positives on no-throw tests).
 - Zero runtime dependencies. Node ESM. Match `Test.js`'s existing style.
@@ -65,7 +65,7 @@ Then the clause:
 
 Read the actual current summary block and preserve the failed-case output verbatim; only add the zero-passed branch and widen the exit condition. Keep the browser path (no `process` there) working — guard the `exitCode` line with `NODE`.
 
-- [ ] **Step 4: GREEN** — `node test.js`: RUN-01 green; the FULL run still ends green (593 passes ⇒ `isGreen` true ⇒ exit 0). Confirm the full run's exit code is still 0.
+- [ ] **Step 4: GREEN** — `node test.js`: RUN-01 green; the FULL run still ends green (566 passes ⇒ `isGreen` true ⇒ exit 0). Confirm the full run's exit code is still 0.
 - [ ] **Step 5: Prove it discriminates** — run a single skipped-only suite (`node -e` importing Test, registering one `{skip:true}` test, calling `run()`), and show `isGreen` is false / exitCode 1. Paste the evidence.
 - [ ] **Step 6: Commit**
 
@@ -146,7 +146,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 **Files:** Modify `STATUS.md`
 
 - [ ] **Step 1:** add a short honest note that the runner now fails a zero-passed run, the Sync stub no longer masks a broken module, and a crashed ZSYNC harness is a visible skip — with the clause IDs (`RUN-01`, `SYNCLOAD-01`, `H3`). Remove the "Test.js all-skipped-reports-green hazard" from any known-issues/deferred list it appears on (it is now fixed). Match STATUS's voice.
-- [ ] **Step 2:** `node test.js` — full suite green, exit 0, count = 593 + the new clauses. Paste the summary line.
+- [ ] **Step 2:** `node test.js` — full suite green, exit 0, count = 566 + the new clauses. Paste the summary line.
 - [ ] **Step 3: Commit**
 
 ```bash
