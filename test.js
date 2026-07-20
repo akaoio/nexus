@@ -113,6 +113,10 @@ import "./test/http/models.test.js"
 // Config control-plane — nexus config get/set/unset (clauses CONFIG-*)
 import "./test/http/config.test.js"
 
+// Sync — stub load integrity: the NOT_IMPLEMENTED shim stands in only for
+// an absent module, never a broken one (clause SYNCLOAD-01, issue #9 H2)
+import "./test/sync/load-integrity.test.js"
+
 // Sync — event log → SQL projection (clauses SYNC-*)
 import "./test/sync/sync.test.js"
 
