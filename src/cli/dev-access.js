@@ -14,23 +14,33 @@
  * "is auth on?" before it holds any token). It does NOT mean "authenticated,
  * any role accepted" — there is no such tier today; every other declared or
  * undeclared route demands the admin role once auth is required.
+ *
+ * "modes" has NO DEFAULT: an entry that omits it is dev-only. Opening a
+ * route to production is one deliberate line here, and the invariant
+ * clause asserts production answers exactly the declared set (issue #10).
  */
 
 export const STUDIO_ACCESS = Object.freeze({
-    "/_studio/session": "any",     // whoami — no auth required, anonymous included (STUDIO-09a)
-    "/_studio/model": "admin",
-    "/_studio/entities": "admin",
-    "/_studio/entity-delete": "admin",
-    "/_studio/policies": "admin",
-    "/_studio/users": "admin",
-    "/_studio/ai": "admin",
-    "/_studio/config": "admin"
+    "/_studio/session": Object.freeze({ roles: "any", modes: ["dev"] }),   // moves to /api/v1/_session in Task 2
+    "/_studio/model": Object.freeze({ roles: "admin", modes: ["dev"] }),
+    "/_studio/entities": Object.freeze({ roles: "admin", modes: ["dev"] }),
+    "/_studio/entity-delete": Object.freeze({ roles: "admin", modes: ["dev"] }),
+    "/_studio/policies": Object.freeze({ roles: "admin", modes: ["dev"] }), // baseline read moves in Task 3
+    "/_studio/users": Object.freeze({ roles: "admin", modes: ["dev"] }),
+    "/_studio/ai": Object.freeze({ roles: "admin", modes: ["dev"] }),
+    "/_studio/config": Object.freeze({ roles: "admin", modes: ["dev"] })
 })
 
 /** The declared route list, for the invariant clause. */
 export const STUDIO_ROUTE_PATHS = Object.freeze(Object.keys(STUDIO_ACCESS))
 
 /** Required role for a path — undeclared means admin. */
-export const accessFor = (pathname) => STUDIO_ACCESS[pathname] ?? "admin"
+export const accessFor = (pathname) => STUDIO_ACCESS[pathname]?.roles ?? "admin"
 
-export default { STUDIO_ACCESS, STUDIO_ROUTE_PATHS, accessFor }
+/** Declared modes for a path — undeclared means dev-only (no permissive fallback). */
+export const modesFor = (pathname) => STUDIO_ACCESS[pathname]?.modes ?? ["dev"]
+
+/** The routes the table opens to production, derived — not hand-maintained. */
+export const PRODUCTION_ROUTES = Object.freeze(STUDIO_ROUTE_PATHS.filter((p) => modesFor(p).includes("production")))
+
+export default { STUDIO_ACCESS, STUDIO_ROUTE_PATHS, accessFor, modesFor, PRODUCTION_ROUTES }

@@ -12,7 +12,7 @@ import { tmpdir } from "os"
 import { join } from "path"
 import Test, { assert } from "../../src/core/Test.js"
 import { validate } from "../../src/core/Model.js"
-import { STUDIO_ACCESS, STUDIO_ROUTE_PATHS, accessFor } from "../../src/cli/dev-access.js"
+import { STUDIO_ACCESS, STUDIO_ROUTE_PATHS, accessFor, modesFor, PRODUCTION_ROUTES } from "../../src/cli/dev-access.js"
 
 const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 const ZEN = (await import("../../vendor/zen/zen.js")).default
@@ -266,6 +266,16 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.equal(whoami.status, 200)
         assert.equal(whoami.body.data.user, freshPair.pub)
         assert.deepEqual(whoami.body.data.roles, ["viewer"], "the role granted at provisioning time is live immediately")
+    })
+
+    Test.it("STUDIO-13 modes has no default: an undeclared route is dev-only, and the production set is exactly what is declared", () => {
+        assert.deepEqual(modesFor("/_studio/nonexistent"), ["dev"], "undeclared is dev-only — forgetting is safe")
+        assert.deepEqual(modesFor("/_studio/model"), ["dev"], "schema writes stay dev-only (spec §1)")
+        assert.deepEqual(modesFor("/_studio/config"), ["dev"], "config writes stay dev-only")
+        for (const path of PRODUCTION_ROUTES) assert.truthy(modesFor(path).includes("production"))
+        // the accessFor contract is unchanged by the new axis
+        assert.equal(accessFor("/_studio/nonexistent"), "admin")
+        assert.equal(accessFor("/_studio/session"), "any")
     })
 
     Test.it("STUDIO-99 cleanup", async () => {
