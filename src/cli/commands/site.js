@@ -25,6 +25,26 @@ import { redact } from "../../core/App/config.js"
 const BACKUP_VERSION = 1
 const quote = (name) => `"${String(name).replace(/"/g, '""')}"` // SEC: double embedded quotes
 
+/** Row columns that hold credentials and must never ride a backup in the clear.
+ *  Declared per entity so a new secret-bearing column is a deliberate edit here,
+ *  not an oversight (issue #9 C3 follow-through). */
+const SECRET_COLUMNS = Object.freeze({
+    nexus_webhook: ["secret"],
+    nexus_job: ["lease_token"]
+})
+
+/** Mask any declared secret columns on every row of this entity, in place. */
+function maskSecretColumns(entityName, rows) {
+    const columns = SECRET_COLUMNS[entityName]
+    if (!columns || !rows) return rows
+    for (const row of rows) for (const column of columns) if (row[column] != null) row[column] = "***"
+    return rows
+}
+
+/** A missing table is tolerable only for a SYSTEM entity — an older instance
+ *  may predate it; anything else (permission, I/O, corruption) is not. */
+const isMissingTableError = (error) => /no such table|doesn't exist|does not exist|Unknown table/i.test(String(error?.message))
+
 async function backup(args, flags, out, root) {
     const { config, schemas, apps } = loadInstance(root)
     const { executor, kysely, dialect } = await openInstanceData(root, config)
@@ -46,15 +66,22 @@ async function backup(args, flags, out, root) {
     // entities, or a restore returns data nobody can log in to (issue #9 C3)
     const backupSchemas = [...schemas, ...SYSTEM_ENTITIES]
     const data = {}
-    for (const schema of backupSchemas) {
-        try { data[schema.name] = await executor.all(`SELECT * FROM ${quote(schema.name)}`) }
-        catch { /* a system table absent on an old instance is not a failure */ }
+    // app data: fail loudly — ensureTables above guarantees these tables exist,
+    // so a read error here is a real fault (permissions, I/O, corruption), not
+    // something to swallow and report as a clean, if incomplete, backup
+    for (const schema of schemas) data[schema.name] = maskSecretColumns(schema.name, await executor.all(`SELECT * FROM ${quote(schema.name)}`))
+    for (const schema of SYSTEM_ENTITIES) {
+        try { data[schema.name] = maskSecretColumns(schema.name, await executor.all(`SELECT * FROM ${quote(schema.name)}`)) }
+        catch (error) {
+            // an older instance may predate a system entity — that is fine; anything else is not
+            if (!isMissingTableError(error)) throw error
+        }
     }
     const document = {
         backupVersion: BACKUP_VERSION,
         createdAt: new Date().toISOString(),
         config: redact(config),
-        secretsRedacted: true, // restore must re-supply token_secret / api_keys
+        secretsRedacted: true, // restore must re-supply token_secret / api_keys / webhook secrets
         apps: appFiles,
         data,
         migrations: await appliedMigrations(executor)
@@ -63,7 +90,7 @@ async function backup(args, flags, out, root) {
     writeFileSync(join(root, file), JSON.stringify(document, null, 2))
     const rows = Object.values(data).reduce((n, list) => n + list.length, 0)
     out.print(`${out.green("✓")} Backed up ${backupSchemas.length} entities, ${rows} rows → ${out.cyan(file)}`)
-    out.print(out.yellow("  secrets redacted — token_secret and API keys must be re-supplied after restore"))
+    out.print(out.yellow("  secrets redacted — token_secret, API keys and webhook signing secrets must be re-supplied after restore"))
     out.emit({ ok: true, file, entities: backupSchemas.length, rows, secretsRedacted: true })
     if (executor.close) executor.close()
 }
@@ -152,10 +179,11 @@ async function restore(args, flags, out, root) {
     if (report.appsWritten.length) out.print(`  apps written: ${report.appsWritten.join(", ")}`)
     if (report.appsSkipped.length) out.print(`  apps kept as-is: ${report.appsSkipped.join(", ")}`)
     if (!apply) out.print(out.dim("  preview only — run with --apply"))
-    // the backup's config rows never carry real secrets (issue #9 C3) — a
-    // restored "***" must never be mistaken for a working token_secret/key
+    // the backup's config rows AND row-level secrets never carry the real
+    // value (issue #9 C3) — a restored "***" must never be mistaken for a
+    // working token_secret/key or a live webhook signing secret
     if (document.secretsRedacted)
-        out.print(out.yellow("  ⚠ this backup's secrets were redacted — re-supply token_secret and api_keys[].key (nexus config set …) before this instance can serve"))
+        out.print(out.yellow("  ⚠ this backup's secrets were redacted — re-supply token_secret and api_keys[].key (nexus config set …), and nexus_webhook.secret for each webhook, before this instance can serve"))
     out.emit({ ok: true, apply, secretsRedacted: document.secretsRedacted === true, ...report })
     if (executor.close) executor.close()
 }
