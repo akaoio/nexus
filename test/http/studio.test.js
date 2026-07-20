@@ -7,13 +7,15 @@
 
 import { fileURLToPath } from "url"
 import { spawnSync, spawn } from "child_process"
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "fs"
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import Test, { assert } from "../../src/core/Test.js"
 import { validate } from "../../src/core/Model.js"
+import { STUDIO_ACCESS, STUDIO_ROUTE_PATHS } from "../../src/cli/dev-access.js"
 
 const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
+const ZEN = (await import("../../vendor/zen/zen.js")).default
 
 const scratch = mkdtempSync(join(tmpdir(), "nexus-studio-"))
 spawnSync(process.execPath, [BIN, "create", "shop"], { cwd: scratch })
@@ -40,6 +42,59 @@ const patch = async (path, body) => {
     const r = await fetch((await ensure()) + path, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
     return { status: r.status, body: await r.json() }
 }
+
+// STUDIO-08/09/10 (issue #9 C4): the gate must AUTHORIZE, not merely
+// authenticate — a second, auth-ON instance with two PROVISIONED ZEN
+// identities (admin, viewer). The /_studio gate reads Bearer session
+// tokens (never x-nexus-key/api_keys), so authorization here is exercised
+// through the real ZEN handshake (mirrors AUTH-07), not raw API keys.
+const authScratch = mkdtempSync(join(tmpdir(), "nexus-studio-auth-"))
+spawnSync(process.execPath, [BIN, "create", "shop"], { cwd: authScratch })
+const authInstance = join(authScratch, "shop")
+const adminPair = await ZEN.pair(null, { seed: "studio-auth-admin" })
+const viewerPair = await ZEN.pair(null, { seed: "studio-auth-viewer" })
+const authCfgPath = join(authInstance, "nexus.config.json")
+const authCfg = JSON.parse(readFileSync(authCfgPath, "utf8"))
+authCfg.token_secret = "fixed-studio-auth-secret"
+authCfg.identities = [{ pub: adminPair.pub, roles: ["admin"] }, { pub: viewerPair.pub, roles: ["viewer"] }]
+writeFileSync(authCfgPath, JSON.stringify(authCfg, null, 4))
+
+let authServer = null
+let authBase = null
+async function ensureAuth() {
+    if (authBase) return authBase
+    authServer = spawn(process.execPath, [BIN, "dev", "--port", "0", "--json"], { cwd: authInstance })
+    authBase = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("dev did not start")), 6000)
+        let buf = ""
+        authServer.stdout.on("data", (c) => { buf += c; try { clearTimeout(timer); resolve(JSON.parse(buf).url) } catch {} })
+        authServer.on("exit", () => reject(new Error("dev exited early")))
+    })
+    return authBase
+}
+const tokenCache = new Map()
+async function loginAs(pair) {
+    const base = await ensureAuth()
+    const chal = await (await fetch(base + "/api/v1/_auth/challenge", { method: "POST" })).json()
+    const signature = await ZEN.sign(chal.data.nonce, pair)
+    const verified = await (await fetch(base + "/api/v1/_auth/verify", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pub: pair.pub, nonce: chal.data.nonce, signature })
+    })).json()
+    return verified.data.token
+}
+async function callAs(pair, method, path, body) {
+    if (!tokenCache.has(pair)) tokenCache.set(pair, await loginAs(pair))
+    const r = await fetch((await ensureAuth()) + path, {
+        method,
+        headers: { "content-type": "application/json", authorization: `Bearer ${tokenCache.get(pair)}` },
+        body: body === undefined ? undefined : JSON.stringify(body)
+    })
+    return { status: r.status, body: await r.json() }
+}
+const ADMIN = adminPair
+const VIEWER = viewerPair
 
 Test.describe("Studio write endpoints (STUDIO)", () => {
     Test.it("STUDIO-01 POST /_studio/model persists a valid, validated content type", async () => {
@@ -123,9 +178,35 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.equal(allowed.body.ok, true)
     })
 
+    Test.it("STUDIO-08 a non-admin is refused every /_studio write and every state-exposing read", async () => {
+        for (const [method, path, body] of [
+            ["POST", "/_studio/model", { name: "sneaky", fields: [{ name: "x", type: "text" }] }],
+            ["POST", "/_studio/config", { key: "token_secret", value: "stolen" }],
+            ["GET", "/_studio/entities", undefined],
+            ["GET", "/_studio/policies", undefined]
+        ]) {
+            const r = await callAs(VIEWER, method, path, body)
+            assert.equal(r.status, 403, `${method} ${path}`)
+            assert.equal(r.body.error.code, "E_FORBIDDEN")
+        }
+        assert.equal((await callAs(ADMIN, "GET", "/_studio/entities")).status, 200) // admin unaffected
+    })
+
+    Test.it("STUDIO-09 /_studio/session stays open to any authenticated user", async () => {
+        assert.equal((await callAs(VIEWER, "GET", "/_studio/session")).status, 200)
+    })
+
+    Test.it("STUDIO-10 INVARIANT: every /_studio route has a declared access level; undeclared is admin-only", () => {
+        // pins the fail-closed default so a new route cannot ship open by omission
+        for (const path of STUDIO_ROUTE_PATHS) assert.truthy(STUDIO_ACCESS[path], `${path} must declare access`)
+        assert.equal(STUDIO_ACCESS["/_studio/nonexistent"] ?? "admin", "admin")
+    })
+
     Test.it("STUDIO-99 cleanup", async () => {
         if (server) await new Promise((resolve) => { server.once("exit", resolve); server.kill("SIGKILL") })
         rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        if (authServer) await new Promise((resolve) => { authServer.once("exit", resolve); authServer.kill("SIGKILL") })
+        rmSync(authScratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
         assert.equal(true, true)
     })
 })

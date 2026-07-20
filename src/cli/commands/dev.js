@@ -26,6 +26,7 @@ import { randomBytes } from "crypto"
 import { fileURLToPath } from "url"
 import { Router } from "../../core/Router.js"
 import { createWatcher, devMessage } from "../../core/HMR/watch.js"
+import { accessFor } from "../dev-access.js"
 
 const MIME = {
     ".html": "text/html; charset=utf-8",
@@ -220,6 +221,11 @@ export async function dev(args, flags, out) {
             const authz = req.headers["authorization"] ?? ""
             const claims = authz.startsWith("Bearer ") ? verifyToken(authz.slice(7), authState.secret) : null
             if (!claims) return json(res, 401, { ok: false, error: { code: "E_AUTH", message: "sign in to use the Studio" } })
+            // authorization, not just authentication (issue #9 C4): roles come
+            // from the LIVE directory, never from the token's own claims
+            const roles = authState.rolesForPub(claims.user) ?? []
+            if (accessFor(url.pathname) === "admin" && !roles.includes("admin"))
+                return json(res, 403, { ok: false, error: { code: "E_FORBIDDEN", message: "the Studio needs the admin role" } })
         }
         if (url.pathname === "/_studio/model" && req.method === "POST") {
             const doc = await readJson(req)
