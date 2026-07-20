@@ -142,11 +142,9 @@ Test.describe("Production server — nexus start (START)", () => {
                 fetch(base + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
             for (let i = 0; i < 1100; i++) await post("/api/v1/_auth/challenge", {})
             const r = await post("/api/v1/_auth/challenge", {})
-            assert.equal([200, 503].includes(r.status), true)
-            if (r.status === 503) {
-                const body = await r.json()
-                assert.equal(body.error.code, "E_BUSY")
-            }
+            assert.equal(r.status, 503, "past the cap the server must refuse, not keep growing the map")
+            const body = await r.json()
+            assert.equal(body.error.code, "E_BUSY")
         } finally {
             await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
             rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
