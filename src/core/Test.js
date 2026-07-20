@@ -128,6 +128,13 @@ const GREEN = (s) => (NODE ? `\x1b[32m${s}\x1b[0m` : s)
 const DIM = (s) => (NODE ? `\x1b[2m${s}\x1b[0m` : s)
 
 /**
+ * The single source of the pass/fail verdict. A run is green only when
+ * nothing failed AND at least one test actually ran — an all-skipped suite,
+ * or a suite that registered nothing at all, is not success (RUN-01).
+ */
+export const isGreen = (r) => r.failed === 0 && r.passed > 0
+
+/**
  * Run all registered suites (or the ones whose name matches `filter`).
  *
  * @param {string} [filter] - Optional substring to match against suite names
@@ -201,22 +208,29 @@ async function run(filter, onProgress) {
     if (NODE) {
         const line = "─".repeat(50)
         console.log(`\n${line}`)
-        if (results.failed === 0)
+        if (isGreen(results))
             console.log(
                 GREEN(`  All ${results.passed} tests passed`) +
                     (results.skipped ? DIM(` (${results.skipped} skipped)`) : "")
             )
-        else
+        else if (results.failed > 0)
             console.log(
                 GREEN(`  ${results.passed} passed`) +
                     "  " +
                     RED(`${results.failed} failed`) +
                     (results.skipped ? DIM(`  ${results.skipped} skipped`) : "")
             )
+        else
+            // Zero passes, zero failures — nothing was verified.
+            console.log(
+                RED(`  No tests passed`) +
+                    DIM(` — ${results.skipped} skipped, 0 ran`) +
+                    DIM(" (a run that verifies nothing is not success)")
+            )
 
         console.log(line + "\n")
 
-        if (results.failed > 0) process.exitCode = 1
+        if (NODE && !isGreen(results)) process.exitCode = 1
     }
 
     return results

@@ -11,6 +11,9 @@
 
 import Test from "./src/core/Test.js"
 
+// Core — the test runner's own verdict rule (clause RUN-01, issue #9 H1)
+import "./test/core/test-runner.test.js"
+
 // Conformance — Query AST v1 (clauses AST-S/O/V/P/I/N/Q)
 import "./test/conformance/ast/structure.test.js"
 import "./test/conformance/ast/operators.test.js"
