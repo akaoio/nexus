@@ -97,3 +97,4 @@ export function confirmDialog(message) {
 export { createApi } from "./api.js"
 export { createI18n } from "./i18n.js"
 export { createTheme } from "./theme.js"
+export { subscribe } from "./events.js"

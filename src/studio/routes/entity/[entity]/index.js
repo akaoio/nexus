@@ -5,7 +5,7 @@
  * registry (list, kanban, …). Structure lives in template.js.
  */
 
-import { mountTemplate, button, icon, text, toast, confirmDialog } from "../../../kit/index.js"
+import { mountTemplate, button, icon, text, toast, confirmDialog, subscribe } from "../../../kit/index.js"
 import { buildForm, editableFields, interfaces } from "../../../kit/fields.js"
 import { hexSVG } from "../../../css/elements/bits.css.js"
 import { activeFilter } from "../../../components/query-builder/index.js"
@@ -305,5 +305,16 @@ export function render(ctx) {
     }))
 
     refresh()
+
+    // live refresh: coarse but truthful — re-run refresh() on any matching event
+    let reloadTimer = null
+    const unsubscribe = subscribe([ctx.state.entity], () => {
+        clearTimeout(reloadTimer)
+        reloadTimer = setTimeout(refresh, 250) // collapse bursts into one reload
+    })
+    // CONCERN: router has no teardown hook; fallback to beforeunload + host._unsubscribe
+    window.addEventListener("beforeunload", unsubscribe)
+    host._unsubscribe = unsubscribe
+
     return host
 }
