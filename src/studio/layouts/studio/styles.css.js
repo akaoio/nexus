@@ -19,7 +19,7 @@ body { font-family: var(--font); font-size: var(--text-md); background: var(--bg
     grid-template-areas: "top" "main";
 }
 .nx-top { grid-area: top; z-index: 30; display: flex; gap: 0; align-items: center; padding: 0; background: var(--surface) }
-.nx-brand { font-weight: 700; letter-spacing: -0.01em; margin-left: var(--sp-3); margin-right: auto }
+.nx-brand { display: flex; flex-direction: row; align-items: center; gap: var(--unit); font-weight: 700; letter-spacing: -0.01em; margin-left: var(--sp-3); margin-right: auto }
 .nx-brand .hex { color: var(--accent); display: inline-flex; vertical-align: -0.1875rem; --icon: 1.375rem }
 .nx-login .hex { --icon: 1.5rem }
 .nx-brand small { color: var(--muted); font-weight: 500 }
