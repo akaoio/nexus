@@ -268,7 +268,7 @@ async function doLogin(pass, err) {
         // pair is stored only encrypted; unlocking is one biometric touch
         if (passkeySupported() && !(await enrolled())) {
             try {
-                const { confirmDialog } = await import("./kit.js")
+                const { confirmDialog } = await import("./kit/index.js")
                 if (await confirmDialog("Lock your key to this device with a passkey? Next time you sign in with one touch — the key is stored encrypted only.")) await enroll(pair)
             } catch {}
         }

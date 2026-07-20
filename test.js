@@ -75,6 +75,9 @@ import "./test/cli/cli.test.js"
 // CLI operations — migrate/site/app/doctor e2e (clauses OPS-*)
 import "./test/cli/ops.test.js"
 
+// CLI — the Studio as static assets for production (clauses STB-*)
+import "./test/cli/studio-build.test.js"
+
 // HTTP API — auto-generated from schemas, e2e over real HTTP (clauses API-*)
 import "./test/http/api.test.js"
 
