@@ -11,7 +11,7 @@ import Test, { assert } from "../../src/core/Test.js"
 import { SYSTEM_ENTITIES, SYSTEM_BASELINES, adminBaselines, isSystem, packPolicy, unpackPolicy, validatePolicyRow, unpackPolicyRows, importIdentities, SERVER_ONLY, isServerOnly } from "../../src/core/App/system.js"
 import { validate } from "../../src/core/Model.js"
 import { validatePolicy, policiesFor, loadPolicies } from "../../src/core/App/policies.js"
-import { resolve } from "../../src/core/Permission.js"
+import { resolve, fields } from "../../src/core/Permission.js"
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
@@ -148,5 +148,33 @@ Test.describe("System entities (SYS-*)", () => {
         assert.equal(isServerOnly("nexus_notification"), false)
         // every schema must pass the framework's own validation
         for (const s of SYSTEM_ENTITIES) assert.equal(validate(s).valid, true, s.name)
+    })
+
+    Test.it("SYS-10 self-service cannot touch roles: the field sits at permlevel 1, admin keeps it", () => {
+        const user = SYSTEM_ENTITIES.find((s) => s.name === "nexus_user")
+        const rolesField = user.fields.find((f) => f.name === "roles")
+        assert.equal(rolesField.permlevel, 1) // the whole fix, in one assertion
+        const schema = user
+        const selfPolicies = SYSTEM_BASELINES.filter((p) => !p.roles) // what an ordinary user gets
+        const selfCtx = { entity: "nexus_user", action: "write", user: "P", roles: [] }
+        assert.equal(resolve(selfPolicies, selfCtx).allowed, true, "self-service still grants the row")
+        assert.equal(fields(selfPolicies, selfCtx, schema).includes("roles"), false, "but never the roles field")
+        assert.equal(fields(selfPolicies, selfCtx, schema).includes("name"), true, "ordinary fields still writable")
+        const adminPolicies = SYSTEM_BASELINES.filter((p) => p.roles?.includes("admin"))
+        const adminCtx = { entity: "nexus_user", action: "write", user: "A", roles: ["admin"] }
+        assert.equal(fields(adminPolicies, adminCtx, schema).includes("roles"), true, "admin manages roles")
+    })
+
+    Test.it("SYS-11 INVARIANT: no shipped baseline grants write on a permlevel-restricted field to a roleless actor", () => {
+        // pins C1's SHAPE, not just its instance — a future baseline cannot reopen it
+        for (const schema of SYSTEM_ENTITIES) {
+            const restricted = (schema.fields ?? []).filter((f) => (f.permlevel ?? 0) !== 0).map((f) => f.name)
+            if (!restricted.length) continue
+            const open = SYSTEM_BASELINES.filter((p) => !p.roles && p.entity === schema.name)
+            const ctx = { entity: schema.name, action: "write", user: "P", roles: [] }
+            const writable = fields(open, ctx, schema)
+            for (const name of restricted)
+                assert.equal(writable.includes(name), false, `${schema.name}.${name} must not be writable by a roleless baseline`)
+        }
     })
 })

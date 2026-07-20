@@ -203,7 +203,13 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         // apps use — a Studio write is instantly a live grant, no restart.
         const NEXUS_CTX = {
             user: "nexus", roles: [], shares: [],
-            policies: ["nexus_policy", "nexus_user"].map((entity) => ({ entity, actions: ["read", "create"], rule: null, permlevel: 0, ifOwner: false }))
+            policies: ["nexus_policy", "nexus_user"].flatMap((entity) => [
+                { entity, actions: ["read", "create"], rule: null, permlevel: 0, ifOwner: false },
+                // this internal actor maintains the directory itself (bootstrap
+                // import, the live cache) — it needs the SAME permlevel-1 field
+                // access to nexus_user.roles the admin bundle grants (C1, SYS-10)
+                { entity, actions: ["read", "create"], rule: null, permlevel: 1, ifOwner: false }
+            ])
         }
         const dbPolicies = []
         const usersByPub = new Map()
