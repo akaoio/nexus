@@ -173,10 +173,21 @@ export function createApi({ plane, context, base = "/api/v1", endpoints = [], ev
             // the engine composes, authorized by the SAME policy engine as
             // everything else — `read` on nexus_policy, which only the admin
             // bundle grants. No bespoke gate.
+            //
+            // SECURITY (review finding, POLWIN-04): this route discloses
+            // EVERY layer, unfiltered — it has no per-row filter to apply, so
+            // a probe that merely checked "may list SOME nexus_policy rows"
+            // (e.g. `plane.list(..., { limit: 1 })`, discarded) would let a
+            // SCOPED grant (a rule-bearing or ifOwner policy row) see the
+            // whole set anyway, silently turning "read your own policy" into
+            // "read everyone's". `plane.access()` returns the engine's own
+            // `{ allowed, filter }` without running a query; filter === null
+            // is the honest test for UNSCOPED — every row, not merely some.
             if (segments[0] === "_policy-layers" && req.method === "GET") {
                 if (!layers) throw new Error("E_NOT_FOUND: no policy layers on this instance")
                 const ctx = context(req)
-                await plane.list("nexus_policy", { limit: 1 }, ctx)   // authorization, by the engine
+                const { allowed, filter } = plane.access("nexus_policy", "read", ctx) // authorization, by the engine
+                if (!allowed || filter !== null) throw new Error("E_FORBIDDEN: read on nexus_policy")
                 return ok(res, layers()), true
             }
 

@@ -431,7 +431,7 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         effects = { stop: async () => { eventHub.stop(); clearInterval(poller); await jobThread.stop() } }
     }
 
-    return { api, plane, authState, challenges, engine, authMode, extensions, embedderInfo, policyLayers, effects }
+    return { api, plane, authState, challenges, engine, authMode, extensions, embedderInfo, effects }
 }
 
 export default { buildInstanceApi }

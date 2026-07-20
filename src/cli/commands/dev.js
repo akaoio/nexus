@@ -366,6 +366,7 @@ export async function dev(args, flags, out) {
         // /_studio gate check. This dev-only address is gone; it falls
         // through to the "no other /_studio surface exists" 404 below like
         // any other dead path.
+
         // Studio session (whoami) MOVED to GET /api/v1/_session (Task 2, issue
         // #10) — one login contract in both dev and production. This dev-only
         // address is gone; it falls through to the "no other /_studio surface
