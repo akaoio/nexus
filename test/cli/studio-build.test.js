@@ -16,10 +16,18 @@ import { mkdtempSync, rmSync, readFileSync, existsSync, readdirSync, statSync } 
 import { tmpdir } from "os"
 import { join, dirname, resolve } from "path"
 import { fileURLToPath } from "url"
+import { spawnSync } from "child_process"
 import Test, { assert } from "../../src/core/Test.js"
 import { collectModules, buildStudio, stripComments } from "../../src/cli/commands/studio.js"
 
 const NEXUS_ROOT = fileURLToPath(new URL("../../", import.meta.url))
+const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
+
+/** Spawn `nexus studio build [args]` in a scratch instance, --json. */
+function runBuild(instance, args = []) {
+    const result = spawnSync(process.execPath, [BIN, "studio", "build", "--json", ...args], { cwd: instance, encoding: "utf8" })
+    return { code: result.status, data: JSON.parse(result.stdout || result.stderr || "{}") }
+}
 
 /** Every .js file in a built tree, recursively. */
 function* walkJs(dir) {
@@ -210,5 +218,50 @@ Test.describe("Studio build — nexus studio build (STB-*)", () => {
         const boot = JSON.parse(html.match(/<script[^>]*id="nx-boot"[^>]*>([^<]*)<\/script>/)[1])
         assert.equal(boot.mode, "production", "a built shell is production")
         rmSync(out, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    })
+
+    Test.it("STB-OUT the CLI guard accepts only the ONE --out location `nexus start` actually serves (public/studio); anything else is refused loudly, not silently 404'd later", () => {
+        // buildStudio() itself takes any `out` (the STB-* clauses above drive
+        // it directly with a tmpdir) — this guard lives in the `studio()` CLI
+        // handler. `nexus start` (start.js) hardcodes public/studio/index.html
+        // as the only shell it ever serves, so `--out public/admin` used to
+        // SUCCEED (it was merely "inside public/") and bake a shell with
+        // /admin/ asset refs that nothing serves — a loud success followed by
+        // every Studio route 404ing with no explanation. This pins the fix:
+        // the guard now accepts exactly <instance>/public/studio.
+        const scratch = mkdtempSync(join(tmpdir(), "nexus-studio-out-"))
+        try {
+            spawnSync(process.execPath, [BIN, "create", "shop"], { cwd: scratch })
+            const instance = join(scratch, "shop")
+
+            // default (no --out): unchanged behavior — resolves to public/studio and succeeds
+            const def = runBuild(instance)
+            assert.equal(def.code, 0, JSON.stringify(def.data))
+            assert.equal(def.data.ok, true)
+            assert.truthy(existsSync(join(instance, "public", "studio", "index.html")))
+            const html = readFileSync(join(instance, "public", "studio", "index.html"), "utf8")
+            assert.truthy(html.includes("/studio/"), `the default build's shell must reference its /studio/ mount; got ${html.slice(0, 200)}`)
+
+            // --out public/studio explicitly: the one mount nexus start reads — same as default
+            const explicit = runBuild(instance, ["--out", "public/studio"])
+            assert.equal(explicit.code, 0, JSON.stringify(explicit.data))
+            assert.equal(explicit.data.ok, true)
+
+            // --out public/admin: inside public/, but NOT the mount `nexus start`
+            // serves — must be refused loudly rather than bake a dead shell
+            const admin = runBuild(instance, ["--out", "public/admin"])
+            assert.equal(admin.code, 2, "an --out nexus start cannot serve must exit non-zero")
+            assert.equal(admin.data.ok, false)
+            assert.equal(admin.data.code, "E_STUDIO_OUT")
+            assert.equal(existsSync(join(instance, "public", "admin")), false, "the refused build must not have written anything")
+
+            // --out ../evil: outside public/ entirely — still refused, unchanged
+            const evil = runBuild(instance, ["--out", "../evil"])
+            assert.equal(evil.code, 2)
+            assert.equal(evil.data.ok, false)
+            assert.equal(evil.data.code, "E_STUDIO_OUT")
+        } finally {
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
     })
 })

@@ -39,7 +39,7 @@ under Unfinished below, not silently dropped.
 | Kernel / CLI / Studio | extracted from akao; real-process CLI; full tabbed Studio (Data+Ask/Form/Search/Schema/Permissions) in `nexus dev` | KRN-*, CLI-*, NX*-* |
 | HTTP + serving | auto API (`/query`, `/search`, `/ask`); `/_health`; request logging | API-* |
 | **Production server** | **`nexus start` — refuses god-mode (E_NO_AUTH), TLS-required (E_NO_TLS/--insecure), auth-enforced, no Studio/framework exposure, self-served HTTPS** | **START-*** |
-| **Studio in production (issue #10)** | **the Studio's whole data plane now runs under `nexus start`: shipped as static assets (`nexus studio build` → `public/studio/`, served through the existing static boundary — zero new server surface); login/session via `GET/POST /api/v1/_session`; the read-only policy baseline layers via `GET /api/v1/_policy-layers`; data, users, roles, permissions, jobs, search, and settings (locales/themes) all work end to end; nav is derived from the boot `mode`, so a production build's sidebar never offers a page it can't serve. Schema editing (`/_studio/model`, entity-delete) and config writing (`/_studio/config`, `/_studio/ai`) stay dev-only — see Unfinished** | **STUDIO-13, START-SESSION, STUDIO-09b, POLWIN-03, POLWIN-04, VND-07, STB-01, STB-02, STB-03, STB-03a, STB-03b, STB-04, START-STUDIO, START-STUDIO-ABSENT, PROD-01, PROD-02, PROD-03, ROUTES-*** |
+| **Studio in production (issue #10)** | **the Studio's whole data plane now runs under `nexus start`: shipped as static assets (`nexus studio build` → `public/studio/`, served through the existing static boundary — zero new server surface); login is the ZEN challenge/verify handshake (`POST /api/v1/_auth/challenge` + `POST /api/v1/_auth/verify`), whoami is `GET /api/v1/_session` (read-only, no POST); the read-only policy baseline layers via `GET /api/v1/_policy-layers`; data, users, roles, permissions, jobs, search, and settings (locales/themes) all work end to end; nav is derived from the boot `mode`, so a production build's sidebar never offers a page it can't serve. Schema editing (`/_studio/model`, entity-delete) and config writing (`/_studio/config`, `/_studio/ai`) stay dev-only — see Unfinished** | **STUDIO-13, START-SESSION, STUDIO-09b, POLWIN-03, POLWIN-04, VND-07, STB-01, STB-02, STB-03, STB-03a, STB-03b, STB-04, START-STUDIO, START-STUDIO-ABSENT, PROD-01, PROD-02, PROD-03, ROUTES-*** |
 | Security | pentest findings pinned as clauses (info-disclosure, oracle, static-serve) | SEC-* |
 | **Install/lifecycle** | **one-line installers (install.sh / install.ps1, GitHub-first, tarball fallback, npm never required); `nexus update` (git fetch+hard-reset, the access pattern) and `nexus uninstall --yes`** | CLI-* (help pin) |
 | **Entity identity** | **schema `icon:` (any bootstrap-icons name — vendored 1.1 MB sprite, nx-icon registry-first with sprite fallback); picker in the /entities editor** | MS-S14 |
@@ -172,6 +172,17 @@ under Unfinished below, not silently dropped.
   copies the reachable files, rewriting `/_nexus/src/...` specifiers to relative paths — no
   minification, no combining. Deliberate (zero-dep kernel, ES modules), not a gap, but
   production Studio assets ship as individual, unminified files.
+- **Spec-to-code delta, deliberate**: `nexus studio build` is on-demand only — it is NOT yet
+  wired into `nexus create` or `nexus update`, though the design spec (§2.4) anticipated that
+  wiring. It belongs with the deferred install/update lifecycle work (issue #8). A freshly
+  created instance therefore has no production Studio until an operator runs
+  `nexus studio build` by hand.
+- **Honest security note**: the built shell is served PRE-authentication for Studio routes
+  (the shell itself has to load before login can happen) and bakes `boot.schemas` into that
+  shell — full schema documents: field names, types, permlevels. So an anonymous caller can
+  now read the schema SHAPE of an instance (no rows, no secrets, no config) just by hitting a
+  Studio route. That is a small new reconnaissance surface that did not exist when production
+  served no Studio at all — stated plainly rather than left implicit.
 - **PROD-02's "a declared production route is served" direction is latent**: the clause checks
   both directions over the real `STUDIO_ACCESS` table, but every `/_studio/*` entry in that
   table is still dev-only (the bullet above), so `PRODUCTION_ROUTES` is empty today and only

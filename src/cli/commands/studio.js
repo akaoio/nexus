@@ -461,18 +461,27 @@ export async function studio(args, flags, out) {
     // public/ dir, for EVERY Studio route — so its asset refs must be ABSOLUTE
     // to the Studio's URL mount, mirroring how dev uses absolute /_nexus/…
     // paths (a "./"-relative ref resolves against the current ROUTE and 404s
-    // at any nested route). The mount is the output dir's path under public/:
-    // the default public/studio → "/studio/". A build placed OUTSIDE public/
-    // cannot be served by `nexus start` at all (it serves nothing beyond
-    // public/) — refuse it loudly rather than emit a shell that silently 404s.
+    // at any nested route). But `nexus start` (start.js) does not serve
+    // "whatever is under public/" as a Studio — it hardcodes ONE path,
+    // public/studio/index.html, as the only shell it will ever answer Studio
+    // routes with. So `--out` outside public/ was refusable, but `--out
+    // public/admin` used to SUCCEED — baking a shell with /admin/ asset refs
+    // that `nexus start` then never serves: a loud "Studio built" line
+    // followed by every Studio route 404ing with no explanation. Refuse
+    // anything but the one location `nexus start` actually reads.
     const publicDir = join(root, "public")
+    const studioDir = join(publicDir, "studio")
     const mountRel = posix(relative(publicDir, target))
-    if (mountRel.startsWith("..")) {
-        out.error(`nexus start can only serve a Studio built under ${publicDir}${sep} — got ${target}, which is outside public/`, { code: "E_STUDIO_OUT" })
+    if (mountRel !== "studio") {
+        const where = mountRel.startsWith("..") ? "outside public/ entirely" : "inside public/, but not public/studio/"
+        out.error(
+            `\`nexus start\` serves production Studio only from ${studioDir}${sep} — that is the one mount it reads. Got ${target}, which is ${where}; it would never be served. Build with no --out (or --out public/studio) instead.`,
+            { code: "E_STUDIO_OUT" }
+        )
         process.exitCode = 2
         return
     }
-    const mount = mountRel ? "/" + mountRel + "/" : "/"
+    const mount = "/studio/"
 
     // Boot data is BAKED into the built shell (it is a static file now), so a
     // schema change means a rebuild — said plainly rather than discovered.
