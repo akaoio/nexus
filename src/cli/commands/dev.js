@@ -202,6 +202,8 @@ export async function dev(args, flags, out) {
             challenges.delete(b.nonce) // one-time use
             if (!(await verifyChallenge(b.pub, b.nonce, b.signature)))
                 return json(res, 401, { ok: false, error: { code: "E_AUTH", message: "signature does not prove the key" } })
+            if (!authState.knownPub(b.pub))
+                return json(res, 401, { ok: false, error: { code: "E_AUTH", message: "this identity is not provisioned on this instance" } })
             const roles = authState.rolesForPub(b.pub)
             const token = issueToken({ user: b.pub, roles }, authState.secret)
             return json(res, 200, { ok: true, data: { token, roles } })

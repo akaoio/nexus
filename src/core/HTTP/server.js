@@ -98,7 +98,7 @@ function devPolicies(schemas) {
  */
 export async function buildInstanceApi({ root, config, schemas, apps, appPolicies = [], mode = "dev" }) {
     const extensions = await loadExtensions(root, apps)
-    const authState = { required: false, secret: null, rolesForPub: () => [] }
+    const authState = { required: false, secret: null, rolesForPub: () => [], knownPub: () => false }
     const challenges = new Map() // nonce → expiry (one-time, 60s)
     let api = null
     let plane = null
@@ -262,6 +262,9 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         Object.defineProperty(authState, "required", { get: () => keys.length > 0 || authState.identities.length > 0 || usersByPub.size > 0 })
         authState.secret = config.token_secret || randomBytes(32).toString("hex") // ephemeral if unset
         authState.rolesForPub = (pub) => usersByPub.get(pub)?.roles ?? authState.identities.find((i) => i.pub === pub)?.roles ?? []
+        // membership: a token is for a PROVISIONED user — holding a keypair is
+        // not membership (issue #9 C1b)
+        authState.knownPub = (pub) => usersByPub.has(pub) || authState.identities.some((i) => i.pub === pub)
 
         // bootstrap: an empty directory imports the config identities ONCE —
         // from then on the table IS the truth the Studio edits
