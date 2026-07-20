@@ -192,13 +192,16 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.equal((await callAs(ADMIN, "GET", "/_studio/entities")).status, 200) // admin unaffected
     })
 
-    Test.it("STUDIO-09 /_studio/session stays open to any authenticated user", async () => {
-        assert.equal((await callAs(VIEWER, "GET", "/_studio/session")).status, 200)
+    Test.it("STUDIO-09 /api/v1/_session stays open to any authenticated user", async () => {
+        assert.equal((await callAs(VIEWER, "GET", "/api/v1/_session")).status, 200)
     })
 
-    Test.it("STUDIO-09a the reason the gate excludes /_studio/session: an anonymous caller (pre-login, no token) can probe whoami", async () => {
+    Test.it("STUDIO-09a whoami moved to /api/v1/_session (one contract, both modes) — /_studio/session is dead, and an anonymous caller (pre-login, no token) can still probe whoami at the new address", async () => {
+        // it moved, it did not fork — the dev-only path answers 404 like any
+        // other dead /_studio surface (same convention as STUDIO-04)
+        assert.equal((await fetch((await ensure()) + "/_studio/session")).status, 404)
         // the login UI must be able to ask "is auth on?" before it holds any token
-        const anon = await fetch((await ensureAuth()) + "/_studio/session")
+        const anon = await fetch((await ensureAuth()) + "/api/v1/_session")
         assert.equal(anon.status, 200)
         const body = await anon.json()
         assert.equal(body.data.user, null)
@@ -222,16 +225,18 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.truthy(handledRoutes.size >= STUDIO_ROUTE_PATHS.length, "the source scan found at least the declared routes")
         for (const path of handledRoutes) assert.truthy(path in STUDIO_ACCESS, `${path} is handled in dev.js but not declared in STUDIO_ACCESS`)
         assert.equal(accessFor("/_studio/nonexistent"), "admin", "an undeclared route is admin-only")
-        assert.equal(accessFor("/_studio/session"), "any", "the declared exception is honoured")
+        // the whoami exception moved out WITH the route in Task 2 — its
+        // /_studio address is undeclared now, same as any other dead path
+        assert.equal(accessFor("/_studio/session"), "admin", "the exception moved to /api/v1/_session; the old address defaults like any other undeclared route")
     })
 
-    Test.it("STUDIO-11 /_studio/session resolves roles from the LIVE directory, not the token's stale claims (issue #9 final review, item 1)", async () => {
+    Test.it("STUDIO-11 /api/v1/_session resolves roles from the LIVE directory, not the token's stale claims (issue #9 final review, item 1)", async () => {
         // VIEWER already holds a cached session token whose CLAIMS carry
         // roles: ["viewer"] (baked in at issue time). An admin now clears
         // that identity's roles in the directory through the ordinary plane
         // API — the SAME token must immediately start answering with the
         // LIVE roles, exactly like the /_studio gate already did; if
-        // /_studio/session instead echoed the token's own claims, a route
+        // /api/v1/_session instead echoed the token's own claims, a route
         // that trusts this response (the /users profile-save flow) would act
         // on a lie about a caller whose access was just revoked.
         const directory = await callAs(ADMIN, "GET", "/api/v1/nexus_user")
@@ -240,7 +245,7 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.truthy(viewerRow, "the viewer's directory row is visible to the admin")
         const cleared = await callAs(ADMIN, "PATCH", `/api/v1/nexus_user/${viewerRow.id}`, { roles: JSON.stringify([]) })
         assert.equal(cleared.status, 200, "the admin can clear another identity's roles")
-        const session = await callAs(VIEWER, "GET", "/_studio/session")
+        const session = await callAs(VIEWER, "GET", "/api/v1/_session")
         assert.equal(session.status, 200)
         assert.deepEqual(session.body.data.roles, [], "the SAME token now reports the live (empty) roles, not its stale claims")
     })
@@ -262,7 +267,7 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.equal(typeof token, "string")
         assert.truthy(token.length > 0, "the freshly provisioned identity received a real session token")
         tokenCache.set(freshPair, token) // reuse the handshake above instead of logging in twice
-        const whoami = await callAs(freshPair, "GET", "/_studio/session")
+        const whoami = await callAs(freshPair, "GET", "/api/v1/_session")
         assert.equal(whoami.status, 200)
         assert.equal(whoami.body.data.user, freshPair.pub)
         assert.deepEqual(whoami.body.data.roles, ["viewer"], "the role granted at provisioning time is live immediately")
@@ -275,7 +280,9 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         for (const path of PRODUCTION_ROUTES) assert.truthy(modesFor(path).includes("production"))
         // the accessFor contract is unchanged by the new axis
         assert.equal(accessFor("/_studio/nonexistent"), "admin")
-        assert.equal(accessFor("/_studio/session"), "any")
+        // /_studio/session is gone (moved to /api/v1/_session, Task 2) — its
+        // old address is simply undeclared now, not a lingering special case
+        assert.equal(accessFor("/_studio/session"), "admin")
     })
 
     Test.it("STUDIO-99 cleanup", async () => {

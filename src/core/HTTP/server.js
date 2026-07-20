@@ -367,7 +367,7 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         const eventHub = createEventHub({ plane })
         eventHub.attach(extensions, allSchemas)
 
-        api = createApi({ plane, endpoints: extensions.endpoints, context, events: eventHub })
+        api = createApi({ plane, endpoints: extensions.endpoints, context, events: eventHub, authRequired: () => authState.required })
         authMode = authState.required
             ? `${[keys.length && `${keys.length} API keys`, authState.identities.length && `${authState.identities.length} ZEN identities`].filter(Boolean).join(" + ")} (E_AUTH without credentials)`
             : "DEV identity — wide-open policies, user via x-nexus-user header"

@@ -100,9 +100,13 @@ function listOptions(searchParams) {
  * @param {string} [config.base] - URL prefix (default /api/v1)
  * @param {Object} [config.events] - the realtime event hub (createEventHub()),
  *   or null when realtime is not enabled — mounts GET /api/v1/_events
+ * @param {() => boolean} [config.authRequired] - live auth-required flag
+ *   (buildInstanceApi passes () => authState.required); a function, not a
+ *   captured boolean, so it never goes stale — backs GET /api/v1/_session,
+ *   the one login contract shared by dev and production
  * @returns {(req, res) => Promise<boolean>} true when the request was handled
  */
-export function createApi({ plane, context, base = "/api/v1", endpoints = [], events = null }) {
+export function createApi({ plane, context, base = "/api/v1", endpoints = [], events = null, authRequired = () => false }) {
     return async function handle(req, res) {
         const url = new URL(req.url, "http://localhost")
         if (url.pathname !== base && !url.pathname.startsWith(base + "/")) return false
@@ -122,6 +126,22 @@ export function createApi({ plane, context, base = "/api/v1", endpoints = [], ev
                 const entities = url.searchParams.get("entities")
                 events.subscribe({ res, ctx, entities: entities ? entities.split(",").filter(Boolean) : null })
                 return true // the connection stays open — no ok()/end()
+            }
+
+            // Session (whoami). Lives in the versioned API so the login UI has
+            // ONE contract in both modes (issue #10). Anonymous is legal and
+            // returns the minimum: whether auth is on, and nothing else.
+            if (segments[0] === "_session" && req.method === "GET") {
+                const token = url.searchParams.get("token")
+                if (token && !req.headers["authorization"]) req.headers["authorization"] = "Bearer " + token
+                let user = null
+                let roles = []
+                try {
+                    const ctx = context(req)
+                    user = ctx.user ?? null
+                    roles = ctx.roles ?? []
+                } catch { /* anonymous — E_AUTH is a legal answer here, not an error to swallow: the login UI must be able to ask "is auth on?" before it holds any credential */ }
+                return ok(res, { authRequired: authRequired(), user, roles }), true
             }
 
             const ctx = context(req)

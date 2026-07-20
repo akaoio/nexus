@@ -151,6 +151,30 @@ Test.describe("Production server — nexus start (START)", () => {
         }
     })
 
+    Test.it("START-SESSION production serves /api/v1/_session; anonymous gets the minimum, a member gets live roles", async () => {
+        const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true })
+        const { proc, ready } = startServer(instance, ["--insecure"])
+        try {
+            const base = await ready
+            const call = (method, path, body, key) =>
+                fetch(base + path, { method, headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: body && JSON.stringify(body) })
+
+            const anon = await call("GET", "/api/v1/_session")
+            assert.equal(anon.status, 200)
+            const a = (await anon.json()).data
+            assert.equal(a.user, null)
+            assert.deepEqual(a.roles, [])
+            assert.equal(typeof a.authRequired, "boolean")
+            const mine = (await (await call("GET", "/api/v1/_session", undefined, "k-admin")).json()).data
+            assert.deepEqual(mine.roles, ["admin"])
+            // and the dev-only path is gone from production
+            assert.equal((await call("GET", "/_studio/session")).status, 404)
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
     Test.it("START-04 with a TLS certificate: serves HTTPS", async () => {
         const openssl = spawnSync("openssl", ["version"], { encoding: "utf8" })
         if (openssl.status !== 0) {

@@ -246,10 +246,10 @@ export async function dev(args, flags, out) {
         // the admin UI edited. Editing the schema is a dev activity (Strapi
         // parity) — `nexus start` never exposes these routes.
         // When the server BOOTED with auth on, every /_studio route needs a
-        // signed-in identity EXCEPT the ones STUDIO_ACCESS declares "any" (the
-        // whoami probe — the login UI must be able to ask "is auth on?"
-        // before it holds any token, STUDIO-09a). ONE source of truth: this
-        // gate never names a path itself (issue #9 final review, item 3) — a
+        // signed-in identity EXCEPT the ones STUDIO_ACCESS declares "any" (no
+        // route claims that tier today — the former whoami exception moved
+        // to GET /api/v1/_session in Task 2, since the login UI needs to ask
+        // "is auth on?" in BOTH modes, not just dev). ONE source of truth: this
         // hardcoded `&& url.pathname !== "/_studio/" + someNewPath` here would make
         // that route fully UNAUTHENTICATED, not merely open-to-any-role; the
         // exemption belongs ONLY in dev-access.js's declared table. A session
@@ -380,20 +380,10 @@ export async function dev(args, flags, out) {
             return json(res, 200, { ok: true, data: { layers, devMode: !authState.required, authRequired: authState.required } })
         }
 
-        // Studio session (whoami) — tells the UI whether login is required and,
-        // from a Bearer token, who is signed in.
-        if (url.pathname === "/_studio/session" && req.method === "GET") {
-            let signed = null
-            const authz = req.headers["authorization"]
-            if (authz?.startsWith("Bearer ")) signed = verifyToken(authz.slice(7), authState.secret)
-            // roles come from the LIVE directory, never from the token's own
-            // claims (same law as the /_studio gate below) — otherwise a
-            // revoked/cleared role keeps answering with the STALE token roles
-            // until the token expires, and callers that gate a whole write on
-            // this response (e.g. the /users profile save) act on a lie.
-            const roles = signed ? authState.rolesForPub(signed.user) ?? [] : []
-            return json(res, 200, { ok: true, data: { authRequired: authState.required, user: signed?.user ?? null, roles } })
-        }
+        // Studio session (whoami) MOVED to GET /api/v1/_session (Task 2, issue
+        // #10) — one login contract in both dev and production. This dev-only
+        // address is gone; it falls through to the "no other /_studio surface
+        // exists" 404 below like any other dead path.
         // Studio user management (DEV-ONLY) — add/remove/role identities in
         // nexus.config.json AND (add/role) the nexus_user directory row that
         // actually grants login past first boot (issue #9 final review, item

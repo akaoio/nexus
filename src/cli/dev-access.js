@@ -10,10 +10,13 @@
  * open-to-any-role.
  *
  * "any" means NO AUTH REQUIRED AT ALL — an anonymous, pre-login caller with
- * no Bearer token gets a 200 (STUDIO-09a: the login UI must be able to ask
- * "is auth on?" before it holds any token). It does NOT mean "authenticated,
- * any role accepted" — there is no such tier today; every other declared or
- * undeclared route demands the admin role once auth is required.
+ * no Bearer token gets a 200. It does NOT mean "authenticated, any role
+ * accepted" — there is no such tier. No /_studio route claims "any" today:
+ * the one that used to (the whoami probe) moved to GET /api/v1/_session in
+ * Task 2, since the login UI needs to ask "is auth on?" in BOTH modes, not
+ * just dev — every declared or undeclared /_studio route now demands the
+ * admin role once auth is required. The tier stays defined for a future
+ * route that genuinely needs it.
  *
  * "modes" has NO DEFAULT: an entry that omits it is dev-only. Opening a
  * route to production is one deliberate line here, and the invariant
@@ -21,7 +24,8 @@
  */
 
 export const STUDIO_ACCESS = Object.freeze({
-    "/_studio/session": Object.freeze({ roles: "any", modes: ["dev"] }),   // moves to /api/v1/_session in Task 2
+    // whoami moved to GET /api/v1/_session (Task 2) — one login contract in
+    // both modes; the /_studio address is simply gone, not merely re-tiered.
     "/_studio/model": Object.freeze({ roles: "admin", modes: ["dev"] }),
     "/_studio/entities": Object.freeze({ roles: "admin", modes: ["dev"] }),
     "/_studio/entity-delete": Object.freeze({ roles: "admin", modes: ["dev"] }),
