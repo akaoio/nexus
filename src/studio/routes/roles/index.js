@@ -30,11 +30,15 @@ export function render(ctx) {
             ctx.api.list("nexus_policy", null),
             ctx.api.get("/api/v1/_policy-layers") // Task 3's composed layers — same document Permissions reads
         ])
+        // a failed layers fetch must never paint confident zeros (that's the
+        // exact bug this page exists to fix) — abort and keep the last good
+        // render, same as permissions/index.js's `if (!w.ok) return`
+        if (!layers.ok) return toast(layers.error.code + ": " + (layers.error.message || "could not load shipped baselines"), "err")
         const roleRows = roles.ok ? roles.data : []
         const userRows = users.ok ? users.data : []
         const policyRows = policies.ok ? policies.data : []
         // read-only layers are the shipped baselines; mirrors permissions/index.js's `baseline`
-        const baselinePolicies = layers.ok ? (layers.data.layers ?? []).filter((l) => l.readonly).flatMap((l) => l.policies) : []
+        const baselinePolicies = (layers.data.layers ?? []).filter((l) => l.readonly).flatMap((l) => l.policies)
 
         // every name in play — a row, a policy annotation, or a holder makes a
         // role REAL; rows merely give it a description and a delete button
