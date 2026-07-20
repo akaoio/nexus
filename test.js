@@ -133,6 +133,10 @@ import "./test/http/auth.test.js"
 // AuthN — WebAuthn PRF → deterministic ZEN identity (clauses AUTH-PRF-*)
 import "./test/http/webauthn.test.js"
 
+// AuthN — roles resolve per request, not per token; revocation is
+// immediate, no denylist, no token version (clause AUTH-REVOKE, issue #9 I4)
+import "./test/http/revocation.test.js"
+
 // Security — pentest findings pinned as clauses (clauses SEC-*)
 import "./test/security/security.test.js"
 

@@ -301,7 +301,14 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             // 1) a ZEN session token (issued by /_auth/verify)
             if (bearer) {
                 const claims = verifyToken(bearer, authState.secret)
-                if (claims) return { user: claims.user, roles: claims.roles, policies: policiesFor(livePolicies(), claims.roles), shares: [] }
+                // The token proves IDENTITY; roles come from the LIVE directory
+                // every request, so revocation is immediate and no token state
+                // needs synchronizing (issue #9 I4). claims.roles stays in the
+                // payload for debugging and is never trusted here.
+                if (claims) {
+                    const roles = authState.rolesForPub(claims.user) ?? []
+                    return { user: claims.user, roles, policies: policiesFor(livePolicies(), roles), shares: [] }
+                }
             }
             // 2) a static API key (constant-time, SEC-06)
             const presented = bearer ?? req.headers["x-nexus-key"]
