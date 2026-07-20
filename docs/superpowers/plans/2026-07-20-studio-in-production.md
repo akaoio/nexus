@@ -320,21 +320,43 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 7: The nav hides what production does not have
+### Task 7: The production Studio boots, and its nav hides what production does not have
 
-**Files:** Modify `src/studio/app.js`, `src/studio/layouts/studio/shell.js` · Test: none (UI)
+**Files:** Modify `src/studio/app.js`, `src/studio/routes/schema-designer/index.js` (or wherever the designer's static `core/Data` import lives), `src/studio/layouts/studio/shell.js` · Test `test/cli/studio-build.test.js` (extend)
 
-The boot payload gains `mode: "dev" | "production"` (the servers already build that payload — dev.js passes it to `studioIndex`; the built shell hardcodes `"production"`). `app.js`'s MODULES entries gain a `devOnly: true` flag for the schema designer (`/entities`) and the two config panels (`/settings` general, `/settings/ai`); the nav and the route table filter them out when `mode === "production"`.
+**Two coupled problems, one root.** Task 5's review proved that `src/studio/app.js` **statically** imports the schema designer, whose graph reaches `src/core/Data/migrate.js` → `src/core/Data/adapters.js`, which does `import { createRequire } from "module"` (a Node built-in with no browser form). Because the edge is static, the WHOLE `app.js` module graph fails to evaluate in a browser — the built Studio renders blank. The nav-filter alone does not fix this: a hidden route whose module is still in the static graph still crashes the graph.
 
-A production user navigating directly to a dev-only route gets the Studio's normal not-found handling, not a broken page.
+So the fix is structural: the schema designer (and any other dev-only surface reaching server-oriented `core/Data` code) must be imported **lazily** — a dynamic `import()` performed only when that route is actually entered — so it leaves `app.js`'s static boot graph entirely. In production the route is never entered (nav + route table exclude it), so the dynamic import never runs and `adapters.js` is never fetched; the copy-build still ships those files (dynamic imports are walked by `collectModules`), but nothing loads them. The shipped Studio boots because its STATIC graph no longer touches a Node built-in.
 
-- [ ] **Step 1: Implement** per above; read `app.js`'s MODULES/BUILD shape first and follow it.
-- [ ] **Step 2: Verify** — `node --check` both files; `npm test` green; browser pass (dev shows everything, a built shell hides the three).
-- [ ] **Step 3: Commit**
+**Step 1 — make the designer import lazy.**
+Read `src/studio/app.js`'s MODULES/route table and how a route's module is currently referenced. Convert the schema designer from a static `import` at module top to a dynamic `import()` resolved at navigation time, following whatever lazy pattern the router already supports (check whether any route is already lazy; if the router only accepts eager modules, add the smallest honest lazy path rather than inventing a framework). Confirm by reading the result that `app.js`'s static graph no longer reaches `src/core/Data/adapters.js`. Apply the same treatment to any other dev-only route whose static graph reaches `core/`-server code — enumerate them, do not assume the designer is the only one.
+
+**Step 2 — the mode axis and nav filter.** The boot payload gains `mode: "dev" | "production"` (dev.js passes it to `studioIndex`; the built shell — Task 5's `buildStudio` — bakes `"production"`; coordinate the exact key with Task 5's boot-data baking). `app.js`'s MODULES entries gain `devOnly: true` for the schema designer (`/entities`) and the two config panels (`/settings` general, `/settings/ai`); nav and route table filter them out when `mode === "production"`. A production user hitting a dev-only route directly gets the Studio's normal not-found handling, not a broken page.
+
+**Step 3 — a clause that pins the boot graph (RED first).** Extend `test/cli/studio-build.test.js`:
+
+```js
+    Test.it("STB-03 the built Studio's static boot graph never reaches a Node built-in — it boots in a browser", () => {
+        // app.js's STATIC import graph (exclude dynamic import() — those are lazy, dev-only routes)
+        const staticGraph = collectModules(new URL("../../src/studio/app.js", import.meta.url), { staticOnly: true })
+        assert.equal(staticGraph.some((f) => f.includes("core/Data/adapters.js")), false, "server-oriented adapter left the boot graph")
+        for (const f of staticGraph) {
+            const src = readFileSync(f, "utf8")
+            assert.equal(/from\s+["'](module|url|path|fs|crypto|os|child_process)["']/.test(src), false, `${f} statically imports a Node built-in`)
+        }
+    })
+```
+
+This requires `collectModules` to distinguish static from dynamic edges. If Task 5's `collectModules` does not already carry that distinction, add a `staticOnly` option that follows only static `import`/`export … from` edges — a small, honest extension, and it also lets Task 8's PROD-01 assert the same way. Verify STB-03 is RED against the current static import (it will fail on `adapters.js` present), then GREEN after Step 1.
+
+- [ ] **Step 1: Make the designer (and any peer) import lazy; confirm the static graph is clean.**
+- [ ] **Step 2: Add the `mode` axis + nav/route filtering.**
+- [ ] **Step 3: STB-03 RED → GREEN; `node --check` every modified file; full suite 0 red; browser pass (dev shows everything and the designer still works via its lazy load; a built shell boots, hides the three, and loads /users + /permissions).**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add src/studio/app.js src/studio/layouts/studio/shell.js
-git commit -m "Studio nav derives from the mode: dev-only surfaces do not exist in a production build
+git add src/studio/app.js src/studio/routes src/studio/layouts/studio/shell.js test/cli/studio-build.test.js
+git commit -m "The production Studio boots: dev-only routes load lazily so no Node built-in sits in the static graph (STB-03)
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -345,14 +367,14 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Files:** Test `test/http/start.test.js` (or a new `test/cli/production-surface.test.js`, registered in `test.js`)
 
-Two clauses that make the boundary structural rather than remembered.
+Four clauses that make the boundary structural rather than remembered. Two pin the production surface; two are carry-overs from earlier reviews that turn a remembered rule into a test.
 
 - [ ] **Step 1: Clauses**
 
 ```js
     Test.it("PROD-01 start.js never imports the dev module — the dev-only surface is unreachable, not merely unmounted", () => {
-        // walk start.js's static import graph; dev.js (and anything only it reaches) must not appear
-        const reached = collectModules(new URL("../../src/cli/commands/start.js", import.meta.url))
+        // start.js's STATIC import graph; dev.js (and anything only it reaches) must not appear
+        const reached = collectModules(new URL("../../src/cli/commands/start.js", import.meta.url), { staticOnly: true })
         assert.equal(reached.some((f) => f.endsWith("commands/dev.js")), false)
         assert.equal(reached.some((f) => f.includes("HMR")), false, "no hot-reload machinery in production")
     })
@@ -366,9 +388,37 @@ Two clauses that make the boundary structural rather than remembered.
     })
 ```
 
-Reuse `collectModules` from Task 5 (export it) rather than writing a second walker.
+PROD-02 is also the home for the carry-over from Task 1's review: while the table declared zero production routes, its `PRODUCTION_ROUTES` check was vacuous. PROD-02 above is not vacuous — it iterates ALL `STUDIO_ROUTE_PATHS` and asserts served-ness matches declaration in BOTH directions, so a route wrongly opened to production OR wrongly withheld fails it. Confirm by the Step 2 sabotage that it fails when a dev-only entry is given a `production` mode.
 
-- [ ] **Step 2: Verify they discriminate** — temporarily add a `production` mode to a dev-only entry and confirm PROD-02 goes RED; temporarily import dev.js from start.js and confirm PROD-01 goes RED. Restore both. Report the evidence.
+Two further carry-over clauses from earlier reviews (write them here, RED-first where they have a current-code target):
+
+```js
+    // Carry-over from Task 4's review: a Studio route calling a route that isn't declared
+    // is the exact bug Task 4 fixed by hand — pin it so it cannot recur silently.
+    Test.it("PROD-03 every ctx.api.studio(name, …) call site names a declared studio route", () => {
+        const declared = new Set(STUDIO_ROUTE_PATHS.map((p) => p.replace("/_studio/", "")))
+        for (const file of walkJs(new URL("../../src/studio/routes", import.meta.url))) {
+            for (const name of studioCallNames(readFileSync(file, "utf8"))) {  // regex over ctx.api.studio("<name>"
+                assert.truthy(declared.has(name), `${file} calls /_studio/${name}, not in the declared table`)
+            }
+        }
+    })
+```
+
+```js
+    // Carry-over from Task 5's review: STB-01 forbade only /cli/ and /HTTP/, staying green while
+    // server-oriented core/Data modules shipped. Widen the build's server-code exclusion so the
+    // production output cannot contain a module that imports a Node built-in. After Task 7 made the
+    // static boot graph clean, the only such modules reach the output via dev-only dynamic imports;
+    // this clause decides whether that is acceptable. If the team wants them excluded from the copy
+    // entirely, that is a build change; if shipped-but-never-loaded is acceptable, assert THAT
+    // explicitly (they exist in the tree but no STATIC-graph module imports a built-in) rather than
+    // leaving STB-01's narrow check to imply a guarantee it does not make.
+```
+
+Resolve the STB-01-widening item by reading Task 7's outcome: if the designer's lazy conversion removed every Node-built-in importer from what production actually executes, state the true invariant as a clause; do not assert a stronger claim than the code delivers. Reuse `collectModules` from Task 5 (export it) and `walkJs`/`studioCallNames` as local test helpers (regex, commented as build checks, not parsers) rather than writing a second walker.
+
+- [ ] **Step 2: Verify they discriminate** — temporarily add a `production` mode to a dev-only entry and confirm PROD-02 goes RED; temporarily static-import dev.js from start.js and confirm PROD-01 goes RED; temporarily point a Studio route at an undeclared `ctx.api.studio("nope")` and confirm PROD-03 goes RED. Restore all. Report the evidence.
 - [ ] **Step 3: Commit**
 
 ```bash
