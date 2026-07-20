@@ -309,6 +309,7 @@ export function render(ctx) {
     // live refresh: coarse but truthful — re-run refresh() on any matching event
     let reloadTimer = null
     const unsubscribe = subscribe([ctx.state.entity], () => {
+        if (!host.isConnected) return unsubscribe() // the router has no unmount hook — stale routes reap themselves
         clearTimeout(reloadTimer)
         reloadTimer = setTimeout(refresh, 250) // collapse bursts into one reload
     })
