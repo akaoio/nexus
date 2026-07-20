@@ -175,6 +175,26 @@ Test.describe("Production server — nexus start (START)", () => {
         }
     })
 
+    Test.it("START-POLICY-LAYERS production serves GET /api/v1/_policy-layers — the permissions page needs it there too", async () => {
+        const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true })
+        const { proc, ready } = startServer(instance, ["--insecure"])
+        try {
+            const base = await ready
+            const call = (method, path, key) =>
+                fetch(base + path, { method, headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) } })
+
+            const admin = await call("GET", "/api/v1/_policy-layers", "k-admin")
+            assert.equal(admin.status, 200)
+            const sources = (await admin.json()).data.layers.map((l) => l.source)
+            assert.truthy(sources.includes("system") && sources.includes("admin") && sources.includes("rows"))
+            // no credential at all — the ordinary auth boundary refuses first
+            assert.equal((await call("GET", "/api/v1/_policy-layers")).status, 401)
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
     Test.it("START-04 with a TLS certificate: serves HTTPS", async () => {
         const openssl = spawnSync("openssl", ["version"], { encoding: "utf8" })
         if (openssl.status !== 0) {

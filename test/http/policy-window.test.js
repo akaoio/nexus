@@ -75,6 +75,16 @@ Test.describe("Policy window ≡ engine (POLWIN)", () => {
         assert.equal(del.body.ok, false) // still nothing grants delete
     })
 
+    Test.it("POLWIN-03 the layer view is a normal API route: admin sees the layers, a viewer is refused", async () => {
+        const asAdmin = await call(ADMIN, "GET", "/api/v1/_policy-layers")
+        assert.equal(asAdmin.body.ok, true)
+        const sources = asAdmin.body.data.layers.map((l) => l.source)
+        assert.truthy(sources.includes("system") && sources.includes("admin") && sources.includes("rows"))
+        const asViewer = await call(VIEWER, "GET", "/api/v1/_policy-layers")
+        assert.equal(asViewer.body.ok, false)
+        assert.equal(asViewer.body.error.code, "E_FORBIDDEN")
+    })
+
     Test.it("POLWIN-99 cleanup", async () => {
         if (server) await new Promise((resolve) => { server.once("exit", resolve); server.kill("SIGKILL") })
         rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })

@@ -74,7 +74,7 @@ export async function dev(args, flags, out) {
     i18n.locales = coveredLocales(i18n.dict)
     // Data Plane + auth + API through the shared wiring. Dev mode falls back to
     // the loud DEV identity when no auth is configured (production refuses that).
-    let { api, plane, authState, challenges, engine, authMode, embedderInfo, policyLayers, effects } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" })
+    let { api, plane, authState, challenges, engine, authMode, embedderInfo, effects } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" })
     const studioAuthAtBoot = authState.required
 
     // ── hot reload — entity writes NEVER require a dev restart ──────────────
@@ -91,7 +91,7 @@ export async function dev(args, flags, out) {
         schemaFiles = fresh.files
         appPolicies.length = 0
         appPolicies.push(...fresh.policies)
-        ;({ api, plane, authState, challenges, engine, authMode, embedderInfo, policyLayers, effects } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" }))
+        ;({ api, plane, authState, challenges, engine, authMode, embedderInfo, effects } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" }))
     }
 
     // ── dev tooling stream (design 2026-07-20 §3): the server half of the
@@ -359,27 +359,13 @@ export async function dev(args, flags, out) {
                 return json(res, code.startsWith("E_") ? 400 : 500, { ok: false, error: { code, message: error.message } })
             }
         }
-        // The policy WINDOW (read-only, design 2026-07-19 §2): the exact
-        // layers the engine composes, straight from its runtime arrays — the
-        // UI can never drift from the enforced truth. Writes go through
-        // /api/v1/nexus_policy ONLY.
-        if (url.pathname === "/_studio/policies" && req.method === "GET") {
-            const { app, system, admin, rows } = policyLayers()
-            const byFile = new Map()
-            for (const p of app) {
-                const key = p.source ?? "app"
-                if (!byFile.has(key)) byFile.set(key, [])
-                byFile.get(key).push(p)
-            }
-            const layers = [
-                ...[...byFile.entries()].map(([source, policies]) => ({ source, readonly: true, policies })),
-                { source: "system", readonly: true, policies: system },
-                { source: "admin", readonly: true, policies: admin },
-                { source: "rows", readonly: false, policies: rows }
-            ]
-            return json(res, 200, { ok: true, data: { layers, devMode: !authState.required, authRequired: authState.required } })
-        }
-
+        // The policy WINDOW (read-only, design 2026-07-19 §2) MOVED to GET
+        // /api/v1/_policy-layers (Task 3, issue #10) — an ordinary,
+        // admin-authorized API route sharing ONE implementation with
+        // production (src/core/HTTP/server.js), instead of a bespoke
+        // /_studio gate check. This dev-only address is gone; it falls
+        // through to the "no other /_studio surface exists" 404 below like
+        // any other dead path.
         // Studio session (whoami) MOVED to GET /api/v1/_session (Task 2, issue
         // #10) — one login contract in both dev and production. This dev-only
         // address is gone; it falls through to the "no other /_studio surface

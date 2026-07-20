@@ -141,14 +141,18 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.equal(list.data.config.token_secret, "***")
     })
 
-    Test.it("STUDIO-06 GET /_studio/policies is the engine's own layers; a row created via the plane appears under rows", async () => {
+    Test.it("STUDIO-06 GET /api/v1/_policy-layers is the engine's own layers; a row created via the plane appears under rows", async () => {
+        // moved out of /_studio in Task 3 (issue #10): the view is now an
+        // ordinary, admin-authorized API route, so it no longer rides along
+        // with a devMode flag — that comes from /api/v1/_session instead
+        // (see permissions/index.js). The layers shape itself is unchanged.
         const created = await post("/api/v1/nexus_policy", {
             entity: "task", actions: JSON.stringify(["read"]), rule: null,
             permlevel: 0, ifowner: false, roles: JSON.stringify(["viewer"])
         })
         assert.equal(created.body.ok, true)
         const id = created.body.data.id
-        const w = await fetch((await ensure()) + "/_studio/policies").then((r) => r.json())
+        const w = await fetch((await ensure()) + "/api/v1/_policy-layers").then((r) => r.json())
         assert.equal(w.ok, true)
         const sources = w.data.layers.map((l) => l.source)
         assert.truthy(sources.includes("system") && sources.includes("admin") && sources.includes("rows"))
@@ -156,7 +160,6 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.equal(rows.readonly, false)
         assert.truthy(rows.policies.some((p) => p.id === id && p.entity === "task"))
         for (const layer of w.data.layers) if (layer.source !== "rows") assert.equal(layer.readonly, true)
-        assert.equal(typeof w.data.devMode, "boolean")
     })
 
     Test.it("STUDIO-07 an invalid nexus_policy row is VETOED at the plane — same law for every writer", async () => {
@@ -183,7 +186,12 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
             ["POST", "/_studio/model", { name: "sneaky", fields: [{ name: "x", type: "text" }] }],
             ["POST", "/_studio/config", { key: "token_secret", value: "stolen" }],
             ["GET", "/_studio/entities", undefined],
-            ["GET", "/_studio/policies", undefined]
+            // the policy layer view moved out of /_studio in Task 3 (issue #10)
+            // to GET /api/v1/_policy-layers, admin-only through the ordinary
+            // policy engine rather than this gate — it stays in this refusal
+            // sweep because it is still a state-exposing read a non-admin must
+            // never see, just at its new address
+            ["GET", "/api/v1/_policy-layers", undefined]
         ]) {
             const r = await callAs(VIEWER, method, path, body)
             assert.equal(r.status, 403, `${method} ${path}`)

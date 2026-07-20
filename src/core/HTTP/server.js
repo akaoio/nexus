@@ -330,6 +330,29 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         policyLayers = () => ({ app: appPolicies, system: SYSTEM_BASELINES, admin: shippedAdmin, rows: dbPolicies })
         // The window and enforcement compose from the SAME source by construction: livePolicies derives from policyLayers.
         const livePolicies = () => Object.values(policyLayers()).flat()
+        // The policy window's SHAPING (Task 3, issue #10): groups policyLayers()
+        // into the { layers: [{ source, readonly, policies }] } document the
+        // Studio renders — moved here from dev.js's old /_studio/policies
+        // handler so dev and production share ONE implementation, and derived
+        // from policyLayers() (not a fresh enumeration) so this can never drift
+        // from livePolicies above.
+        const layersDoc = () => {
+            const { app, system, admin, rows } = policyLayers()
+            const byFile = new Map()
+            for (const p of app) {
+                const key = p.source ?? "app"
+                if (!byFile.has(key)) byFile.set(key, [])
+                byFile.get(key).push(p)
+            }
+            return {
+                layers: [
+                    ...[...byFile.entries()].map(([source, policies]) => ({ source, readonly: true, policies })),
+                    { source: "system", readonly: true, policies: system },
+                    { source: "admin", readonly: true, policies: admin },
+                    { source: "rows", readonly: false, policies: rows }
+                ]
+            }
+        }
         const context = (req) => {
             // spread per request: appPolicies + dbPolicies mutate live
             if (!authState.required)
@@ -367,7 +390,7 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         const eventHub = createEventHub({ plane })
         eventHub.attach(extensions, allSchemas)
 
-        api = createApi({ plane, endpoints: extensions.endpoints, context, events: eventHub, authRequired: () => authState.required })
+        api = createApi({ plane, endpoints: extensions.endpoints, context, events: eventHub, authRequired: () => authState.required, layers: layersDoc })
         authMode = authState.required
             ? `${[keys.length && `${keys.length} API keys`, authState.identities.length && `${authState.identities.length} ZEN identities`].filter(Boolean).join(" + ")} (E_AUTH without credentials)`
             : "DEV identity — wide-open policies, user via x-nexus-user header"

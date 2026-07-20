@@ -123,7 +123,11 @@ export function render(ctx) {
      *  in the manager — changed rows keep the draft version, new entries whose
      *  create failed stay as id-less drafts. */
     async function load(drafts = null) {
-        const [w, u] = await Promise.all([ctx.api.studio("policies", "GET"), ctx.api.list("nexus_user", null)])
+        // The layer view moved to GET /api/v1/_policy-layers (Task 3, issue
+        // #10) — an ordinary, admin-authorized API route, so it no longer
+        // rides along with a devMode flag. That comes from the one place
+        // that already knows, the same session probe Users uses.
+        const [w, u, s] = await Promise.all([ctx.api.get("/api/v1/_policy-layers"), ctx.api.list("nexus_user", null), ctx.api.session()])
         if (!w.ok) return
         users = u.ok ? u.data.map((row) => ({ ...row, roles: parseRoles(row) })) : []
         const layers = w.data.layers ?? []
@@ -141,7 +145,7 @@ export function render(ctx) {
         paintBaselines(readonly)
         c.$status.textContent = `${baseline.length} baseline · ${saved.length} rows`
         c.$banner.replaceChildren()
-        if (w.data.devMode) {
+        if (s.ok && !s.data.authRequired) {
             const card = document.createElement("div")
             card.className = "nx-card nx-note"
             const b = document.createElement("b")

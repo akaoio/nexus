@@ -93,8 +93,8 @@ import "./test/http/start.test.js"
 // Studio — dev-only content-type / permission write endpoints (clauses STUDIO-*)
 import "./test/http/studio.test.js"
 
-// Policy window ≡ engine — the read-only /_studio/policies window over the
-// engine's own live layers, proven enforced end-to-end (clauses POLWIN-*)
+// Policy window ≡ engine — the read-only GET /api/v1/_policy-layers window
+// over the engine's own live layers, proven enforced end-to-end (POLWIN-*)
 import "./test/http/policy-window.test.js"
 
 // Effect runner lives in the server — real dev server, real job thread, no

@@ -107,9 +107,17 @@ function listOptions(searchParams) {
  *   () => true: this flag sits ON the auth boundary, so if a future caller
  *   ever omits it, the safe failure is "tell the login UI auth is on" —
  *   fail CLOSED, never open.
+ * @param {() => Object} [config.layers] - builds the read-only policy window
+ *   document ({ layers: [...] }) from the engine's own live arrays
+ *   (buildInstanceApi passes a closure over policyLayers()) — backs GET
+ *   /api/v1/_policy-layers. Defaults to null/absent, which the route below
+ *   treats as E_NOT_FOUND rather than an empty-but-successful answer: this
+ *   route sits ON the auth boundary (it exists to show what the admin
+ *   bundle alone may see), so an instance that forgets to wire it must fail
+ *   closed, not silently answer `{ layers: [] }` to everyone.
  * @returns {(req, res) => Promise<boolean>} true when the request was handled
  */
-export function createApi({ plane, context, base = "/api/v1", endpoints = [], events = null, authRequired = () => true }) {
+export function createApi({ plane, context, base = "/api/v1", endpoints = [], events = null, authRequired = () => true, layers = null }) {
     return async function handle(req, res) {
         const url = new URL(req.url, "http://localhost")
         if (url.pathname !== base && !url.pathname.startsWith(base + "/")) return false
@@ -159,6 +167,17 @@ export function createApi({ plane, context, base = "/api/v1", endpoints = [], ev
                     if (!String(error?.message || "").startsWith("E_AUTH")) throw error
                 }
                 return ok(res, { authRequired: authRequired(), user, roles }), true
+            }
+
+            // The policy WINDOW as a normal API route (issue #10): same layers
+            // the engine composes, authorized by the SAME policy engine as
+            // everything else — `read` on nexus_policy, which only the admin
+            // bundle grants. No bespoke gate.
+            if (segments[0] === "_policy-layers" && req.method === "GET") {
+                if (!layers) throw new Error("E_NOT_FOUND: no policy layers on this instance")
+                const ctx = context(req)
+                await plane.list("nexus_policy", { limit: 1 }, ctx)   // authorization, by the engine
+                return ok(res, layers()), true
             }
 
             const ctx = context(req)

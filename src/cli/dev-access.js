@@ -29,7 +29,9 @@ export const STUDIO_ACCESS = Object.freeze({
     "/_studio/model": Object.freeze({ roles: "admin", modes: ["dev"] }),
     "/_studio/entities": Object.freeze({ roles: "admin", modes: ["dev"] }),
     "/_studio/entity-delete": Object.freeze({ roles: "admin", modes: ["dev"] }),
-    "/_studio/policies": Object.freeze({ roles: "admin", modes: ["dev"] }), // baseline read moves in Task 3
+    // baseline read moved to GET /api/v1/_policy-layers (Task 3) — an ordinary
+    // API route authorized by the policy engine, not this table; the
+    // /_studio address is simply gone, not merely re-tiered.
     "/_studio/users": Object.freeze({ roles: "admin", modes: ["dev"] }),
     "/_studio/ai": Object.freeze({ roles: "admin", modes: ["dev"] }),
     "/_studio/config": Object.freeze({ roles: "admin", modes: ["dev"] })
