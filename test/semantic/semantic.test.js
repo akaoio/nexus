@@ -168,7 +168,14 @@ Test.describe("Semantic — core (SEM-*)", () => {
 })
 
 Test.describe("Semantic — <nx-search> (SEM, browser)", () => {
-    Test.it("SEM-10 nx-search groups injected results per entity and shows scores", async () => {
+    // RED for as long as the browser suite went unrun. The square-tint redesign
+    // changed the result header from "note (1)" to "note · 1" and the empty
+    // state from "no matches" to "No matches for …", and nothing caught it
+    // because `node test.js` skips { browser: true } and nobody ran
+    // `npm run test:browser`. It now asserts the SUBSTANCE — grouped per
+    // entity, count, label, score, an empty state that says so — rather than
+    // punctuation and casing a redesign is entitled to change.
+    Test.it("SEM-10 nx-search groups injected results per entity, shows scores, and says so when there are none", async () => {
         const search = document.createElement("nx-search")
         search.schemas = [NOTE]
         search.searcher = async ({ entity, query }) =>
@@ -176,13 +183,23 @@ Test.describe("Semantic — <nx-search> (SEM, browser)", () => {
         document.body.appendChild(search)
         search.shadowRoot.querySelector(".query").value = "hit"
         await search.run()
-        const text = search.shadowRoot.querySelector(".results").textContent
-        assert.truthy(text.includes("note (1)"))
-        assert.truthy(text.includes("found note"))
-        assert.truthy(text.includes("0.500"))
+        const results = search.shadowRoot.querySelector(".results")
+        // Read the GROUP HEADER as an element rather than scanning concatenated
+        // textContent — the grouping is the thing under test, and a substring
+        // search over the whole panel would pass even if the header vanished.
+        const head = results.querySelector(".entity-head")
+        assert.truthy(head, "results are grouped under a per-entity header")
+        assert.truthy(head.textContent.includes(NOTE.name), `grouped under its entity: ${head.textContent}`)
+        assert.truthy(head.textContent.includes("1"), `the hit count is shown: ${head.textContent}`)
+
+        const text = results.textContent
+        assert.truthy(text.includes("found note"), `the row's label is shown: ${text}`)
+        assert.truthy(text.includes("0.500"), `the score is shown: ${text}`)
+
         search.shadowRoot.querySelector(".query").value = "miss"
         await search.run()
-        assert.truthy(search.shadowRoot.querySelector(".results").textContent.includes("no matches"))
+        const empty = search.shadowRoot.querySelector(".results").textContent
+        assert.truthy(/no matches/i.test(empty), `an empty result says so: ${empty}`)
         search.remove()
     })
 }, { browser: true })
