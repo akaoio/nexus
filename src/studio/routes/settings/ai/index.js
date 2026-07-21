@@ -2,6 +2,7 @@
  *  Weights are pulled from the terminal (nexus model pull). */
 
 import { mountTemplate, button, toast } from "../../../kit/index.js"
+import "../../../components/row/index.js"
 import { aiTemplate } from "./template.js"
 
 export function render(ctx) {
@@ -33,16 +34,9 @@ export function render(ctx) {
         c.$body.append(h)
         for (const m of models) {
             const active = m.id === current
-            const row = document.createElement("div")
-            row.className = "nx-row"
-            const who = document.createElement("div")
-            who.className = "nx-who"
-            const name = document.createElement("div")
-            name.textContent = m.name
-            const detail = document.createElement("div")
-            detail.className = "nx-pub"
-            detail.textContent = spec(m)
-            who.append(name, detail)
+            const row = document.createElement("nx-row")
+            row.dataset.label = m.name
+            row.dataset.detail = spec(m)
             const use = button({
                 variant: active ? "primary" : undefined, disabled: active,
                 onclick: async () => {
@@ -51,7 +45,7 @@ export function render(ctx) {
                     load()
                 }
             }, [active ? "In use" : "Use"])
-            row.append(who, use)
+            row.tail = use
             c.$body.append(row)
         }
         const none = button({

@@ -2,6 +2,8 @@
  *  grouped by status, Retry = an ordinary entity-API update. */
 
 import { mountTemplate, button, toast, subscribe, onUnmount } from "../../kit/index.js"
+import { detailLine } from "../../components/row/detail.js"
+import "../../components/row/index.js"
 import { jobsTemplate } from "./template.js"
 
 const GROUPS = ["dead", "failed", "running", "pending", "done"]
@@ -21,25 +23,21 @@ export function render(ctx) {
             h.textContent = `${status} · ${bucket.length}`
             c.$body.append(h)
             for (const row of bucket) {
-                const line = document.createElement("div")
-                line.className = "nx-row"
-                const who = document.createElement("div")
-                who.className = "nx-who"
-                const name = document.createElement("div")
-                name.textContent = row.name
-                const detail = document.createElement("div")
-                detail.className = "nx-pub"
-                detail.textContent = [`attempts ${row.attempts}/${row.max_attempts}`, row.run_at && `runs ${row.run_at}`, row.last_error].filter(Boolean).join(" · ")
-                who.append(name, detail)
-                line.append(who)
+                const line = document.createElement("nx-row")
+                line.dataset.label = row.name
+                line.dataset.detail = detailLine([
+                    `attempts ${row.attempts}/${row.max_attempts}`,
+                    row.run_at && `runs ${row.run_at}`,
+                    row.last_error
+                ])
                 if (status === "dead" || status === "failed") {
-                    line.append(button({
+                    line.tail = [button({
                         onclick: async () => {
                             const res = await ctx.api.update("nexus_job", row.id, { status: "pending", attempts: 0, lease_until: null, lease_token: null, last_error: null })
                             toast(res.ok ? "Requeued" : res.error.code, res.ok ? "ok" : "err")
                             load()
                         }
-                    }, ["Retry"]))
+                    }, ["Retry"])]
                 }
                 c.$body.append(line)
             }

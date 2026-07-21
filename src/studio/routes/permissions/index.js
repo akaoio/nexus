@@ -5,6 +5,8 @@
  *  writes; there is no bespoke permissions write endpoint anymore. */
 
 import { mountTemplate, toast, subscribe, onUnmount } from "../../kit/index.js"
+import { detailLine } from "../../components/row/detail.js"
+import "../../components/row/index.js"
 import "../../components/matrix/index.js"
 import { rolesIn } from "../../../core/App/policies.js"
 import { packPolicy } from "../../../core/App/system.js"
@@ -102,17 +104,13 @@ export function render(ctx) {
             src.textContent = layer.source
             c.$baselines.append(src)
             for (const p of layer.policies) {
-                const row = document.createElement("div")
-                row.className = "nx-row"
-                const who = document.createElement("div")
-                who.className = "nx-who"
-                const what = document.createElement("div")
-                what.textContent = `${p.entity} · ${(p.actions ?? []).join(", ")}`
-                const detail = document.createElement("div")
-                detail.className = "nx-pub"
-                detail.textContent = [p.roles?.length ? "roles: " + p.roles.join(", ") : "all authenticated", p.rule ? "rule-scoped" : null, p.ifOwner ? "ifOwner" : null].filter(Boolean).join(" · ")
-                who.append(what, detail)
-                row.append(who)
+                const row = document.createElement("nx-row")
+                row.dataset.label = `${p.entity} · ${(p.actions ?? []).join(", ")}`
+                row.dataset.detail = detailLine([
+                    p.roles?.length ? "roles: " + p.roles.join(", ") : "all authenticated",
+                    p.rule ? "rule-scoped" : null,
+                    p.ifOwner ? "ifOwner" : null
+                ])
                 c.$baselines.append(row)
             }
         }
