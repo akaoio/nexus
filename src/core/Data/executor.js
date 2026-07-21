@@ -81,6 +81,21 @@ export async function createExecutor(engine = "sqlite", config = {}) {
             }
         const run = (sql, params = []) => void db.prepare(sql).run(...params)
         const all = (sql, params = []) => db.prepare(sql).all(...params)
+
+        // Concurrency pragmas (ADP-WAL-*). The Data Plane's writes, the entity-
+        // delete cascade and hot apply all hold write transactions now, and
+        // with the 1s job poller plus per-subscriber plane.get on the same
+        // file, the default rollback journal turns that into SQLITE_BUSY
+        // surfacing as a raw 500. WAL lets readers proceed against a writer;
+        // busy_timeout makes a second WRITER wait rather than fail instantly.
+        //
+        // WAL is asked for on FILE databases only: :memory: cannot honour it
+        // and silently stays "memory", so asking there would leave a pragma in
+        // the code that reads like a guarantee and is not (ADP-WAL-03).
+        const sqlitePath = config.path ?? ":memory:"
+        if (sqlitePath !== ":memory:") all(`PRAGMA journal_mode = WAL`)
+        all(`PRAGMA busy_timeout = ${Number(config.busyTimeoutMs ?? 5000)}`)
+
         return {
             engine,
             dialect: "sqlite",
