@@ -51,6 +51,14 @@ Test.describe("Install lifecycle — state and manifest (INST)", () => {
             assert.deepEqual(read.units, [])
             assert.deepEqual(read.cronMarkers, [])
 
+            // The commit survives a REWRITE. `nexus service install` rewrites
+            // the manifest to add its unit; a writer that only knew the fields
+            // it cared about would silently forget which tree this install is.
+            writeManifest(home, { ...read, commit: "abc123", units: ["nexus-x.service"] })
+            const after = readManifest(home)
+            assert.equal(after.commit, "abc123")
+            assert.deepEqual(after.units, ["nexus-x.service"])
+
             writeFileSync(join(stateDir(home), "install.json"), "{ not json")
             assert.throws(() => readManifest(home), "E_MANIFEST")
         } finally {

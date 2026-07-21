@@ -42,6 +42,7 @@ function record(plan) {
     writeManifest(NEXUS_ROOT, {
         ...current,
         channel: current.channel ?? "git",
+        commit: current.commit ?? null,
         shims: current.shims ?? [],
         pathEntries: current.pathEntries ?? [],
         units: [...new Set([...(current.units ?? []), ...plan.units])],

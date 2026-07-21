@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 719/766 node clauses, 0 red** (`node test.js`)
+**Green: 723/770 node clauses, 0 red** (`node test.js`)
 **Green: 47/47 browser clauses, 0 red** (`npm run test:browser`, real headless Chromium)
 
 Two runners, two verdicts, both stated — because until this was checked, only
@@ -71,6 +71,7 @@ because the way they hid is more instructive than the bugs themselves — see
 | **Entity identity** | **schema `icon:` (any bootstrap-icons name — vendored 1.1 MB sprite, nx-icon registry-first with sprite fallback); picker in the /entities editor** | MS-S14 |
 | **Effect engine** | **durable jobs as `nexus_job` rows (token-CAS claim, backoff, DLQ, recurring), Threads execution behind the narrow plane-RPC, webhook/mail/notification consumers as the effect app, Studio /jobs** | SYS-09, JOB-*, EXT-J1, THR-*, JOBL-*, WH-*, MAIL-*, NOTIF-* |
 | **Realtime** | **public SSE `/api/v1/_events` (auth'd incl. `?token=`, per-subscriber plane-gated, no row data on the wire, heartbeat); Studio live refresh on every list route via the public stream; dev `/__dev_events` + watcher + full module hot-swap + `"reload"` on schema hot-apply** | **EVT-U*, EVT-*, HMR-*, DEVE-*** |
+| **Install lifecycle, part 3 — tarball integrity (issue #8)** | **a tarball install is now IDENTIFIABLE: the branch is resolved to a commit and that commit's archive is fetched, so the recorded SHA is exactly the tree on disk rather than whatever `main` pointed at by the time the second request landed. Not signature verification and not claiming to be — TLS plus GitHub identity stays the trust root, since a home-grown signing scheme is key custody to maintain forever and a neglected one looks like protection. Implementing it surfaced a separate hole the answer had not mentioned: `curl … \| tar -xz` under `set -e` cannot see a failing curl, because a POSIX pipeline reports its LAST command's status — so a download that wrote a complete-looking stream and then failed left tar exiting 0 and the install proceeding. The download now goes to a file whose status is checked before anything is extracted. An unresolvable commit degrades to an unidentified install that SAYS so and records `commit: null`, rather than refusing** | **INST-10..13** |
 | **Install lifecycle, part 2 — the service (issue #8)** | **`nexus service install \| status \| uninstall` supervises `nexus start` across reboots with NO root: a `systemd --user` unit (`Restart=always`, `WantedBy=default.target`) plus `loginctl enable-linger`, which was verified to need no root on Linux (`set-self-linger` carries `allow_any=yes`) — the fact the whole no-sudo story rests on, checked rather than assumed. Linger failure is a WARNING that still installs, never an abort (the access lesson). Where systemd is absent it degrades to ONE marker-based `@reboot` cron line, never both, because a second supervisor for a long-lived server is not redundancy but a duplicate process — which is also why access's 5-minute timer is deliberately not copied. macOS and Windows refuse with `E_SERVICE_PLATFORM` and say what to run instead. `nexus update` restarts what the MANIFEST recorded, with `try-restart` so a unit an operator disabled stays disabled. Decision and execution are split, so the clauses assert the behaviour without enabling a process on whoever runs the suite; `systemd-analyze verify` confirms systemd itself accepts the generated unit** | **SVC-01..09** |
 | **Install lifecycle, part 1 (issue #8)** | **the installer now records what it changed and `uninstall` undoes exactly that: `$NEXUS_HOME/.state/install.json` names the shims and PATH entries, so a shim at a non-default `NEXUS_BIN` is found — the old guess missed it and left a `nexus` on PATH pointing at a deleted tree. No manifest means an older install, which still uninstalls by the documented defaults and says which authority it used (N3). Both hard-resetting paths now refuse to destroy unexamined work: `install.sh` before any network call (`NEXUS_FORCE=1` overrides) and `nexus update` before any reset (`--force`). Updates are serialised by an atomic `wx` lock that reclaims a dead holder rather than wedging the install, and record `{channel, ref, commit, at}` so `nexus doctor` — now two scopes in one command — can finally answer when the framework last updated and through which channel** | **INST-01..09** |
 | **Studio lifecycle & keyboard access** | **the router has a real unmount hook (`kit/lifecycle.js`): routes register teardown with `onUnmount()` and the router brackets each render, so leaving a page releases what the page took — subscriptions AND the burst-collapse timers the old `host.isConnected` incantation was shape-blind to. Re-rendering the same route (a locale change) unmounts first rather than accumulating; a teardown that throws is contained the way the event hub and the plane's after-hooks already are; an invariant clause over `src/studio/routes` keeps the old pattern from creeping back. The shared EventSource's union is asserted to NARROW on unsubscribe, not merely widen on subscribe — the header used to claim otherwise. And the search overlay, which had no keyboard handling of any kind, is now operable without a mouse: wrapping arrow navigation, Home/End, Enter emitting the chosen record, Escape clearing, with listbox/option roles and `aria-activedescendant`** | **LIFE-UNMOUNT-01..04, EVT-UNION-01/02, NXSR-KEY-01/02** |
@@ -470,11 +471,25 @@ places nobody thought to check are where these live.
   enabling, linger-degradation and crontab paths are covered by clause and by
   the plan they execute, not by having been executed. Stated plainly rather
   than implied by a green suite.
-- **Issue #8 step 4 is still owed**: the tarball SHA check (answer 8). macOS and
-  Windows refuse service installation with `E_SERVICE_PLATFORM` and a pointer to
-  running `nexus start` under your own supervisor, which is answer 10 as
-  ratified — launchd shipped untested on hardware nobody here has is the mistake
-  this issue exists to prevent.
+- **Issue #8 is fully answered and implemented.** Answers 1–4, 7, 9 landed in
+  part 1; 5, 6 and 10 in part 2; 8 here. What each of them does NOT do is
+  recorded in its own bullet rather than implied.
+- **The tarball SHA check is identification, NOT verification, and says so.**
+  TLS plus GitHub's identity remains the trust root (answer 8, ratified): no
+  signing scheme was invented, because key custody and rotation is a security
+  system to maintain forever and a neglected one is worse than none — it looks
+  like protection. What the check buys is that a tarball install becomes
+  identifiable and reproducible: the branch is resolved to a commit and THAT
+  commit's archive is fetched, closing the window where a push between the two
+  requests would yield a tree that is not the one recorded. It does nothing
+  against a compromised GitHub, and nothing against a malicious mirror that
+  serves a consistent lie.
+- **`install.ps1`'s changes are declared, not executed**: there is no PowerShell
+  on the machine this was written on, so the Windows dirty-check and the
+  commit-pinned zip download are reviewed and bracket-balanced but have not been
+  run. The POSIX side is exercised by INST-08 and INST-10..13 against the real
+  `install.sh`. This joins the existing "installers are untested on clean
+  machines" entry below rather than being claimed as done.
 - **The Windows PATH entry is NAMED, not yet undone**: `uninstall` reports the
   PATH entry the manifest records and tells the operator to remove it. Rewriting
   a user's persistent PATH during an uninstall is a bigger decision than this

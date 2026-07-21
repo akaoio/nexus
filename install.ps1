@@ -6,6 +6,7 @@
 $ErrorActionPreference = "Stop"
 
 $Repo = "https://github.com/akaoio/nexus"
+$Api = "https://api.github.com/repos/akaoio/nexus"
 $Dir = if ($env:NEXUS_HOME) { $env:NEXUS_HOME } else { Join-Path $env:LOCALAPPDATA "nexus" }
 $BinDir = Join-Path $Dir "shims"
 
@@ -25,6 +26,20 @@ if ($major -lt 22) {
 $git = Get-Command git -ErrorAction SilentlyContinue
 if (Test-Path (Join-Path $Dir ".git")) {
     Write-Host "Nexus already at $Dir - refreshing to origin/main."
+    # Never destroy unexamined work — the same contract install.sh enforces.
+    # An install directory is a deployment, not a workspace, but that is not a
+    # licence to discard local edits silently. Checked BEFORE the network call
+    # so aborting leaves the installation fully intact. An env var rather than a
+    # prompt, because this is documented as an `irm … | iex` one-liner and a
+    # prompt cannot be answered in that invocation.
+    $dirty = (git -C $Dir status --porcelain) -join "`n"
+    if ($dirty -and $env:NEXUS_FORCE -ne "1") {
+        Write-Host "! $Dir has local changes that a refresh would discard:"
+        $dirty -split "`n" | ForEach-Object { Write-Host "    $_" }
+        Write-Host ""
+        Write-Host "  Re-run with NEXUS_FORCE=1 to refresh anyway."
+        exit 1
+    }
     git -C $Dir fetch origin main
     git -C $Dir reset --hard origin/main
 } elseif ($git) {
@@ -34,10 +49,35 @@ if (Test-Path (Join-Path $Dir ".git")) {
 } else {
     Write-Host "git not found - fetching the main zip instead."
     if (Test-Path $Dir) { Remove-Item -Recurse -Force $Dir }
-    $zip = Join-Path $env:TEMP "nexus-main.zip"
-    Invoke-WebRequest "$Repo/archive/refs/heads/main.zip" -OutFile $zip
+    # Resolve the branch to a COMMIT and download THAT commit, so the manifest
+    # can say which tree this is (issue #8 answer 8). Resolving `main` and then
+    # downloading `main` are two requests; a push between them yields a tree
+    # that is not the commit recorded. Not signature verification, and not
+    # claiming to be — TLS plus GitHub identity remains the trust root.
+    #
+    # Unlike install.sh, no pipeline hole to close here: Invoke-WebRequest
+    # already writes to a file and $ErrorActionPreference = "Stop" aborts on
+    # failure. The POSIX side had to stop piping curl into tar.
+    $commit = $null
+    try {
+        $commit = (Invoke-WebRequest "$Api/commits/main" -Headers @{ Accept = "application/vnd.github.sha" } -UseBasicParsing).Content.Trim()
+    } catch { $commit = $null }
+    if ($commit -notmatch '^[0-9a-f]{7,40}$') { $commit = $null }
+
+    $zip = Join-Path $env:TEMP "nexus-download.zip"
+    if ($commit) {
+        Write-Host "  commit $commit"
+        Invoke-WebRequest "$Repo/archive/$commit.zip" -OutFile $zip
+        $extracted = Join-Path $env:TEMP "nexus-$commit"
+    } else {
+        # Degrade, do not abort: an unresolvable commit installs an
+        # UNIDENTIFIED tree and says so, rather than refusing to install.
+        Write-Host "  could not resolve the commit - installing an unidentified tree"
+        Invoke-WebRequest "$Repo/archive/refs/heads/main.zip" -OutFile $zip
+        $extracted = Join-Path $env:TEMP "nexus-main"
+    }
     Expand-Archive $zip -DestinationPath $env:TEMP -Force
-    Move-Item (Join-Path $env:TEMP "nexus-main") $Dir
+    Move-Item $extracted $Dir
     Remove-Item $zip
 }
 
@@ -61,10 +101,12 @@ if ($userPath -notlike "*$BinDir*") {
 $state = Join-Path $Dir ".state"
 New-Item -ItemType Directory -Force $state | Out-Null
 $channel = if (Test-Path (Join-Path $Dir ".git")) { "git" } else { "zip" }
+if ($channel -eq "git") { $commit = (git -C $Dir rev-parse HEAD) }
 $manifest = [ordered]@{
     manifestVersion = 1
     installedAt     = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
     channel         = $channel
+    commit          = $commit
     home            = $Dir
     shims           = @($shim)
     pathEntries     = $(if ($addedPath) { @($BinDir) } else { @() })

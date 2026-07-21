@@ -90,6 +90,7 @@ import "./test/cli/ops.test.js"
 // CLI — install lifecycle: state dir, manifest, update lock (clauses INST-*, issue #8)
 import "./test/cli/install-lifecycle.test.js"
 import "./test/cli/service.test.js"
+import "./test/cli/tarball-integrity.test.js"
 import "./test/cli/backup-stream.test.js"
 
 // CLI — the Studio as static assets for production (clauses STB-*)

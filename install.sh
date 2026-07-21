@@ -9,6 +9,7 @@
 set -e
 
 REPO="https://github.com/akaoio/nexus"
+API="https://api.github.com/repos/akaoio/nexus"
 DIR="${NEXUS_HOME:-$HOME/.nexus}"
 BIN_DIR="${NEXUS_BIN:-$HOME/.local/bin}"
 
@@ -58,9 +59,47 @@ elif command -v git >/dev/null 2>&1; then
     git clone --depth 1 "$REPO" "$DIR"
 else
     say "git not found — fetching the main tarball instead."
+    # Resolve the branch to a COMMIT first, and download THAT commit's tarball.
+    # Resolving `main` and then downloading `main` are two requests, and a push
+    # between them yields a tree that is not the commit you resolved — so the
+    # recorded SHA would be approximately true, which is worse than absent.
+    #
+    # This is NOT signature verification and does not pretend to be: TLS plus
+    # GitHub's identity remains the trust root (issue #8 answer 8, ratified —
+    # a home-grown signing scheme is key custody and rotation to maintain
+    # forever, and a neglected one is worse than none because it looks like
+    # protection). What it buys is that a tarball install becomes IDENTIFIABLE.
+    commit=$(curl -fsSL -H "Accept: application/vnd.github.sha" "$API/commits/main" 2>/dev/null || true)
+    case "$commit" in
+        *[!0-9a-f]* | "") commit="" ;;   # anything that is not a plain sha is no sha
+    esac
+    if [ -n "$commit" ]; then
+        url="$REPO/archive/$commit.tar.gz"
+        say "  commit $commit"
+    else
+        # Degrade, do not abort (the access lesson): an unresolvable commit —
+        # rate limit, offline mirror — is a reason to install an UNIDENTIFIED
+        # tree and say so, not a reason to refuse to install at all.
+        url="$REPO/archive/refs/heads/main.tar.gz"
+        say "  could not resolve the commit — installing an unidentified tree"
+    fi
+
     rm -rf "$DIR"
     mkdir -p "$DIR"
-    curl -fsSL "$REPO/archive/refs/heads/main.tar.gz" | tar -xz -C "$DIR" --strip-components=1
+    # Downloaded to a FILE, not piped into tar. In POSIX sh a pipeline's status
+    # is the LAST command's, so `set -e` cannot see a failing curl:
+    #     sh -c 'set -e; false | true; echo $?'  →  0
+    # A curl that writes a complete-looking stream and then fails therefore
+    # leaves tar exiting 0 and the install proceeding on a download that did
+    # not succeed. Checking curl's own status removes the ambiguity.
+    tarball="$DIR/.nexus-download.tar.gz"
+    if ! curl -fsSL "$url" -o "$tarball"; then
+        say "! download failed ($url) — nothing was installed."
+        rm -rf "$DIR"
+        exit 1
+    fi
+    tar -xzf "$tarball" -C "$DIR" --strip-components=1
+    rm -f "$tarball"
 fi
 
 # ── the dispatcher shim ────────────────────────────────────────────────────────
@@ -78,12 +117,19 @@ chmod +x "$BIN_DIR/nexus"
 # `cronMarkers` are reserved for the service step and stay empty here.
 mkdir -p "$DIR/.state"
 channel="tarball"
-[ -d "$DIR/.git" ] && channel="git"
+commit_json="null"
+[ -n "${commit:-}" ] && commit_json="\"$commit\""
+if [ -d "$DIR/.git" ]; then
+    channel="git"
+    head=$(git -C "$DIR" rev-parse HEAD 2>/dev/null || true)
+    [ -n "$head" ] && commit_json="\"$head\""
+fi
 cat > "$DIR/.state/install.json" <<MANIFEST
 {
   "manifestVersion": 1,
   "installedAt": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
   "channel": "$channel",
+  "commit": $commit_json,
   "home": "$DIR",
   "shims": ["$BIN_DIR/nexus"],
   "pathEntries": [],
