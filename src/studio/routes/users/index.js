@@ -6,6 +6,7 @@
  *  on a role name. */
 
 import { mountTemplate, button, toast, confirmDialog, subscribe, onUnmount , buildForm, interfaces, parseTags } from "../../kit/index.js"
+import "../../components/row/index.js"
 import "../../components/identicon/index.js"
 import { usersTemplate } from "./template.js"
 
@@ -118,23 +119,17 @@ export function render(ctx) {
         }
         c.$list.replaceChildren()
         for (const row of rows) {
-            const line = document.createElement("div")
-            line.className = "nx-row"
             const avatar = document.createElement("nx-identicon")
             avatar.dataset.pub = row.pub
-            const who = document.createElement("div")
-            who.className = "nx-who"
-            const name = document.createElement("div")
-            name.textContent = row.name || row.pub
-            const pub = document.createElement("div")
-            pub.className = "nx-pub"
-            pub.textContent = row.pub
-            who.append(name, pub)
             const roleChips = document.createElement("span")
             roleChips.className = "nx-chip accent"
             roleChips.textContent = parseRoles(row).join(", ") || "no roles"
-            const edit = button({ variant: "icon", iconName: "pencil", title: "Edit profile + roles", onclick: () => editUser(row) })
-            line.append(avatar, who, roleChips, edit)
+
+            const line = document.createElement("nx-row")
+            line.dataset.label = row.name || row.pub
+            line.dataset.detail = row.pub
+            line.lead = avatar
+            line.tail = [roleChips, button({ variant: "icon", iconName: "pencil", title: "Edit profile + roles", onclick: () => editUser(row) })]
             c.$list.append(line)
         }
         if (!rows.length) c.$list.append(Object.assign(document.createElement("p"), { className: "nx-muted", textContent: "Nobody here yet." }))
