@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 710/757 node clauses, 0 red** (`node test.js`)
+**Green: 719/766 node clauses, 0 red** (`node test.js`)
 **Green: 47/47 browser clauses, 0 red** (`npm run test:browser`, real headless Chromium)
 
 Two runners, two verdicts, both stated — because until this was checked, only
@@ -71,6 +71,7 @@ because the way they hid is more instructive than the bugs themselves — see
 | **Entity identity** | **schema `icon:` (any bootstrap-icons name — vendored 1.1 MB sprite, nx-icon registry-first with sprite fallback); picker in the /entities editor** | MS-S14 |
 | **Effect engine** | **durable jobs as `nexus_job` rows (token-CAS claim, backoff, DLQ, recurring), Threads execution behind the narrow plane-RPC, webhook/mail/notification consumers as the effect app, Studio /jobs** | SYS-09, JOB-*, EXT-J1, THR-*, JOBL-*, WH-*, MAIL-*, NOTIF-* |
 | **Realtime** | **public SSE `/api/v1/_events` (auth'd incl. `?token=`, per-subscriber plane-gated, no row data on the wire, heartbeat); Studio live refresh on every list route via the public stream; dev `/__dev_events` + watcher + full module hot-swap + `"reload"` on schema hot-apply** | **EVT-U*, EVT-*, HMR-*, DEVE-*** |
+| **Install lifecycle, part 2 — the service (issue #8)** | **`nexus service install \| status \| uninstall` supervises `nexus start` across reboots with NO root: a `systemd --user` unit (`Restart=always`, `WantedBy=default.target`) plus `loginctl enable-linger`, which was verified to need no root on Linux (`set-self-linger` carries `allow_any=yes`) — the fact the whole no-sudo story rests on, checked rather than assumed. Linger failure is a WARNING that still installs, never an abort (the access lesson). Where systemd is absent it degrades to ONE marker-based `@reboot` cron line, never both, because a second supervisor for a long-lived server is not redundancy but a duplicate process — which is also why access's 5-minute timer is deliberately not copied. macOS and Windows refuse with `E_SERVICE_PLATFORM` and say what to run instead. `nexus update` restarts what the MANIFEST recorded, with `try-restart` so a unit an operator disabled stays disabled. Decision and execution are split, so the clauses assert the behaviour without enabling a process on whoever runs the suite; `systemd-analyze verify` confirms systemd itself accepts the generated unit** | **SVC-01..09** |
 | **Install lifecycle, part 1 (issue #8)** | **the installer now records what it changed and `uninstall` undoes exactly that: `$NEXUS_HOME/.state/install.json` names the shims and PATH entries, so a shim at a non-default `NEXUS_BIN` is found — the old guess missed it and left a `nexus` on PATH pointing at a deleted tree. No manifest means an older install, which still uninstalls by the documented defaults and says which authority it used (N3). Both hard-resetting paths now refuse to destroy unexamined work: `install.sh` before any network call (`NEXUS_FORCE=1` overrides) and `nexus update` before any reset (`--force`). Updates are serialised by an atomic `wx` lock that reclaims a dead holder rather than wedging the install, and record `{channel, ref, commit, at}` so `nexus doctor` — now two scopes in one command — can finally answer when the framework last updated and through which channel** | **INST-01..09** |
 | **Studio lifecycle & keyboard access** | **the router has a real unmount hook (`kit/lifecycle.js`): routes register teardown with `onUnmount()` and the router brackets each render, so leaving a page releases what the page took — subscriptions AND the burst-collapse timers the old `host.isConnected` incantation was shape-blind to. Re-rendering the same route (a locale change) unmounts first rather than accumulating; a teardown that throws is contained the way the event hub and the plane's after-hooks already are; an invariant clause over `src/studio/routes` keeps the old pattern from creeping back. The shared EventSource's union is asserted to NARROW on unsubscribe, not merely widen on subscribe — the header used to claim otherwise. And the search overlay, which had no keyboard handling of any kind, is now operable without a mouse: wrapping arrow navigation, Home/End, Enter emitting the chosen record, Escape clearing, with listbox/option roles and `aria-activedescendant`** | **LIFE-UNMOUNT-01..04, EVT-UNION-01/02, NXSR-KEY-01/02** |
 | **HTTP coverage (issue #9 chunk 4)** | **the auth seam is exercised IN PROCESS, not only through spawned subprocesses: `createApi` returns a plain `handle(req, res)`, so routing → the `?token=` fold → `context()` → policy composition → the plane → the status mapping is drivable with a fake req/res, with no production change needed to make it testable. Pinned there: the dev identity branch production must never reach (the other half of START-01), deny-by-default for an authenticated caller with no roles, a token's `roles` claim being IGNORED in favour of the live directory (I4's mechanism, in one call rather than a whole instance), an unprovisioned pub carrying nothing (C1b's other half), `?token=` authenticating the event stream ONLY so a query-string token can never read data, and the enforced policy set and the read-only window deriving from ONE `policyLayers()` call so they cannot drift** | **HTTPX-A01..A05, HTTPX-R01..R04, HTTPX-P01** |
@@ -459,13 +460,21 @@ places nobody thought to check are where these live.
   cascade, hot reload, accent switching, sidebar levels. A browser-suite pass over these
   is owed (the harness exists — NX*-* browser clauses).
 - **LF/CRLF warnings** on Windows commits are noisy (no .gitattributes yet).
-- **Issue #8, steps 2–4 are still owed**: the service story (`systemd --user` +
-  `loginctl enable-linger`, verified reachable without root on Linux) and the
-  post-update restart are step 3 and get their own design, because they are the
-  only part that puts a supervised process on the machine; the tarball SHA check
-  and the Darwin service refusal are step 4. The manifest's `units` and
-  `cronMarkers` fields exist and are empty, so adding a service later is data
-  rather than a schema change.
+- **Issue #8: the service landed; the APPLY path is not exercised end to end
+  here.** `servicePlan()` is pure and fully clause-covered, `systemd-analyze
+  verify --user` accepts the generated unit (systemd's own parser, no process
+  enabled), and `nexus service status` was run against the real machine and
+  correctly reported systemd reachable and `Linger=no`. What was NOT run:
+  `nexus service install` itself, because enabling a real user unit is a
+  system-modifying action a session should not perform unasked. So the writing,
+  enabling, linger-degradation and crontab paths are covered by clause and by
+  the plan they execute, not by having been executed. Stated plainly rather
+  than implied by a green suite.
+- **Issue #8 step 4 is still owed**: the tarball SHA check (answer 8). macOS and
+  Windows refuse service installation with `E_SERVICE_PLATFORM` and a pointer to
+  running `nexus start` under your own supervisor, which is answer 10 as
+  ratified — launchd shipped untested on hardware nobody here has is the mistake
+  this issue exists to prevent.
 - **The Windows PATH entry is NAMED, not yet undone**: `uninstall` reports the
   PATH entry the manifest records and tells the operator to remove it. Rewriting
   a user's persistent PATH during an uninstall is a bigger decision than this
