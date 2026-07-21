@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 734/784 node clauses, 0 red** (`node test.js`)
+**Green: 737/787 node clauses, 0 red** (`node test.js`)
 **Green: 50/50 browser clauses, 0 red** (`npm run test:browser`, real headless Chromium)
 **Green: 8/8 end-to-end clauses, 0 red** (`npm run test:e2e`, real browser driving a real `nexus dev`)
 
@@ -391,9 +391,19 @@ places nobody thought to check are where these live.
   `.nx-pub`: the latter is a text style, and `entity/[entity]`'s id/owner/created
   metadata block uses it legitimately without being a row. Banning the class
   outright would have forced a row component onto something that is not a row.
-  STILL hand-built: the entities editor chrome and the settings form — layout
-  shapes that appear once each, so there is no repeated widget to extract and no
-  honest component to name yet.
+  The entities editor chrome and the settings form are done too, and the earlier
+  reading of them was WRONG. That pass counted `createElement` calls and
+  concluded they were "layout shapes that appear once each, so there is no
+  repeated widget to extract". Reading them found the duplication was not a
+  WIDGET repeated across routes — it was two PRIMITIVES redefined in every file
+  that needed them: the `.nx-field`+`.nx-label` wrapper and the `.nx-input`
+  control existed in FOUR copies (kit/fields.js had one inside `buildForm` and
+  one private, and settings, entities and entity/[entity] each had their own).
+  Changing what a labelled field looks like meant finding four places and
+  hoping. The kit now exports `control`, `fieldWrap` and `labelledField`;
+  NXFP-01 is an invariant over all of `src/studio`, keyed on the CLASSES,
+  because that is what makes two blocks of DOM the same thing to a reader and to
+  the stylesheet.
 - **(earlier) The users FORM is generated from the schema.** §7.1's rule is "sinh UI từ schema" — a new field kind is a registry
   entry, never per-entity UI. `routes/users` was the worst violation (a hand-built form
   including its own roles picker, ~20 `createElement` calls no other entity could reach)
@@ -492,6 +502,18 @@ places nobody thought to check are where these live.
 - **The browser suite is green here, and that is a per-machine claim**: it needs a real Chromium
   and runs over CDP. It is green on this Linux box; an environment without a browser exits 3 (no
   browser found) rather than pretending.
+- **ZSYNC is FLAKY in CI, and that is a hazard rather than a footnote.** The ZEN
+  mesh suite needs real local sockets and a convergence window, and on a loaded
+  GitHub runner it can miss it: ZSYNC-01/03/04/05 failed on one push and the
+  SAME commit passed on a re-run and on the pull_request run. It was re-run
+  once, deliberately not until green — re-running until green is the "light
+  wired to nothing" pattern these chunks exist to remove. What this costs is
+  precise: a flaky clause inside a merge gate teaches people to re-run rather
+  than to read, which erodes the trust the gate was built for. The fix is to
+  make convergence wait on an observable condition rather than elapsed time, or
+  to declare the suite unavailable when it cannot converge instead of failing —
+  not to loosen what it asserts. Owed, and named here so a future red ZSYNC is
+  read as "check this" rather than "re-run it".
 - **CI exists (`.github/workflows/conformance.yml`) and has now RUN — and caught a real defect on
   its first attempt.** On Node 24 it failed with an unsettled top-level await (exit 13): the
   background embedding drain's timer was unref'd, so on an otherwise-idle process the drain never

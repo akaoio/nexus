@@ -2,7 +2,7 @@
  *  children, folders nested like the URL (/settings/ai, /settings/locales,
  *  /settings/themes — the akao routes shape). */
 
-import { mountTemplate, button, toast } from "../../kit/index.js"
+import { mountTemplate, button, toast, control, labelledField } from "../../kit/index.js"
 import { settingsTemplate } from "./template.js"
 import * as ai from "./ai/index.js"
 import * as locales from "./locales/index.js"
@@ -27,23 +27,16 @@ const section = (title, children) => {
     return wrap
 }
 
-const field = (label, control) => {
-    const wrap = document.createElement("div")
-    wrap.className = "nx-field"
+// The kit owns what a labelled field and a classed control look like (§7.1);
+// these used to be local copies, which is how four files came to define the
+// same two primitives. Only the page-specific width stays here.
+const field = (label, controlEl) => {
+    const wrap = labelledField(label, controlEl)
     wrap.style.maxWidth = "26.25rem"
-    const l = document.createElement("label")
-    l.className = "nx-label"
-    l.textContent = label
-    wrap.append(l, control)
     return wrap
 }
 
-const input = (props = {}) => {
-    const node = document.createElement("input")
-    node.className = "nx-input"
-    Object.assign(node, props)
-    return node
-}
+const input = (props = {}) => control("input", props)
 
 export function render(ctx) {
     // a child feature owns the whole page when the URL names it
@@ -64,8 +57,7 @@ export function render(ctx) {
 
         const name = input({ value: cfg.site?.name ?? "" })
         name.addEventListener("change", () => set("site.name", name.value))
-        const loc = document.createElement("select")
-        loc.className = "nx-input"
+        const loc = control("select")
         for (const code of ctx.i18n.locales) {
             const option = document.createElement("option")
             option.value = code
@@ -76,8 +68,7 @@ export function render(ctx) {
         loc.addEventListener("change", () => set("site.locale", loc.value))
         c.$body.append(section("Site", [field("Name", name), field("Default locale", loc)]))
 
-        const eng = document.createElement("select")
-        eng.className = "nx-input"
+        const eng = control("select")
         for (const e of ["sqlite", "turso", "postgres", "mysql"]) {
             const option = document.createElement("option")
             option.value = e

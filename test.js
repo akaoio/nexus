@@ -227,6 +227,7 @@ import "./test/studio/routes.test.js"
 import "./test/studio/lifecycle.test.js"
 import "./test/studio/fields-registry.test.js"
 import "./test/studio/row.test.js"
+import "./test/studio/field-primitives.test.js"
 import "./test/studio/row-dom.test.js"
 
 // App system — manifest format (clauses MF-*)
