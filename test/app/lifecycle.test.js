@@ -34,7 +34,12 @@ Test.describe("Entity lifecycle (LIFE-*)", () => {
         assert.equal(plan.schemaFile, "apps/starter/models/task.json")
         assert.deepEqual(plan.dbPolicies, ["P1"])
         assert.deepEqual(plan.baselineOrphans, [{ source: "apps/starter/permissions/studio.json", roles: ["admin"] }])
-        assert.deepEqual(plan.linkDrops, [{ entity: "project", field: "main_task", file: "apps/starter/models/project.json" }])
+        // `index` joined this shape with issue #9 I8: sqlite refuses to drop a
+        // column an index still references, so a plan naming only the column
+        // described work that could not actually be performed.
+        assert.deepEqual(plan.linkDrops, [
+            { entity: "project", field: "main_task", file: "apps/starter/models/project.json", index: "idx_project_main_task" }
+        ])
         assert.deepEqual(plan.views, ["V1"])
         assert.deepEqual(plan.rolesAffected, ["admin", "editor"])
     })

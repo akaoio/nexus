@@ -178,6 +178,7 @@ import "./test/studio/roles.test.js"
 // App — system entities (clauses SYS-*)
 import "./test/app/system.test.js"
 import "./test/app/lifecycle.test.js"
+import "./test/app/entity-delete.test.js"
 
 // App — HMR file watcher (clauses HMR-*)
 import "./test/app/hmr-watch.test.js"
