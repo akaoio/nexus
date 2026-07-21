@@ -3,8 +3,12 @@
  * Studio router has no unmount hook, so per-call connections would leak a
  * browser connection per navigation until the HTTP/1.1 per-origin cap
  * starves the API). The connection carries the UNION of all subscribers'
- * entity lists and is replaced only when the union grows; each subscriber
- * filters client-side. EventSource cannot set headers → ?token=.
+ * entity lists and is replaced whenever that union CHANGES — including when it
+ * shrinks, so a route that unsubscribes actually narrows the connection rather
+ * than leaving the server evaluating permission for entities nothing is
+ * watching. (This header used to say "only when the union grows", which
+ * understated what `ensure()` does — it compares the whole key.) Each
+ * subscriber filters client-side. EventSource cannot set headers → ?token=.
  */
 
 const subs = new Set() // { entities: string[]|null, onEvent }
@@ -16,13 +20,18 @@ const seen = new Set()
 // nexus_job). Mixing a null sub with an explicit sub under-serves the
 // explicit sub in this scheme; the five current routes all pass explicit
 // lists, so in practice this stays exact — known simplification.
-const unionKey = () => {
+export const unionKey = () => {
     if ([...subs].some((s) => !s.entities)) return "" // a null sub wants the default set
     const union = new Set([...subs].flatMap((s) => s.entities))
     return [...union].sort().join(",")
 }
 
 function ensure() {
+    // No EventSource means no live events, and that is not an error: this
+    // module is reachable from a non-browser context (the `nexus studio build`
+    // import-graph walk, and the Node clauses that assert the union logic).
+    // Bookkeeping still runs — only the connection is skipped.
+    if (typeof EventSource === "undefined") return
     const key = unionKey()
     if (source && key === connectedKey && source.readyState !== EventSource.CLOSED) return
     source?.close()
@@ -30,7 +39,7 @@ function ensure() {
     if (!subs.size) { connectedKey = null; return }
     const params = new URLSearchParams()
     if (key) params.set("entities", key)
-    const token = localStorage.getItem("nexus-token")
+    const token = globalThis.localStorage?.getItem("nexus-token")
     if (token) params.set("token", token)
     const qs = params.toString()
     source = new EventSource("/api/v1/_events" + (qs ? "?" + qs : ""))
@@ -63,4 +72,7 @@ export function subscribe(entities, onEvent) {
     return () => { subs.delete(sub); ensure() }
 }
 
-export default { subscribe }
+/** How many subscribers are live. Observability, and EVT-UNION-*. */
+export const subscriberCount = () => subs.size
+
+export default { subscribe, unionKey, subscriberCount }

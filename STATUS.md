@@ -3,9 +3,14 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 692/738 node clauses, 0 red.**
-(46 node "skips" are browser-only clauses plus the gated real-model suites —
-EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
+**Green: 701/748 node clauses, 0 red** (`node test.js`)
+**Green: 47/47 browser clauses, 0 red** (`npm run test:browser`, real headless Chromium)
+
+Two runners, two verdicts, both stated — because until this was checked, only
+the first was. The 47 node "skips" are the browser clauses plus the gated
+real-model suites (EmbeddingGemma/FunctionGemma run where `test/.engines` has
+the library); the node summary now names the browser verdict at the moment it
+skips them, so a green node run can no longer read as "everything passed".
 
 **Issue #9 is closed except for one deferred chunk.** A skeptical audit (issue
 #9) found 5 Critical and 11 Important findings, none covered by any clause at
@@ -66,6 +71,7 @@ because the way they hid is more instructive than the bugs themselves — see
 | **Entity identity** | **schema `icon:` (any bootstrap-icons name — vendored 1.1 MB sprite, nx-icon registry-first with sprite fallback); picker in the /entities editor** | MS-S14 |
 | **Effect engine** | **durable jobs as `nexus_job` rows (token-CAS claim, backoff, DLQ, recurring), Threads execution behind the narrow plane-RPC, webhook/mail/notification consumers as the effect app, Studio /jobs** | SYS-09, JOB-*, EXT-J1, THR-*, JOBL-*, WH-*, MAIL-*, NOTIF-* |
 | **Realtime** | **public SSE `/api/v1/_events` (auth'd incl. `?token=`, per-subscriber plane-gated, no row data on the wire, heartbeat); Studio live refresh on every list route via the public stream; dev `/__dev_events` + watcher + full module hot-swap + `"reload"` on schema hot-apply** | **EVT-U*, EVT-*, HMR-*, DEVE-*** |
+| **Studio lifecycle & keyboard access** | **the router has a real unmount hook (`kit/lifecycle.js`): routes register teardown with `onUnmount()` and the router brackets each render, so leaving a page releases what the page took — subscriptions AND the burst-collapse timers the old `host.isConnected` incantation was shape-blind to. Re-rendering the same route (a locale change) unmounts first rather than accumulating; a teardown that throws is contained the way the event hub and the plane's after-hooks already are; an invariant clause over `src/studio/routes` keeps the old pattern from creeping back. The shared EventSource's union is asserted to NARROW on unsubscribe, not merely widen on subscribe — the header used to claim otherwise. And the search overlay, which had no keyboard handling of any kind, is now operable without a mouse: wrapping arrow navigation, Home/End, Enter emitting the chosen record, Escape clearing, with listbox/option roles and `aria-activedescendant`** | **LIFE-UNMOUNT-01..04, EVT-UNION-01/02, NXSR-KEY-01/02** |
 | **HTTP coverage (issue #9 chunk 4)** | **the auth seam is exercised IN PROCESS, not only through spawned subprocesses: `createApi` returns a plain `handle(req, res)`, so routing → the `?token=` fold → `context()` → policy composition → the plane → the status mapping is drivable with a fake req/res, with no production change needed to make it testable. Pinned there: the dev identity branch production must never reach (the other half of START-01), deny-by-default for an authenticated caller with no roles, a token's `roles` claim being IGNORED in favour of the live directory (I4's mechanism, in one call rather than a whole instance), an unprovisioned pub carrying nothing (C1b's other half), `?token=` authenticating the event stream ONLY so a query-string token can never read data, and the enforced policy set and the read-only window deriving from ONE `policyLayers()` call so they cannot drift** | **HTTPX-A01..A05, HTTPX-R01..R04, HTTPX-P01** |
 | **Resource bounds (issue #9 chunk 3)** | **nothing unbounded by a single caller: a zero-dep token bucket limits both servers, with the pre-auth tier strictly tighter (anyone can reach it and each call costs a signature check), a separate bucket per (tier, key) so ordinary API traffic cannot drain the pre-auth allowance, `X-Forwarded-For` ignored unless `trust_proxy` is declared, `/_health` exempt so a flood cannot take the instance out of rotation, and — the two that matter most — the limiter's OWN key map swept and hard-capped, failing CLOSED to the tightest tier when full rather than waving strangers through; SSE fan-out memoised per emit by authorization fingerprint (INCLUDING the user, since `$CURRENT_USER`/`ifOwner` make identical policies mean different things), so N subscribers across k contexts cost k reads not N, plus a subscriber cap; webhook dispatch reads a cache refreshed through the same after-hook mechanism `nexus_policy`/`nexus_user` already use, so twenty writes cost one read instead of twenty and a Studio write is still instantly live; `search()` embeds at most a configured cap inside a request and drains the rest in the background, so a model switch cannot put 1000 rows of ML work in one HTTP response and the corpus still completes; `nexus site backup` streams in pages of 500 and its summary now reports what it ACTUALLY captured, naming what it skipped** | **RATE-01..09, EVT-FANOUT-01..03, EVT-CAP-01, WH-CACHE-01..03, SEM-CAP-01..03, SITE-STREAM-01/02, SITE-COUNT-01** |
 | **Durability & atomicity (issue #9 chunk 2)** | **the executor has a REAL transaction seam — one connection for the whole callback, so a pooled driver can no longer scatter `BEGIN`/body/`COMMIT` across three connections (the pre-seam improvisation did, silently); `BEGIN IMMEDIATE` on sqlite/turso, capability-declared (`CAPABILITIES.transactions`, kept separate from `transactionalDDL`), no nesting (`E_NESTED_TX`), and a failed rollback never replaces the error that caused it. On top of it: a write and everything derived from it commit together, with the embedding derived BEFORE the transaction so a failed model leaves no row and inference never holds a write lock; an `after:` hook that throws no longer fails a durable write and is contained through `onHookError`; `update`/`remove` carry the permission predicate on the write STATEMENT and confirm it matched, closing the TOCTOU window; entity delete moved into core as one transaction that swallows nothing (and now actually drops the link column — see the findings section); `hotApply` runs inside a transaction where DDL can roll back and reports `atomic: false` where it cannot; `after:remove` carries the captured pre-image so a deleted row's id no longer crosses the row rule that protected it — the row DECIDES and is never SENT; a timed-out job reclaims its queue entry AND recycles the worker, and the execution timeout is derived from the lease so the two cannot be equal again; file-backed sqlite runs in WAL with a busy timeout, surfaced by `nexus doctor`** | **TXN-01..05, ADP-TXN, ADP-WAL-*, DPL-ATOMIC-*, DPL-TOCTOU-*, LIFE-TX-*, MIG-HOTTX-*, EVT-ROWGATE-*, THR-CANCEL-*, JOB-TIMEOUT-*** |
@@ -114,6 +120,17 @@ the normal outcome. `entityDeletePlan` now names the index (the plan is the dry
 run an operator approves, and it was describing work that could not be
 performed), and `applyEntityDelete` drops it first (LIFE-TX-\*).
 
+**5. The browser conformance suite was RED, and the headline said "0 red".**
+`SEM-10` had been failing since the square-tint redesign changed the search
+result header from `note (1)` to `note · 1` and the empty state from
+`no matches` to `No matches for …`. Nothing caught it because `node test.js`
+skips `{ browser: true }` and nobody ran `npm run test:browser` — so the
+project's headline number was true for one runner and silently untrue for the
+other. Found by running it for the first time on Linux. The clause now asserts
+the SUBSTANCE (grouped per entity, count, label, score, an empty state that says
+so) rather than punctuation a redesign is entitled to change, and the node
+summary now names the second verdict wherever it skips.
+
 **4. `nexus site backup` reported eight entities and wrote one.** On a fresh
 instance the system tables do not exist yet — they are created when a server
 first boots — so `isMissingTableError` correctly skipped them. But the summary
@@ -122,9 +139,9 @@ not make the report honest, and a backup that overstates itself is discovered at
 the worst possible moment. The count is now what the file actually holds, and
 anything left out is NAMED (SITE-COUNT-01).
 
-**What the four share.** Every one is a guarantee stated in a comment or a
-header, and exercised only on the engine, the path, or the route where it
-happened to hold. None was found by reading the code with suspicion — the audit
+**What the five share.** Every one is a guarantee stated in a comment, a header,
+or a clause — and exercised only on the engine, the path, the route, or the
+runner where it happened to hold. None was found by reading the code with suspicion — the audit
 did that thoroughly and missed all four. Each was found by writing a clause that
 asserted the stated guarantee somewhere it had never been asserted before. That
 is the argument for spec-first stated more precisely than "tests are good": a
@@ -333,9 +350,15 @@ places nobody thought to check are where these live.
   in CI — the module hot-swap mechanism is proven on the real infrastructure (DEVE-02/03), but
   the browser-side application of those swaps (entry point reexecution, style reinjection) are
   joins to the E2E debt alongside login/cascade/hot-reload/accent clauses.
-- **Studio router has NO unmount hook** (`src/studio/app.js:181`): subscriptions ride ONE shared
-  EventSource and stale routes self-reap on their first event after a navigation rather than
-  closing cleanly. A real teardown hook is the structural follow-up (architectural debt, documented).
+- **CLOSED — the Studio router has an unmount hook** (`src/studio/kit/lifecycle.js`). This entry
+  used to disclose that stale routes self-reaped on their first event after a navigation. Reading
+  it found the cost was larger than the description: five routes carried the same
+  `if (!host.isConnected) return unsubscribe()` line, which releases a subscription only when the
+  NEXT event arrives — so on a quiet instance a navigation leaked a subscriber permanently — and
+  the pattern was subscription-shaped, so the `setTimeout` those routes also hold was never
+  released at all and could fire `load()` against a dead route. Routes now register teardown with
+  `onUnmount()`; the router brackets each render. A teardown that throws is contained. NXSR-KEY-02
+  is an invariant over the source, so the old incantation cannot creep back (LIFE-UNMOUNT-*).
 - **App-file changes broadcast a full `reload`** (apps/ is not browser-served): only framework files
   (`/_nexus/src/{studio,core}`) hot-swap at the module level. Schema hot-apply triggers `"reload"` to
   ensure app logic sees the new schema before any user action.
@@ -363,9 +386,48 @@ places nobody thought to check are where these live.
 - **`span` drag-resize** is select-driven (1/3–3/3 dropdown); dragging a field's edge to
   resize was sketched in the spec but not built. Field reorder DnD exists (grip handle);
   it has no automated test (manual/browser-verified only).
-- **Search overlay lacks keyboard navigation** (arrows/enter to open a hit) and the
-  legacy `/search` page duplicates the same component — fine, but the overlay should
-  eventually own result actions (open record).
+- **CLOSED — the search overlay is keyboard-operable** (NXSR-KEY-01). This entry understated it:
+  the component had NO keyboard handling of any kind — no `keydown`, no `tabindex`, no `role`, no
+  `aria-*` — so a keyboard or screen-reader user could not reach a result at all. That is an
+  accessibility defect, not a missing convenience. Arrow/Home/End navigate (wrapping at both ends,
+  ArrowUp from nothing opening the last hit), Enter emits `nx-open` with the chosen record, Escape
+  clears; the results are a `role="listbox"` of `role="option"` hits with `aria-activedescendant`
+  tracked on the input. The navigation rule is a pure function asserted under Node rather than a
+  browser-only clause nobody runs.
+- **Still open: the legacy `/search` page duplicates the overlay component**, and the overlay
+  should eventually own result actions rather than only announcing the choice.
+- **The teardown is proven by clause and by boot, NOT yet by a browser click-through**: the
+  lifecycle logic, the union narrowing and the key handling all run under Node, and the built
+  Studio boots with the new kit — but "navigate away and observe the subscription actually close"
+  joins the existing E2E debt below rather than being claimed here. The search overlay's half IS
+  now proven in a real browser (SEM-11: listbox/option roles, `aria-activedescendant` tracking,
+  arrow selection, Enter emitting the chosen record); the router's half is not.
+- **The browser suite is green here, and that is a per-machine claim**: it needs a real Chromium
+  and runs over CDP. It is green on this Linux box; an environment without a browser exits 3 (no
+  browser found) rather than pretending.
+- **CI exists (`.github/workflows/conformance.yml`) and has now RUN — and caught a real defect on
+  its first attempt.** On Node 24 it failed with an unsettled top-level await (exit 13): the
+  background embedding drain's timer was unref'd, so on an otherwise-idle process the drain never
+  ran and `embeddingBackfill` never settled, leaving the corpus permanently half-embedded. That is
+  the exact failure SEM-CAP-02 was written to prevent, and SEM-CAP-02 could not have caught it —
+  inside a full suite run there is always other pending work keeping the loop alive, so the
+  property held by accident. Fixed, and pinned by SEM-CAP-04, which spawns a child whose loop
+  contains nothing but the drain. Node 22 passed the whole workflow including the browser suite,
+  which also settles the one assumption stated below as unverifiable from here.
+- **Historical note on that workflow's arrival:**
+  until it was added there was no automated run behind 748 clauses and twelve merged PRs at all —
+  which is how the browser suite went red unnoticed. The workflow gates on BOTH runners across
+  Node 22 and 24, installs the live-engine drivers as a hard step (so a broken install fails the
+  job instead of quietly turning live-engine clauses into skips), and treats the browser runner's
+  exit 3 as a failure, because a browser suite that did not run is not one that passed. What was
+  verified locally: the YAML parses, the pinned driver ranges resolve, `NEXUS_BROWSER` is honoured
+  by the runner, and the exit-3 path exists. The one thing that could NOT be verified from here —
+  whether GitHub's `ubuntu-latest` image carries a browser — is now OBSERVED: the Node 22 job ran
+  the browser suite green. The "Locate a browser" step still fails loudly with instructions if a
+  future image drops it, rather than letting the suite silently skip.
+- **The real-model suites stay skipped in CI, deliberately**: `@huggingface/transformers` is not
+  installed there because EmbeddingGemma/FunctionGemma download real models, which is not a
+  per-PR cost. Those clauses skip in CI exactly as they do on a machine without the library.
 - **E2E flows verified by hand in Chrome, not pinned in CI**: login, entity delete
   cascade, hot reload, accent switching, sidebar levels. A browser-suite pass over these
   is owed (the harness exists — NX*-* browser clauses).

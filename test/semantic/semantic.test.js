@@ -168,13 +168,13 @@ Test.describe("Semantic — core (SEM-*)", () => {
 })
 
 Test.describe("Semantic — <nx-search> (SEM, browser)", () => {
-    // RED for as long as the browser suite went unrun. The square-tint redesign
-    // changed the result header from "note (1)" to "note · 1" and the empty
-    // state from "no matches" to "No matches for …", and nothing caught it
-    // because `node test.js` skips { browser: true } and nobody ran
-    // `npm run test:browser`. It now asserts the SUBSTANCE — grouped per
-    // entity, count, label, score, an empty state that says so — rather than
-    // punctuation and casing a redesign is entitled to change.
+    // This clause was RED for as long as the browser suite went unrun. The
+    // square-tint redesign changed the result header from "note (1)" to
+    // "note · 1" and the empty state from "no matches" to "No matches for …",
+    // and nothing caught it because `node test.js` skips { browser: true } and
+    // nobody ran `npm run test:browser`. It now asserts the SUBSTANCE — grouped
+    // per entity, count shown, label shown, score shown, empty state says so —
+    // rather than punctuation and casing a redesign is entitled to change.
     Test.it("SEM-10 nx-search groups injected results per entity, shows scores, and says so when there are none", async () => {
         const search = document.createElement("nx-search")
         search.schemas = [NOTE]
@@ -200,6 +200,45 @@ Test.describe("Semantic — <nx-search> (SEM, browser)", () => {
         await search.run()
         const empty = search.shadowRoot.querySelector(".results").textContent
         assert.truthy(/no matches/i.test(empty), `an empty result says so: ${empty}`)
+        search.remove()
+    })
+
+    Test.it("SEM-11 the overlay is reachable without a mouse — roles, selection, and Enter opening a record", async () => {
+        // The accessibility half of NXSR-KEY-01, in a REAL browser: the pure
+        // navigation rule is asserted under Node, but "the DOM actually
+        // announces a listbox and Enter actually opens something" can only be
+        // seen here. Before this the component had no keyboard handling, no
+        // roles and no aria at all.
+        const search = document.createElement("nx-search")
+        search.schemas = [NOTE]
+        search.searcher = async ({ query }) =>
+            query === "hit"
+                ? [{ score: 0.9, row: { id: "a", title: "first" } }, { score: 0.5, row: { id: "b", title: "second" } }]
+                : []
+        document.body.appendChild(search)
+        const input = search.shadowRoot.querySelector(".query")
+        input.value = "hit"
+        await search.run()
+
+        const results = search.shadowRoot.querySelector(".results")
+        assert.equal(results.getAttribute("role"), "listbox")
+        const hits = [...results.querySelectorAll('[role="option"]')]
+        assert.equal(hits.length, 2, "every hit is an option a screen reader can land on")
+
+        // The first hit is preselected, so Enter works without an arrow press.
+        assert.equal(hits[0].getAttribute("aria-selected"), "true")
+        assert.equal(input.getAttribute("aria-activedescendant"), hits[0].id)
+
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
+        assert.equal(hits[1].getAttribute("aria-selected"), "true", "arrow moves the selection")
+        assert.equal(hits[0].getAttribute("aria-selected"), "false")
+        assert.equal(input.getAttribute("aria-activedescendant"), hits[1].id, "and assistive tech is told")
+
+        let opened = null
+        search.addEventListener("nx-open", (e) => (opened = e.detail))
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+        assert.deepEqual(opened, { entity: NOTE.name, id: "b" }, "Enter announces the chosen record, host decides what opening means")
+
         search.remove()
     })
 }, { browser: true })
