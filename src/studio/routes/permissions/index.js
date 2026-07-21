@@ -4,7 +4,7 @@
  *  over the full composed set. Saving is a diff of ordinary entity-API row
  *  writes; there is no bespoke permissions write endpoint anymore. */
 
-import { mountTemplate, toast, subscribe } from "../../kit/index.js"
+import { mountTemplate, toast, subscribe, onUnmount } from "../../kit/index.js"
 import "../../components/matrix/index.js"
 import { rolesIn } from "../../../core/App/policies.js"
 import { packPolicy } from "../../../core/App/system.js"
@@ -171,10 +171,13 @@ export function render(ctx) {
 
     // live refresh: coarse but truthful — re-run load() on any matching event
     let reloadTimer = null
-    const unsubscribe = subscribe(["nexus_policy", "nexus_user"], () => {
-        if (!host.isConnected) return unsubscribe() // the router has no unmount hook — stale routes reap themselves
+    onUnmount(subscribe(["nexus_policy", "nexus_user"], () => {
         clearTimeout(reloadTimer)
         reloadTimer = setTimeout(load, 250) // collapse bursts into one reload
-    })
+    }))
+    // the burst-collapse timer is a route resource too — the old
+    // isConnected pattern was subscription-shaped and could not reach it,
+    // so a timer scheduled just before navigating still fired on a dead route
+    onUnmount(() => clearTimeout(reloadTimer))
     return host
 }

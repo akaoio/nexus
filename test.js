@@ -217,6 +217,9 @@ import "./test/studio/selection.test.js"
 // start.js both ask (clauses ROUTES-*)
 import "./test/studio/routes.test.js"
 
+// Studio — route lifecycle + keyboard access (LIFE-UNMOUNT-*, NXSR-KEY-*)
+import "./test/studio/lifecycle.test.js"
+
 // App system — manifest format (clauses MF-*)
 import "./test/app/manifest.test.js"
 

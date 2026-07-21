@@ -28,6 +28,7 @@ import { NxA } from "/_nexus/src/studio/components/a/index.js"
 import "/_nexus/src/studio/components/navlink/index.js"
 import { NxUser } from "/_nexus/src/studio/components/user/index.js"
 import { passkeySupported, enroll, enrolled, unlock } from "./kit/webauthn.js"
+import { unmountCurrent, commitMount } from "./kit/lifecycle.js"
 
 const boot = JSON.parse(document.getElementById("nx-boot").textContent)
 const schemas = boot.schemas
@@ -200,7 +201,17 @@ function renderNav() {
 function render() {
     document.documentElement.lang = i18n.locale
     renderNav()
-    main.replaceChildren(MODULES[state.view].render(ctx))
+    // The unmount hook (LIFE-UNMOUNT-*). Routes register teardown with
+    // onUnmount() while they render; this brackets the call so leaving a page
+    // releases what the page took — including timers, which the old
+    // `if (!host.isConnected) return unsubscribe()` pattern could not reach.
+    // Note this runs even when the NEXT route is the SAME one (a locale
+    // change re-renders in place): skipping that would leave the old
+    // subscription running beside the new one.
+    unmountCurrent()
+    const node = MODULES[state.view].render(ctx)
+    commitMount()
+    main.replaceChildren(node)
 }
 
 // ── routing — REAL paths, locale-prefixed: /vi/entity/task (the akao shape) ───
