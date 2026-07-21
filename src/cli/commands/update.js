@@ -10,7 +10,7 @@ import { existsSync } from "fs"
 import { join } from "path"
 import { fileURLToPath } from "url"
 import { spawnSync } from "child_process"
-import { acquireUpdateLock, recordUpdate } from "../install-state.js"
+import { acquireUpdateLock, recordUpdate, readManifest } from "../install-state.js"
 
 const NEXUS_ROOT = fileURLToPath(new URL("../../..", import.meta.url))
 
@@ -97,7 +97,24 @@ export async function update(args, flags, out) {
         // --channel a later config change rather than a redesign.
         recordUpdate(NEXUS_ROOT, { channel: "git", ref: "origin/main", commit: after })
         out.print(after === before ? `Already up to date (${after}).` : `Updated ${before} → ${after}.`)
-        out.emit({ ok: true, managed: "git", before, after, root: NEXUS_ROOT })
+
+        // Restart what THIS install put there — the manifest knows, so nothing
+        // is guessed (issue #8 answer 6). `try-restart`, never `restart`: a
+        // unit the operator deliberately disabled must not be force-started by
+        // an update. That is access's exact choice (update.sh:64) and the
+        // reasoning carries over unchanged.
+        //
+        // Not a supervisor watching the tree: that would be a second
+        // long-lived process to install, supervise and uninstall, and it would
+        // fire on every file a hard reset touches.
+        const units = readManifest(NEXUS_ROOT)?.units ?? []
+        for (const unit of units) {
+            const r = spawnSync("systemctl", ["--user", "try-restart", unit], { encoding: "utf8", stdio: "pipe" })
+            if (r.status === 0) out.print(`  restarted ${unit}`)
+            else out.print(`  ${unit}: not restarted (${(r.stderr || "systemctl unavailable").trim()})`)
+        }
+
+        out.emit({ ok: true, managed: "git", before, after, root: NEXUS_ROOT, restarted: units })
     } finally {
         lock.release()
     }

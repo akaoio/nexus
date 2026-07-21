@@ -24,6 +24,7 @@ import { studio } from "./commands/studio.js"
 import { doctor } from "./commands/doctor.js"
 import { update } from "./commands/update.js"
 import { uninstall } from "./commands/uninstall.js"
+import { service } from "./commands/service.js"
 
 const VALUE_FLAGS = new Set(["port", "site", "engine", "name", "role", "roles", "model", "nl-model", "out"])
 
@@ -86,7 +87,8 @@ ${out.bold("Commands")}
   model list|pull    AI (embedding) models — list/use/pull   ${out.dim("EmbeddingGemma default")}
   config get|set     Read/write nexus.config.json             ${out.dim("dot.path value")}
   studio build       Ship the Studio as static assets         ${out.dim("--out public/studio")}
-  doctor             Diagnose the instance
+  doctor             Diagnose the instance                   ${out.dim("--install")}
+  service            Supervise nexus start across reboots     ${out.dim("install|status|uninstall")}
   update             Self-update from GitHub (git installs)
   uninstall          Remove Nexus (never touches instances)  ${out.dim("--yes")}
   version            Print the nexus version
@@ -98,7 +100,7 @@ ${out.bold("Global flags")}
   -h, --help         Show help`)
     out.emit({
         ok: true,
-        commands: ["create", "dev", "start", "test", "migrate", "site", "app", "user", "model", "config", "studio", "doctor", "update", "uninstall", "version", "help"]
+        commands: ["create", "dev", "start", "test", "migrate", "site", "app", "user", "model", "config", "studio", "doctor", "service", "update", "uninstall", "version", "help"]
     })
 }
 
@@ -135,6 +137,8 @@ export async function main(argv) {
                 return await studio(args, flags, out)
             case "doctor":
                 return await doctor(args, flags, out)
+            case "service":
+                return await service(args, flags, out)
             case "update":
                 return await update(args, flags, out)
             case "uninstall":
