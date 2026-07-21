@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 723/770 node clauses, 0 red** (`node test.js`)
+**Green: 727/774 node clauses, 0 red** (`node test.js`)
 **Green: 47/47 browser clauses, 0 red** (`npm run test:browser`, real headless Chromium)
 
 Two runners, two verdicts, both stated — because until this was checked, only
@@ -347,10 +347,22 @@ places nobody thought to check are where these live.
   and `/_nexus/*` 404s is verified by hand, joining the existing E2E debt (login/cascade/
   hot-reload/accent) below — the transport, the route set, and the authorization are what the
   clauses above pin.
-- **Component discipline is not yet total** (the pre-Huy akao bar): sidebar entries are
-  now `<nx-navlink>` and the shell composes components, but hand-built DOM remains in
-  several routes (users list rows, roles cards, entities editor chrome, settings/general
-  form) and in kit/fields.js editors. These should become components or route templates.
+- **Component discipline: the users FORM is generated now; the list rows and the other
+  routes are not.** §7.1's rule is "sinh UI từ schema" — a new field kind is a registry
+  entry, never per-entity UI. `routes/users` was the worst violation (a hand-built form
+  including its own roles picker, ~20 `createElement` calls no other entity could reach)
+  and now calls `buildForm()` with one documented per-field override. NXFR-04 is an
+  invariant, so putting a picker back inside a route fails a clause. Still hand-built:
+  the users/roles LIST rows and cards, the entities editor chrome, and the settings form.
+  Those are list/layout shapes rather than field editors, so they want route templates or
+  components rather than the field registry — a separate piece of work.
+- **The override seam is a seam, and it could be abused.** `buildForm({ interfaces })`
+  points ONE NAMED field at an interface that is itself registered. Nothing stops a future
+  caller passing an inline closure and re-inventing per-entity UI through it; the clause
+  checks that routes do not rebuild pickers, not that every override is registered. The
+  honest reason it exists at all: `nexus_user.roles` is a `text` column holding JSON and
+  Model Schema v1 is frozen (N4), so giving it a real field type is a format version, not
+  an afternoon.
 - **Studio auth gate is boot-time** (`studioAuthAtBoot`): flipping auth ON live protects
   the data API immediately, but `/_studio/*` write endpoints only start demanding a token
   after the next dev restart.

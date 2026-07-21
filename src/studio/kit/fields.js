@@ -8,6 +8,8 @@
  */
 
 import { icon, button, text } from "./index.js"
+import { parseTags, serializeTags } from "./tags.js"
+import { resolveInterface } from "./registry.js"
 
 const label = (field, locale) =>
     (field.label && (field.label[locale] || field.label.en || Object.values(field.label)[0])) || field.name
@@ -38,6 +40,50 @@ export const interfaces = {
         wrap.append(box, text)
         return wrap
     },
+    /**
+     * A multi-select over a live option list, with free entry — the shape the
+     * users page needed for roles and built by hand, where no other entity
+     * could reach it. `field.options` seeds the boxes; anything typed is added
+     * and checked, so a role that does not exist yet can be granted in place.
+     * Stores the JSON a text column holds (parseTags/serializeTags).
+     */
+    tags: (f, v, on) => {
+        const wrap = document.createElement("div")
+        const grid = document.createElement("div")
+        grid.className = "nx-options"
+        const held = new Set(parseTags(v))
+        const known = new Set([...(f.options ?? []), ...held])
+        const boxFor = (name) => {
+            const label = document.createElement("label")
+            label.className = "nx-check"
+            const box = document.createElement("input")
+            box.type = "checkbox"
+            box.checked = held.has(name)
+            box.addEventListener("change", () => {
+                box.checked ? held.add(name) : held.delete(name)
+                on(serializeTags([...held]))
+            })
+            label.append(box, name)
+            return label
+        }
+        for (const name of known) grid.append(boxFor(name))
+        const extra = document.createElement("input")
+        extra.className = "nx-input"
+        extra.placeholder = "new — Enter adds it"
+        extra.addEventListener("keydown", (event) => {
+            if (event.key !== "Enter") return
+            event.preventDefault() // Enter in a form field would otherwise submit
+            const name = extra.value.trim()
+            if (!name || known.has(name)) { extra.value = ""; return }
+            known.add(name)
+            held.add(name)
+            grid.append(boxFor(name))
+            on(serializeTags([...held]))
+            extra.value = ""
+        })
+        wrap.append(grid, extra)
+        return wrap
+    },
     date: (f, v, on) => control("input", { type: "date", value: (v ?? "").slice(0, 10) }, (e) => on(e.target.value || null)),
     datetime: (f, v, on) => control("input", { type: "datetime-local", value: (v ?? "").slice(0, 16) }, (e) => on(e.target.value || null)),
     select: (f, v, on) => {
@@ -56,7 +102,11 @@ export const interfaces = {
     },
     link: (f, v, on) => control("input", { type: "text", placeholder: "id of " + (f.target || "linked"), value: v ?? "" }, (e) => on(e.target.value || null))
 }
-const editorFor = (field) => interfaces[field.type] || interfaces.text
+/** The registry's answer for a field — the rule lives in ./registry.js so it
+ *  is assertable under Node; this binds it to the interfaces above. */
+export const interfaceFor = (field, overrides = null) => resolveInterface(field, interfaces, overrides)
+
+
 
 // ── DISPLAYS: type → value → cell content (string or element) ──────────────────
 const mark = (name, style) => {
@@ -90,13 +140,13 @@ export function editableFields(schema) {
  * receives the collected, type-coerced values. Booleans default false.
  * Ctrl/Cmd+Enter submits from anywhere in the form.
  */
-export function buildForm(schema, { data = {}, onSubmit, submitLabel = "Save", locale } = {}) {
+export function buildForm(schema, { data = {}, onSubmit, submitLabel = "Save", locale, interfaces: overrides = null, fields: only = null } = {}) {
     const values = { ...data }
     const form = document.createElement("form")
     form.className = "nx-form nx-form-grid"
     form.addEventListener("submit", (e) => { e.preventDefault(); onSubmit?.(values) })
     form.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); onSubmit?.(values) } })
-    for (const field of editableFields(schema)) {
+    for (const field of editableFields(schema).filter((f) => !only || only.includes(f.name))) {
         const wrap = document.createElement("div")
         wrap.className = "nx-field"
         wrap.style.gridColumn = "span " + (field.span ?? 3)
@@ -108,7 +158,7 @@ export function buildForm(schema, { data = {}, onSubmit, submitLabel = "Save", l
             l.textContent = label(field, locale) + (field.required ? " *" : "")
             wrap.append(l)
         }
-        wrap.append(editorFor(field)(field, values[field.name], (val) => (values[field.name] = val)))
+        wrap.append(interfaceFor(field, overrides)(field, values[field.name], (val) => (values[field.name] = val)))
         form.append(wrap)
     }
     const actions = document.createElement("div")

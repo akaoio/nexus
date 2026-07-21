@@ -224,6 +224,7 @@ import "./test/studio/routes.test.js"
 
 // Studio — route lifecycle + keyboard access (LIFE-UNMOUNT-*, NXSR-KEY-*)
 import "./test/studio/lifecycle.test.js"
+import "./test/studio/fields-registry.test.js"
 
 // App system — manifest format (clauses MF-*)
 import "./test/app/manifest.test.js"
