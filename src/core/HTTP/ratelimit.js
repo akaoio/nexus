@@ -40,8 +40,24 @@
 export const TIERS = Object.freeze({
     /** Unauthenticated: /_auth/challenge, /_auth/verify. */
     auth: Object.freeze({ burst: 20, perMs: 3000 }),
-    /** Everything else, incl. authenticated /api/v1/*. */
-    api: Object.freeze({ burst: 240, perMs: 250 })
+    /** The data plane and the Studio's write endpoints. */
+    api: Object.freeze({ burst: 240, perMs: 250 }),
+    /**
+     * STATIC FILE SERVING — the framework source in dev (`/_nexus/*`) and the
+     * built Studio in production (`/studio/*`, `public/`).
+     *
+     * This tier exists because the api tier broke the Studio outright. A
+     * Studio boot pulls FOUR HUNDRED-ODD ES modules in one burst, so a limit
+     * sized for API calls turned the module graph into a wall of 429s and the
+     * page never rendered — in dev and in production alike. Caught by the
+     * first end-to-end run; nothing before it loaded the Studio's real module
+     * graph against a real server.
+     *
+     * Still bounded, because a flood of asset requests is still work — just
+     * sized so a legitimate page load can never reach it. An API call costs a
+     * query and a permission evaluation; a static read costs a file.
+     */
+    asset: Object.freeze({ burst: 2000, perMs: 20 })
 })
 
 const tightestOf = (tiers) =>
@@ -92,6 +108,8 @@ export function createLimiter({ tiers = TIERS, maxKeys = 10_000, idleMs = 600_00
 
     return {
         tightest,
+        /** The tiers this limiter actually knows — RATE-11 reads it. */
+        tiers,
 
         /**
          * Spend one token for `key` in `tier`.
@@ -127,7 +145,13 @@ export function createLimiter({ tiers = TIERS, maxKeys = 10_000, idleMs = 600_00
  * Which tier a path belongs to. Pre-auth routes are the ones reachable without
  * a credential — declared here, once, so both servers agree.
  */
-export const tierFor = (pathname) => (/(^|\/)_auth\//.test(pathname) ? "auth" : "api")
+export const tierFor = (pathname) => {
+    if (/(^|\/)_auth\//.test(pathname)) return "auth"
+    // The data plane and the Studio's write endpoints are the surfaces worth
+    // protecting; everything else this server answers is a file off disk.
+    if (pathname.startsWith("/api/v1/") || pathname.startsWith("/_studio/")) return "api"
+    return "asset"
+}
 
 /**
  * The key a request is limited under.
@@ -161,11 +185,16 @@ export function clientKey(req, { trustProxy = false } = {}) {
 export function limiterFor(config = {}) {
     const limits = config.limits ?? {}
     if (limits.enabled === false) return null
+    // Built FROM TIERS, never a hand-written list. Listing them by hand meant
+    // adding `asset` to TIERS without adding it here, and `check()` falls back
+    // to the TIGHTEST tier for a name it does not know — so the new tier
+    // silently became the strictest one instead of the most generous, and the
+    // Studio's own module loads were throttled to twenty. Fail-closed is the
+    // right default; a tier that can be forgotten is not (RATE-11).
     return createLimiter({
-        tiers: {
-            auth: { ...TIERS.auth, ...(limits.auth ?? {}) },
-            api: { ...TIERS.api, ...(limits.api ?? {}) }
-        },
+        tiers: Object.fromEntries(
+            Object.entries(TIERS).map(([name, tier]) => [name, { ...tier, ...(limits[name] ?? {}) }])
+        ),
         maxKeys: limits.max_keys ?? 10_000,
         idleMs: limits.idle_ms ?? 600_000
     })

@@ -3,11 +3,14 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 727/774 node clauses, 0 red** (`node test.js`)
+**Green: 729/776 node clauses, 0 red** (`node test.js`)
 **Green: 47/47 browser clauses, 0 red** (`npm run test:browser`, real headless Chromium)
+**Green: 3/3 end-to-end clauses, 0 red** (`npm run test:e2e`, real browser driving a real `nexus dev`)
 
-Two runners, two verdicts, both stated — because until this was checked, only
-the first was. The 47 node "skips" are the browser clauses plus the gated
+Three runners, three verdicts, all stated — because until this was checked, only
+the first was. Each sees something the others cannot: the node suite never opens
+a page, the browser suite never talks to a server, and the end-to-end suite is
+the only one that loads the Studio's real module graph against a live instance. The 47 node "skips" are the browser clauses plus the gated
 real-model suites (EmbeddingGemma/FunctionGemma run where `test/.engines` has
 the library); the node summary now names the browser verdict at the moment it
 skips them, so a green node run can no longer read as "everything passed".
@@ -74,6 +77,7 @@ because the way they hid is more instructive than the bugs themselves — see
 | **Install lifecycle, part 3 — tarball integrity (issue #8)** | **a tarball install is now IDENTIFIABLE: the branch is resolved to a commit and that commit's archive is fetched, so the recorded SHA is exactly the tree on disk rather than whatever `main` pointed at by the time the second request landed. Not signature verification and not claiming to be — TLS plus GitHub identity stays the trust root, since a home-grown signing scheme is key custody to maintain forever and a neglected one looks like protection. Implementing it surfaced a separate hole the answer had not mentioned: `curl … \| tar -xz` under `set -e` cannot see a failing curl, because a POSIX pipeline reports its LAST command's status — so a download that wrote a complete-looking stream and then failed left tar exiting 0 and the install proceeding. The download now goes to a file whose status is checked before anything is extracted. An unresolvable commit degrades to an unidentified install that SAYS so and records `commit: null`, rather than refusing** | **INST-10..13** |
 | **Install lifecycle, part 2 — the service (issue #8)** | **`nexus service install \| status \| uninstall` supervises `nexus start` across reboots with NO root: a `systemd --user` unit (`Restart=always`, `WantedBy=default.target`) plus `loginctl enable-linger`, which was verified to need no root on Linux (`set-self-linger` carries `allow_any=yes`) — the fact the whole no-sudo story rests on, checked rather than assumed. Linger failure is a WARNING that still installs, never an abort (the access lesson). Where systemd is absent it degrades to ONE marker-based `@reboot` cron line, never both, because a second supervisor for a long-lived server is not redundancy but a duplicate process — which is also why access's 5-minute timer is deliberately not copied. macOS and Windows refuse with `E_SERVICE_PLATFORM` and say what to run instead. `nexus update` restarts what the MANIFEST recorded, with `try-restart` so a unit an operator disabled stays disabled. Decision and execution are split, so the clauses assert the behaviour without enabling a process on whoever runs the suite; `systemd-analyze verify` confirms systemd itself accepts the generated unit** | **SVC-01..09** |
 | **Install lifecycle, part 1 (issue #8)** | **the installer now records what it changed and `uninstall` undoes exactly that: `$NEXUS_HOME/.state/install.json` names the shims and PATH entries, so a shim at a non-default `NEXUS_BIN` is found — the old guess missed it and left a `nexus` on PATH pointing at a deleted tree. No manifest means an older install, which still uninstalls by the documented defaults and says which authority it used (N3). Both hard-resetting paths now refuse to destroy unexamined work: `install.sh` before any network call (`NEXUS_FORCE=1` overrides) and `nexus update` before any reset (`--force`). Updates are serialised by an atomic `wx` lock that reclaims a dead holder rather than wedging the install, and record `{channel, ref, commit, at}` so `nexus doctor` — now two scopes in one command — can finally answer when the framework last updated and through which channel** | **INST-01..09** |
+| **End-to-end (browser × live server)** | **`npm run test:e2e` — a real headless Chromium driving a real `nexus dev`, and the only runner that loads the Studio's actual module graph against a live instance: the browser clauses never see a server, the subprocess suites never see a page. It reaches live module state by `await import()`ing the very module the app loaded (ESM keeps one instance per realm per URL), so E2E-02 reads the running app's subscriber set and proves a route's subscription really closes on navigation — the gap the route-lifecycle work declined to claim. Its ability to fail was verified by disabling the teardown. The CDP driver is shared with the browser runner rather than copied. Wired into CI alongside both other runners** | **E2E-01/02/03** |
 | **Studio lifecycle & keyboard access** | **the router has a real unmount hook (`kit/lifecycle.js`): routes register teardown with `onUnmount()` and the router brackets each render, so leaving a page releases what the page took — subscriptions AND the burst-collapse timers the old `host.isConnected` incantation was shape-blind to. Re-rendering the same route (a locale change) unmounts first rather than accumulating; a teardown that throws is contained the way the event hub and the plane's after-hooks already are; an invariant clause over `src/studio/routes` keeps the old pattern from creeping back. The shared EventSource's union is asserted to NARROW on unsubscribe, not merely widen on subscribe — the header used to claim otherwise. And the search overlay, which had no keyboard handling of any kind, is now operable without a mouse: wrapping arrow navigation, Home/End, Enter emitting the chosen record, Escape clearing, with listbox/option roles and `aria-activedescendant`** | **LIFE-UNMOUNT-01..04, EVT-UNION-01/02, NXSR-KEY-01/02** |
 | **HTTP coverage (issue #9 chunk 4)** | **the auth seam is exercised IN PROCESS, not only through spawned subprocesses: `createApi` returns a plain `handle(req, res)`, so routing → the `?token=` fold → `context()` → policy composition → the plane → the status mapping is drivable with a fake req/res, with no production change needed to make it testable. Pinned there: the dev identity branch production must never reach (the other half of START-01), deny-by-default for an authenticated caller with no roles, a token's `roles` claim being IGNORED in favour of the live directory (I4's mechanism, in one call rather than a whole instance), an unprovisioned pub carrying nothing (C1b's other half), `?token=` authenticating the event stream ONLY so a query-string token can never read data, and the enforced policy set and the read-only window deriving from ONE `policyLayers()` call so they cannot drift** | **HTTPX-A01..A05, HTTPX-R01..R04, HTTPX-P01** |
 | **Resource bounds (issue #9 chunk 3)** | **nothing unbounded by a single caller: a zero-dep token bucket limits both servers, with the pre-auth tier strictly tighter (anyone can reach it and each call costs a signature check), a separate bucket per (tier, key) so ordinary API traffic cannot drain the pre-auth allowance, `X-Forwarded-For` ignored unless `trust_proxy` is declared, `/_health` exempt so a flood cannot take the instance out of rotation, and — the two that matter most — the limiter's OWN key map swept and hard-capped, failing CLOSED to the tightest tier when full rather than waving strangers through; SSE fan-out memoised per emit by authorization fingerprint (INCLUDING the user, since `$CURRENT_USER`/`ifOwner` make identical policies mean different things), so N subscribers across k contexts cost k reads not N, plus a subscriber cap; webhook dispatch reads a cache refreshed through the same after-hook mechanism `nexus_policy`/`nexus_user` already use, so twenty writes cost one read instead of twenty and a Studio write is still instantly live; `search()` embeds at most a configured cap inside a request and drains the rest in the background, so a model switch cannot put 1000 rows of ML work in one HTTP response and the corpus still completes; `nexus site backup` streams in pages of 500 and its summary now reports what it ACTUALLY captured, naming what it skipped** | **RATE-01..09, EVT-FANOUT-01..03, EVT-CAP-01, WH-CACHE-01..03, SEM-CAP-01..03, SITE-STREAM-01/02, SITE-COUNT-01** |
@@ -123,6 +127,25 @@ the normal outcome. `entityDeletePlan` now names the index (the plan is the dry
 run an operator approves, and it was describing work that could not be
 performed), and `applyEntityDelete` drops it first (LIFE-TX-\*).
 
+**8. The rate limiter throttled the Studio into a page that could not boot.**
+Every path that was not `/_auth/` took the `api` tier, including the framework
+source in dev (`/_nexus/*`) and the built assets in production (`/studio/*`). A
+Studio boot pulls four hundred-odd ES modules in one burst, so the module graph
+became a wall of 429s and the shell never rendered — in BOTH servers, on `main`,
+since the resource-bounds chunk. Nothing caught it: the browser suite runs
+against static files and never sees a server, the subprocess suites never load a
+page, and the manual check that "dev serves /users 200" verified the HTML shell
+rather than the module graph behind it. The first end-to-end run found it.
+
+The fix needed two goes, and the second is the more instructive. Adding an
+`asset` tier to `TIERS` did nothing, because `limiterFor()` listed its tiers by
+HAND — and `check()` falls back to the TIGHTEST tier for a name it does not
+know, so the most generous tier silently became the strictest and the Studio was
+throttled to twenty requests. Fail-closed is the right default; a tier that can
+be forgotten is not. The limiter is now built from `TIERS`, and RATE-11 asserts
+that every declared tier reaches it and that every answer `tierFor()` can give
+names a tier that exists.
+
 **7. `nexus update` would hard-reset a developer's own working tree.** It is not
 cwd-scoped — it resets the installation the binary belongs to, wherever that is
 — so running it from a nexus checkout discards uncommitted work with no warning
@@ -162,7 +185,7 @@ not make the report honest, and a backup that overstates itself is discovered at
 the worst possible moment. The count is now what the file actually holds, and
 anything left out is NAMED (SITE-COUNT-01).
 
-**What the seven share.** Every one is a guarantee stated in a comment, a header,
+**What the eight share.** Every one is a guarantee stated in a comment, a header,
 or a clause — and exercised only on the engine, the path, the route, the runner,
 or the moment where it happened to hold. Three levels are worth telling apart,
 because each needed a different instrument to see: a claim never checked
@@ -469,9 +492,16 @@ places nobody thought to check are where these live.
 - **The real-model suites stay skipped in CI, deliberately**: `@huggingface/transformers` is not
   installed there because EmbeddingGemma/FunctionGemma download real models, which is not a
   per-PR cost. Those clauses skip in CI exactly as they do on a machine without the library.
-- **E2E flows verified by hand in Chrome, not pinned in CI**: login, entity delete
-  cascade, hot reload, accent switching, sidebar levels. A browser-suite pass over these
-  is owed (the harness exists — NX*-* browser clauses).
+- **E2E: three flows are pinned, the rest are still by hand.** `npm run test:e2e`
+  spawns a real instance, runs `nexus dev`, and drives it with a real browser —
+  the only runner that loads the Studio's actual module graph against a live
+  server, which is what made it find the rate-limiter regression above. Pinned:
+  the Studio booting and rendering nav from real schemas (E2E-01), a route's
+  subscription actually closing on navigation (E2E-02 — the gap the
+  route-lifecycle work explicitly declined to claim), and the accent surviving a
+  reload (E2E-03). E2E-02's ability to FAIL was verified by disabling the
+  teardown and watching it go red. STILL BY HAND: login (needs auth configured
+  plus in-browser keypair derivation), entity delete cascade, and hot reload.
 - **LF/CRLF warnings** on Windows commits are noisy (no .gitattributes yet).
 - **Issue #8: the service landed; the APPLY path is not exercised end to end
   here.** `servicePlan()` is pure and fully clause-covered, `systemd-analyze

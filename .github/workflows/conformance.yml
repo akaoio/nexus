@@ -83,3 +83,12 @@ jobs:
         # default "non-zero fails the step" — including 3, which must fail: a
         # browser suite that did not run is not a browser suite that passed.
         run: node script/test-browser.js
+
+      - name: End-to-end
+        # A real browser driving a real `nexus dev`. This is the only runner
+        # that loads the Studio's actual module graph against a real server —
+        # the browser clauses never see a server and the subprocess suites
+        # never see a page. The first thing it ever did was catch the rate
+        # limiter throttling the Studio's own module loads into a page that
+        # could not boot, in dev and production alike.
+        run: node script/test-e2e.js
