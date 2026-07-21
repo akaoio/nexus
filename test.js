@@ -53,6 +53,10 @@ import "./test/data/dataplane.test.js"
 
 // Data Plane — engine adapters behind the executor contract (clauses ADP-*)
 import "./test/data/adapters.test.js"
+
+// Data Plane — the executor's transaction seam (clauses TXN-*, issue #9 chunk 2)
+import "./test/data/transaction.test.js"
+
 import "./test/data/live-engine.test.js"
 import "./test/data/live-postgres.test.js"
 import "./test/data/vec.test.js"
