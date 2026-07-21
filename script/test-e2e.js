@@ -242,6 +242,73 @@ try {
         record("E2E-05 cascade delete needs the typed confirmation, and then really removes the entity", error.message)
     }
 
+    // ── E2E-06 the login round trip — LAST, because it turns auth ON ────────
+    // The claim the login screen makes to a user is precise: "your passphrase
+    // derives a ZEN keypair in this browser — no password is sent." Nothing
+    // checked it. The subprocess suites drive /_auth/challenge and /_auth/verify
+    // with keys minted in Node; only a browser can show that the passphrase a
+    // person types reaches the same key the server was told to expect.
+    //
+    // The identity is provisioned through the API rather than by clicking "add
+    // me as admin", deliberately. That button opens a native prompt(), and a
+    // stubbed dialog is the one part of the journey that could not be real —
+    // driving it proved brittle without proving anything the API path does not.
+    // What is under test here is the HANDSHAKE.
+    try {
+        await goto(page, "/users")
+        await until(page, "!!document.querySelector('main')", { label: "the users page renders" })
+
+        const PASS = "correct-horse-battery-staple"
+        const pub = await page.evaluate(`(async () => {
+            const ZEN = (await import("/_nexus/vendor/zen/zen.js")).default
+            const pair = await ZEN.pair(null, { seed: ${JSON.stringify(PASS)} })
+            const r = await fetch("/api/v1/nexus_user", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ pub: pair.pub, name: "e2e-admin", roles: JSON.stringify(["admin"]) })
+            }).then((res) => res.json())
+            return r.ok ? pair.pub : "PROVISION FAILED: " + JSON.stringify(r.error)
+        })()`)
+        if (String(pub).startsWith("PROVISION")) throw new Error(String(pub))
+
+        // One directory row means auth is required from the next request on.
+        await page.navigate(live.url + "/users")
+        await until(page, "!!document.querySelector('#nx-pass') && !document.querySelector('#nx-login').hidden",
+            { timeoutMs: 30000, label: "the login gate appears once a user exists" })
+
+        // A WRONG passphrase derives a different key, so the server must refuse
+        // it — otherwise "the passphrase is the key" would be decoration.
+        await page.evaluate(`(() => {
+            const input = document.querySelector("#nx-pass")
+            input.value = "not-the-passphrase"
+            input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+            return true
+        })()`)
+        await until(page, "document.querySelector('#nx-login-err').textContent.length > 0",
+            { timeoutMs: 30000, label: "a wrong passphrase is refused" })
+        check("E2E-06 a passphrase that derives the wrong key is refused, and the gate stays shut",
+            await page.evaluate("!document.querySelector('#nx-login').hidden"), "the gate opened for the wrong key")
+
+        await page.evaluate(`(() => {
+            const input = document.querySelector("#nx-pass")
+            input.value = ${JSON.stringify(PASS)}
+            input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+            return true
+        })()`)
+        // The TOKEN is the proof the handshake completed, and it survives the
+        // shell re-rendering (or reloading) around it — asserting on the gate
+        // element instead made this depend on catching a transient DOM state.
+        await until(page, "!!localStorage.getItem('nexus-token')",
+            { timeoutMs: 40000, label: "the handshake mints a session token" })
+
+        const session = await page.evaluate(`fetch("/api/v1/_session", {
+            headers: { authorization: "Bearer " + localStorage.getItem("nexus-token") }
+        }).then((r) => r.json()).then((j) => JSON.stringify(j.data))`)
+        check("E2E-07 the passphrase derives the key, signs the challenge, and returns an ADMIN session",
+            /"roles":\[[^\]]*admin/.test(session), `session was: ${session}`)
+    } catch (error) {
+        record("E2E-06/07 the login round trip", error.message)
+    }
 } catch (error) {
     record("E2E harness", error.message)
 } finally {
