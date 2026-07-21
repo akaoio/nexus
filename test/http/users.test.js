@@ -1,7 +1,7 @@
 /**
  * Users / identities conformance (USER-*) — ARCHITECTURE.md §342 (user = ZEN
  * pubkey) / §195 (policies per role or user). Pure identity operations, the
- * `nexus user` CLI, and the dev /_studio/users + /_studio/session endpoints.
+ * `nexus user` CLI, and the dev /_studio/users endpoint + /api/v1/_session.
  * The end-to-end sign-in (passphrase → keypair → challenge → token) is covered
  * by AUTH-06/07 and verified in-browser; here we pin the management surface.
  */
@@ -50,7 +50,7 @@ Test.describe("Users / identities (USER)", () => {
         rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
 
-    Test.it("USER-03 dev endpoints: /_studio/session and /_studio/users manage identities", async () => {
+    Test.it("USER-03 dev endpoints: /api/v1/_session and /_studio/users manage identities", async () => {
         const scratch = mkdtempSync(join(tmpdir(), "nexus-usere-"))
         spawnSync(process.execPath, [BIN, "create", "shop"], { cwd: scratch })
         const server = spawn(process.execPath, [BIN, "dev", "--port", "0", "--json"], { cwd: join(scratch, "shop") })
@@ -64,7 +64,7 @@ Test.describe("Users / identities (USER)", () => {
             const post = (body) => fetch(base + "/_studio/users", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json())
 
             // no identities yet → auth not required (open DEV mode)
-            assert.equal((await (await fetch(base + "/_studio/session")).json()).data.authRequired, false)
+            assert.equal((await (await fetch(base + "/api/v1/_session")).json()).data.authRequired, false)
 
             const added = await post({ action: "add", pub: "PUBweb", name: "Web", roles: ["admin"] })
             assert.equal(added.ok, true)

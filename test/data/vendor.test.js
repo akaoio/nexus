@@ -90,4 +90,46 @@ Test.describe("Data Plane — vendored Kysely (VND-*)", () => {
         assert.throws(() => createCompiler("oracle"), "E_DIALECT")
         assert.deepEqual([...DIALECT_NAMES].sort(), ["mysql", "postgres", "sqlite", "turso"])
     })
+
+    Test.it("VND-07 the Data core is browser-safe: no module under src/core/Data/ statically imports a Node built-in, except the server-only executor", () => {
+        // Sibling of VND-02: that clause pins the vendor/kysely boundary; this
+        // one pins the browser boundary of the whole Data core (ARCHITECTURE.md
+        // N2). The Studio schema designer statically imports migrate.js →
+        // adapters.js; a single static `import ... from "module"` anywhere in
+        // that graph makes the built Studio fail to evaluate in a browser (a
+        // browser cannot resolve Node built-ins). So the rule is structural:
+        // real driver machinery lives ONLY in the server-only executor.js;
+        // adapters.js/migrate.js/ddl.js/kysely.js/compile.js/ulid.js stay pure.
+        //
+        // Scan for STATIC `import … from "<builtin>"` / `export … from "<builtin>"`
+        // only — dynamic `import("node:sqlite")` inside a function is runtime and
+        // never enters the browser's static module graph, so it is not poison.
+        // node:sqlite is a legitimate runtime engine of the server tier; like
+        // every other built-in it is allowed ONLY inside executor.js.
+        const DATA_DIR = join(ROOT, "src", "core", "Data")
+        const BUILTINS = new Set([
+            "module", "url", "path", "fs", "crypto", "os",
+            "child_process", "net", "http", "https", "stream", "zlib"
+        ])
+        const isBuiltin = (spec) => spec.startsWith("node:") || BUILTINS.has(spec)
+        // Match static import/export-from statements and bare side-effect imports.
+        // The binding list carries no quotes, so [^'"] cannot run past the string
+        // literal into the next statement — dynamic import("…") has no `from` and
+        // no whitespace-then-quote after `import`, so it never matches.
+        const STATIC = /^\s*(?:import|export)(?:\s+[^'"]*?\s+from)?\s*['"]([^'"]+)['"]/gm
+        const offenders = []
+        for (const entry of readdirSync(DATA_DIR)) {
+            if (!entry.endsWith(".js")) continue
+            const source = readFileSync(join(DATA_DIR, entry), "utf8")
+            for (const match of source.matchAll(STATIC)) {
+                const spec = match[1]
+                if (isBuiltin(spec) && entry !== "executor.js")
+                    offenders.push(`${entry} → "${spec}"`)
+            }
+        }
+        assert.truthy(
+            offenders.length === 0,
+            `Node built-in statically imported outside the server-only executor: ${offenders.join(", ")}`
+        )
+    })
 })

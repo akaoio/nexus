@@ -111,7 +111,7 @@ export function render(ctx) {
                 // all throws E_FIELD_FORBIDDEN and takes the WHOLE save down with
                 // it, even for an ordinary name/bio/email edit. This route has no
                 // roles of its own to check (ctx carries no session), so it asks
-                // the one place that already knows: /_studio/session. Only an
+                // the one place that already knows: /api/v1/_session. Only an
                 // admin's patch ever carries the key.
                 const session = await ctx.api.session()
                 const isAdmin = session.ok && (session.data.roles || []).includes("admin")

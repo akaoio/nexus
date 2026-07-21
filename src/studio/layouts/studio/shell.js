@@ -12,7 +12,12 @@ export function studioIndex(config, schemas, meta = {}) {
         schemas,
         appName: meta.appName ?? "app",
         embedder: meta.embedder ?? { mode: "none" },
-        i18n: meta.i18n ?? { dict: {}, names: {}, locales: ["en"] }
+        i18n: meta.i18n ?? { dict: {}, names: {}, locales: ["en"] },
+        // The build axis: a static build bakes "production", so the client hides
+        // the dev-only surfaces (schema editing, config writing) whose /_studio
+        // endpoints `nexus start` never mounts. dev.js passes "dev"; anything
+        // other than an explicit "production" is treated as dev (show everything).
+        mode: meta.mode === "production" ? "production" : "dev"
     }
     return `<!doctype html><html lang="en"><head>
 <meta charset="utf-8">

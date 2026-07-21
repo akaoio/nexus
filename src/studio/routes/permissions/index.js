@@ -123,7 +123,11 @@ export function render(ctx) {
      *  in the manager — changed rows keep the draft version, new entries whose
      *  create failed stay as id-less drafts. */
     async function load(drafts = null) {
-        const [w, u] = await Promise.all([ctx.api.studio("policies", "GET"), ctx.api.list("nexus_user", null)])
+        // The layer view moved to GET /api/v1/_policy-layers (Task 3, issue
+        // #10) — an ordinary, admin-authorized API route, so it no longer
+        // rides along with a devMode flag. That comes from the one place
+        // that already knows, the same session probe Users uses.
+        const [w, u, s] = await Promise.all([ctx.api.get("/api/v1/_policy-layers"), ctx.api.list("nexus_user", null), ctx.api.session()])
         if (!w.ok) return
         users = u.ok ? u.data.map((row) => ({ ...row, roles: parseRoles(row) })) : []
         const layers = w.data.layers ?? []
@@ -141,14 +145,24 @@ export function render(ctx) {
         paintBaselines(readonly)
         c.$status.textContent = `${baseline.length} baseline · ${saved.length} rows`
         c.$banner.replaceChildren()
-        if (w.data.devMode) {
+        // A FAILED session probe must never read as "auth is required, all
+        // clear" — an unknown auth state warns too, it just doesn't know
+        // which warning to give (previously this rode the SAME response as
+        // the layers and could not fail independently; now it is a second
+        // fetch, so a failure here is a real, distinct case to handle).
+        if (!s.ok || !s.data.authRequired) {
             const card = document.createElement("div")
             card.className = "nx-card nx-note"
             const b = document.createElement("b")
-            b.textContent = "DEV mode — policies are not enforced yet."
             const span = document.createElement("span")
             span.className = "nx-muted"
-            span.textContent = " Without identities every request runs as the wide-open DEV admin, so nothing is denied. Add an identity in Users (e.g. “Add me as admin”) to turn authentication on — from that moment these policies decide who can do what."
+            if (s.ok) {
+                b.textContent = "DEV mode — policies are not enforced yet."
+                span.textContent = " Without identities every request runs as the wide-open DEV admin, so nothing is denied. Add an identity in Users (e.g. “Add me as admin”) to turn authentication on — from that moment these policies decide who can do what."
+            } else {
+                b.textContent = "Auth state unknown — could not confirm whether policies are enforced."
+                span.textContent = " The session probe failed, so this page cannot say whether authentication is required. Treat access as unverified until it succeeds."
+            }
             card.append(b, document.createElement("br"), span)
             c.$banner.append(card)
         }

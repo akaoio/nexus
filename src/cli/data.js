@@ -6,7 +6,7 @@
 
 import { mkdirSync } from "fs"
 import { join } from "path"
-import { createExecutor } from "../core/Data/adapters.js"
+import { createExecutor } from "../core/Data/executor.js"
 import { createCompiler } from "../core/Data/kysely.js"
 import { tableDDL } from "../core/Data/ddl.js"
 

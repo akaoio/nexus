@@ -25,7 +25,7 @@ export function createApi({ onUnauthorized } = {}) {
         remove: (entity, id) => req("DELETE", `/api/v1/${entity}/${id}`),
         ask: (entity, query) => req("POST", `/api/v1/${entity}/ask`, { query, limit: 100 }),
         search: (entity, query) => req("POST", `/api/v1/${entity}/search`, { query, mode: "hybrid" }),
-        session: () => req("GET", "/_studio/session"),
+        session: () => req("GET", "/api/v1/_session"),
         studio: (name, method, body) => req(method, "/_studio/" + name, body)
     }
 }

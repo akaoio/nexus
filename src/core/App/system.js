@@ -48,6 +48,12 @@ const ROLE = Object.freeze({
     ]
 })
 
+// GET /api/v1/_policy-layers authorizes with DataPlane.access (ROW scope only —
+// allowed && filter === null) and hands back full rows with no field-level cut.
+// Harmless while every field here sits at permlevel 0; the day one of these
+// fields gets a permlevel (nexus_user.roles, on ITS OWN schema, shows what
+// that looks like — not a field this route exposes), that route starts
+// leaking it to permlevel-0 readers. Route and schema must move together.
 const POLICY = Object.freeze({
     schemaVersion: 1,
     name: "nexus_policy",

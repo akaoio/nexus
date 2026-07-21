@@ -75,6 +75,37 @@ Test.describe("Policy window ≡ engine (POLWIN)", () => {
         assert.equal(del.body.ok, false) // still nothing grants delete
     })
 
+    Test.it("POLWIN-03 the layer view is a normal API route: admin sees the layers, a viewer is refused", async () => {
+        const asAdmin = await call(ADMIN, "GET", "/api/v1/_policy-layers")
+        assert.equal(asAdmin.body.ok, true)
+        const sources = asAdmin.body.data.layers.map((l) => l.source)
+        assert.truthy(sources.includes("system") && sources.includes("admin") && sources.includes("rows"))
+        const asViewer = await call(VIEWER, "GET", "/api/v1/_policy-layers")
+        assert.equal(asViewer.body.ok, false)
+        assert.equal(asViewer.body.error.code, "E_FORBIDDEN")
+    })
+
+    Test.it("POLWIN-04 a SCOPED read grant on nexus_policy is refused the layer view — only an UNSCOPED grant may see it all", async () => {
+        // A rule-bearing grant: "eye" may read ITS OWN nexus_policy rows —
+        // real access to SOME rows, never all of them.
+        const scoped = await call(ADMIN, "POST", "/api/v1/nexus_policy", {
+            entity: "nexus_policy", actions: JSON.stringify(["read"]),
+            rule: JSON.stringify({ astVersion: 1, root: { field: "owner", operator: "eq", value: "eye" } }),
+            permlevel: 0, ifowner: false, roles: JSON.stringify(["viewer"])
+        })
+        assert.equal(scoped.body.ok, true)
+        // The grant is real — "eye" can now read (some) nexus_policy rows
+        // through the ordinary entity route.
+        const ordinaryRead = await call(VIEWER, "POST", "/api/v1/nexus_policy/query", { filter: null, limit: 10 })
+        assert.equal(ordinaryRead.body.ok, true)
+        // But the layer view discloses EVERY row, unfiltered — a scoped grant
+        // must not be enough to see it, or granting "read your own policy"
+        // would silently become "see the whole engine's policy set".
+        const asScoped = await call(VIEWER, "GET", "/api/v1/_policy-layers")
+        assert.equal(asScoped.body.ok, false)
+        assert.equal(asScoped.body.error.code, "E_FORBIDDEN")
+    })
+
     Test.it("POLWIN-99 cleanup", async () => {
         if (server) await new Promise((resolve) => { server.once("exit", resolve); server.kill("SIGKILL") })
         rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })

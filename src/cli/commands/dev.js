@@ -16,6 +16,7 @@ import { join, resolve, extname, sep } from "path"
 import { loadInstance } from "../instance.js"
 import { buildInstanceApi, NEXUS_CTX_POLICIES } from "../../core/HTTP/server.js"
 import { studioIndex } from "../../studio/layouts/studio/shell.js"
+import { studioRouteMatches } from "../../studio/routes.js"
 import { validate } from "../../core/Model.js"
 import { loadDictionary, mergeDictionaries, coveredLocales } from "../../i18n/i18n.js"
 import { verifyChallenge, issueToken, verifyToken } from "../../core/App/auth.js"
@@ -24,7 +25,6 @@ import { MODELS, NL_MODELS, status as modelStatus, withModel, withNlModel, curre
 import { redact, setPath, unsetPath } from "../../core/App/config.js"
 import { randomBytes } from "crypto"
 import { fileURLToPath } from "url"
-import { Router } from "../../core/Router.js"
 import { createWatcher, devMessage } from "../../core/HMR/watch.js"
 import { accessFor } from "../dev-access.js"
 
@@ -74,7 +74,7 @@ export async function dev(args, flags, out) {
     i18n.locales = coveredLocales(i18n.dict)
     // Data Plane + auth + API through the shared wiring. Dev mode falls back to
     // the loud DEV identity when no auth is configured (production refuses that).
-    let { api, plane, authState, challenges, engine, authMode, embedderInfo, policyLayers, effects } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" })
+    let { api, plane, authState, challenges, engine, authMode, embedderInfo, effects } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" })
     const studioAuthAtBoot = authState.required
 
     // ── hot reload — entity writes NEVER require a dev restart ──────────────
@@ -91,7 +91,7 @@ export async function dev(args, flags, out) {
         schemaFiles = fresh.files
         appPolicies.length = 0
         appPolicies.push(...fresh.policies)
-        ;({ api, plane, authState, challenges, engine, authMode, embedderInfo, policyLayers, effects } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" }))
+        ;({ api, plane, authState, challenges, engine, authMode, embedderInfo, effects } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" }))
     }
 
     // ── dev tooling stream (design 2026-07-20 §3): the server half of the
@@ -168,22 +168,11 @@ export async function dev(args, flags, out) {
             req.on("error", () => resolve(null))
         })
 
-    // The Studio's route table — the same patterns the client router uses.
-    const STUDIO_ROUTES = ["/entity/[entity]", "/settings/[feature]", "/[view]"]
-    const STUDIO_VIEWS = new Set(["entities", "entity", "permissions", "roles", "users", "jobs", "settings", "search"]) // "entity" = legacy redirect
-    const STUDIO_SETTINGS = new Set(["ai", "locales", "themes"])
+    // The Studio's route table — the SAME declared list `nexus start` reuses
+    // for the built Studio (studio/routes.js), so the two servers can never
+    // answer "is this a Studio page" differently.
     function routeMatches(pathname) {
-        if (/\.[^/]+$/.test(pathname) || pathname.includes("/.")) return false // files + dotpaths are never routes
-        const locales = i18n.locales.map((code) => ({ code }))
-        const r = Router.process({ path: pathname, routes: STUDIO_ROUTES, locales })
-        // "home" covers both the root and unmatched leftovers — tell them apart
-        const segments = pathname.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean)
-        if (segments.length && (i18n.locales.includes(segments[0]) || /^[a-z]{2}(-[A-Z]{2})?$/.test(segments[0]))) segments.shift()
-        if (!segments.length) return true // "/" or a bare locale prefix
-        if (r.route === "/entity/[entity]") return schemas.some((s) => s.name === r.params.entity)
-        if (r.route === "/settings/[feature]") return STUDIO_SETTINGS.has(r.params.feature)
-        if (r.route === "/[view]") return STUDIO_VIEWS.has(r.params.view)
-        return false
+        return studioRouteMatches(pathname, { schemas, locales: i18n.locales })
     }
 
     const server = createServer(async (req, res) => {
@@ -246,10 +235,10 @@ export async function dev(args, flags, out) {
         // the admin UI edited. Editing the schema is a dev activity (Strapi
         // parity) — `nexus start` never exposes these routes.
         // When the server BOOTED with auth on, every /_studio route needs a
-        // signed-in identity EXCEPT the ones STUDIO_ACCESS declares "any" (the
-        // whoami probe — the login UI must be able to ask "is auth on?"
-        // before it holds any token, STUDIO-09a). ONE source of truth: this
-        // gate never names a path itself (issue #9 final review, item 3) — a
+        // signed-in identity EXCEPT the ones STUDIO_ACCESS declares "any" (no
+        // route claims that tier today — the former whoami exception moved
+        // to GET /api/v1/_session in Task 2, since the login UI needs to ask
+        // "is auth on?" in BOTH modes, not just dev). ONE source of truth: this
         // hardcoded `&& url.pathname !== "/_studio/" + someNewPath` here would make
         // that route fully UNAUTHENTICATED, not merely open-to-any-role; the
         // exemption belongs ONLY in dev-access.js's declared table. A session
@@ -359,41 +348,18 @@ export async function dev(args, flags, out) {
                 return json(res, code.startsWith("E_") ? 400 : 500, { ok: false, error: { code, message: error.message } })
             }
         }
-        // The policy WINDOW (read-only, design 2026-07-19 §2): the exact
-        // layers the engine composes, straight from its runtime arrays — the
-        // UI can never drift from the enforced truth. Writes go through
-        // /api/v1/nexus_policy ONLY.
-        if (url.pathname === "/_studio/policies" && req.method === "GET") {
-            const { app, system, admin, rows } = policyLayers()
-            const byFile = new Map()
-            for (const p of app) {
-                const key = p.source ?? "app"
-                if (!byFile.has(key)) byFile.set(key, [])
-                byFile.get(key).push(p)
-            }
-            const layers = [
-                ...[...byFile.entries()].map(([source, policies]) => ({ source, readonly: true, policies })),
-                { source: "system", readonly: true, policies: system },
-                { source: "admin", readonly: true, policies: admin },
-                { source: "rows", readonly: false, policies: rows }
-            ]
-            return json(res, 200, { ok: true, data: { layers, devMode: !authState.required, authRequired: authState.required } })
-        }
+        // The policy WINDOW (read-only, design 2026-07-19 §2) MOVED to GET
+        // /api/v1/_policy-layers (Task 3, issue #10) — an ordinary,
+        // admin-authorized API route sharing ONE implementation with
+        // production (src/core/HTTP/server.js), instead of a bespoke
+        // /_studio gate check. This dev-only address is gone; it falls
+        // through to the "no other /_studio surface exists" 404 below like
+        // any other dead path.
 
-        // Studio session (whoami) — tells the UI whether login is required and,
-        // from a Bearer token, who is signed in.
-        if (url.pathname === "/_studio/session" && req.method === "GET") {
-            let signed = null
-            const authz = req.headers["authorization"]
-            if (authz?.startsWith("Bearer ")) signed = verifyToken(authz.slice(7), authState.secret)
-            // roles come from the LIVE directory, never from the token's own
-            // claims (same law as the /_studio gate below) — otherwise a
-            // revoked/cleared role keeps answering with the STALE token roles
-            // until the token expires, and callers that gate a whole write on
-            // this response (e.g. the /users profile save) act on a lie.
-            const roles = signed ? authState.rolesForPub(signed.user) ?? [] : []
-            return json(res, 200, { ok: true, data: { authRequired: authState.required, user: signed?.user ?? null, roles } })
-        }
+        // Studio session (whoami) MOVED to GET /api/v1/_session (Task 2, issue
+        // #10) — one login contract in both dev and production. This dev-only
+        // address is gone; it falls through to the "no other /_studio surface
+        // exists" 404 below like any other dead path.
         // Studio user management (DEV-ONLY) — add/remove/role identities in
         // nexus.config.json AND (add/role) the nexus_user directory row that
         // actually grants login past first boot (issue #9 final review, item
@@ -508,7 +474,7 @@ export async function dev(args, flags, out) {
         // (SEC-01..04 hold: /nexus.config.json, /.nexus/*, backups stay 404).
         if (routeMatches(url.pathname)) {
             res.writeHead(200, { "content-type": MIME[".html"], "cache-control": "no-cache" })
-            const html = studioIndex(config, schemas, { embedder: embedderInfo, appName, i18n })
+            const html = studioIndex(config, schemas, { embedder: embedderInfo, appName, i18n, mode: "dev" })
             // dev-only bootstrap (design 2026-07-20 §3): wires up the shipped HMR
             // client. `nexus start` never serves the Studio shell at all, so
             // production HTML cannot carry this by construction (START-* pins it).

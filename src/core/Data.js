@@ -110,6 +110,25 @@ export class DataPlane {
         return { schema, filter, fields, readable }
     }
 
+    /**
+     * Ask the engine's own access decision for an action, without running a
+     * query — the exact `{ allowed, filter }` Permission.resolve() would
+     * return from inside #gate (filter === null means UNSCOPED: every row,
+     * not merely some it can narrow to). For a caller that must tell "may
+     * read SOME rows" apart from "may read ALL rows" — e.g. a route that
+     * discloses an aggregate no per-row filter could narrow (POLWIN-03/04,
+     * GET /api/v1/_policy-layers) — this is the honest seam: it borrows the
+     * engine's judgment instead of the caller re-deriving it (no role
+     * comparisons). Unlike create/read/write/delete, denial is DATA here
+     * (`allowed: false`), not a thrown fault — the caller is asking "would
+     * this be allowed?", not attempting to act.
+     */
+    access(entity, action, ctx = {}) {
+        this.schema(entity) // E_ENTITY for an unknown schema, same as #gate
+        const permCtx = { entity, action, user: ctx.user, roles: ctx.roles ?? [], now: this.now() }
+        return Permission.resolve(ctx.policies ?? [], permCtx, ctx.shares ?? [])
+    }
+
     // ─── row-data validation & shaping ───────────────────────────────────────
 
     #validateData(schema, data, { partial, writable }) {

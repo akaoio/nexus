@@ -14,7 +14,7 @@
 
 import { fileURLToPath } from "url"
 import Test, { assert } from "../../src/core/Test.js"
-import { createExecutor } from "../../src/core/Data/adapters.js"
+import { createExecutor } from "../../src/core/Data/executor.js"
 import { DataPlane } from "../../src/core/Data.js"
 import { tableDDL } from "../../src/core/Data/ddl.js"
 import { createCompiler } from "../../src/core/Data/kysely.js"

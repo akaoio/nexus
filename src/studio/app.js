@@ -31,9 +31,21 @@ import { passkeySupported, enroll, enrolled, unlock } from "./kit/webauthn.js"
 
 const boot = JSON.parse(document.getElementById("nx-boot").textContent)
 const schemas = boot.schemas
+// The build axis (Task 7): a production build hides the dev-only surfaces —
+// schema editing (/entities) and config writing (/settings general, /settings/ai)
+// — whose /_studio endpoints `nexus start` never mounts. This is a UX
+// convenience; the real boundary is the absent server routes. `shown` gates a
+// MODULES / settings.FEATURES entry: dev shows everything, production drops the
+// devOnly ones. (Hiding the nav is NOT the security control — the missing
+// endpoints are.)
+const isProd = boot.mode === "production"
+const shown = (entry) => !(entry && entry.devOnly && isProd)
 const i18n = createI18n(boot.i18n)
 const theme = createTheme()
-const state = { view: schemas[0] ? "content" : "entities", entity: schemas[0] ? schemas[0].name : null, feature: null }
+// default landing: an entity when the instance has one; else the entity
+// DESIGNER in dev, but that is dev-only — so production falls back to a surface
+// it actually has (permissions), never a page that would 404 its own data.
+const state = { view: schemas[0] ? "content" : (isProd ? "permissions" : "entities"), entity: schemas[0] ? schemas[0].name : null, feature: null }
 const api = createApi({ onUnauthorized: () => showLogin() })
 
 // the akao `a` primitive pre-caches what it points to — wire its fetcher
@@ -71,13 +83,19 @@ const deriveKeypair = async (passphrase) => {
 // feature children (/settings/<feature>) — the hub delegates by state.feature
 const MODULES = {
     content: { render: content.render },
-    entities: { icon: "plus-lg", key: "entities", render: entities.render },
+    // devOnly: schema editing writes model files via /_studio/model — a route
+    // production never mounts, so a production build hides the designer.
+    entities: { icon: "plus-lg", key: "entities", render: entities.render, devOnly: true },
     permissions: { icon: "shield-lock", key: "permissions", render: permissions.render },
     roles: { icon: "sliders", key: "roles", render: roles.render },
     users: { icon: "person", key: "users", render: users.render },
     jobs: { icon: "list-task", key: "jobs", render: jobs.render },
     search: { icon: "search", key: "search", render: search.render },
-    settings: { icon: "gear", key: "settings", render: settings.render }
+    // devOnly: the GENERAL config panel writes nexus.config.json via
+    // /_studio/config. Its feature children carry their own devOnly (ai is,
+    // locales/themes are not), so production keeps the client-side ones while
+    // the general hub and its parent link disappear.
+    settings: { icon: "gear", key: "settings", render: settings.render, devOnly: true }
 }
 const BUILD = ["entities", "permissions", "roles", "users", "jobs", "search", "settings"]
 
@@ -153,16 +171,19 @@ function renderNav() {
         })
     ))
     nav.replaceChildren(...BUILD.flatMap((name) => {
-        const links = [navLink({
+        // production drops a devOnly parent (entities, the general settings hub);
+        // its non-dev children (locales, themes) still render below.
+        const links = shown(MODULES[name]) ? [navLink({
             to: "/" + name,
             active: state.view === name && (name !== "settings" || !state.feature),
             iconName: MODULES[name].icon,
             key: MODULES[name].key
-        })]
+        })] : []
         // settings children ride indented under their parent — the URL shape
         // /settings/<feature> IS the sidebar shape (no orbit, no second nav)
         if (name === "settings")
-            for (const [id, feature] of Object.entries(settings.FEATURES))
+            for (const [id, feature] of Object.entries(settings.FEATURES)) {
+                if (!shown(feature)) continue // devOnly child (ai) hidden in production
                 links.push(navLink({
                     to: "/settings/" + id,
                     active: state.view === "settings" && state.feature === id,
@@ -171,6 +192,7 @@ function renderNav() {
                     label: id,
                     sub: true
                 }))
+            }
         return links
     }))
 }
@@ -190,16 +212,19 @@ function applyRoute() {
     const r = Router.process({ path: location.pathname, routes: ROUTES, locales: LOCALES })
     // the URL's locale prefix IS the locale
     if (r.locale && r.locale.code !== i18n.locale) i18n.set(r.locale.code)
+    // A dev-only route reached directly in production matches NO branch below —
+    // it falls through to the default state, i.e. the Studio's normal
+    // unknown-route handling (the home/default surface), never a broken page.
     if (r.route === "/entity/[entity]" && schemas.some((s) => s.name === r.params.entity)) {
         state.view = "content"
         state.entity = r.params.entity
-    } else if (r.route === "/settings/[feature]" && settings.FEATURES[r.params.feature]) {
+    } else if (r.route === "/settings/[feature]" && settings.FEATURES[r.params.feature] && shown(settings.FEATURES[r.params.feature])) {
         state.view = "settings"
         state.feature = r.params.feature
-    } else if (r.route === "/[view]" && r.params.view === "entity") {
+    } else if (r.route === "/[view]" && r.params.view === "entity" && shown(MODULES.entities)) {
         state.view = "entities" // legacy singular URL
         state.feature = null
-    } else if (r.route === "/[view]" && MODULES[r.params.view] && r.params.view !== "content") {
+    } else if (r.route === "/[view]" && MODULES[r.params.view] && r.params.view !== "content" && shown(MODULES[r.params.view])) {
         state.view = r.params.view
         state.feature = null
     }
@@ -268,7 +293,7 @@ async function doLogin(pass, err) {
         // pair is stored only encrypted; unlocking is one biometric touch
         if (passkeySupported() && !(await enrolled())) {
             try {
-                const { confirmDialog } = await import("./kit.js")
+                const { confirmDialog } = await import("./kit/index.js")
                 if (await confirmDialog("Lock your key to this device with a passkey? Next time you sign in with one touch — the key is stored encrypted only.")) await enroll(pair)
             } catch {}
         }

@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 566/619 node clauses, 0 red.**
+**Green: 591/644 node clauses, 0 red.**
 (53 node "skips" are browser-only clauses plus the gated real-model suites —
 EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
 
@@ -31,7 +31,7 @@ under Unfinished below, not silently dropped.
 | **Sync gate 3 (§3/§5)** | **permission → real ZEN PEN bytecode, evaluated by ZEN's policy VM (pen.wasm)** | **SYNC-P3-*** |
 | Semantic | schema serialization; **real EmbeddingGemma-300m (default) + all-MiniLM**; sqlite-vec ANN; RRF; **model PROFILES registry (prompts/floor/threshold per family — App/models.js)** | SEM-*, REM-*, **GEM-***, VEC-* |
 | NL → AST | rule + embedding-retrieval + **FunctionGemma-270M tier: schema as a TOOLS declaration through the chat template (Google dialect: string types + nullable), strict call parser**; validated against schema (injection-safe); **NL model is first-class on every surface (create wizard defaults to FunctionGemma + `--nl-model`, two-slot `nexus model`, `/_studio/ai`, Studio /settings/ai)** | NL-*, **FG-***, **MODEL-07..09** |
-| **System entities** | **nexus_user/role/policy/view are ordinary Model Schema v1 docs on the SAME pipeline; shipped baselines (admin bundle per loaded entity, self-service via $CURRENT_USER rule); bootstrap import; directory-backed auth**; **permissions editor edits nexus_policy ROWS through the plane — layered read window /_studio/policies, additive-union contract pinned, bespoke POST dead** | **PERM-U01, SYS-06..08, STUDIO-04/06/07, POLWIN-*** |
+| **System entities** | **nexus_user/role/policy/view are ordinary Model Schema v1 docs on the SAME pipeline; shipped baselines (admin bundle per loaded entity, self-service via $CURRENT_USER rule); bootstrap import; directory-backed auth**; **permissions editor edits nexus_policy ROWS through the plane — layered read window `GET /api/v1/_policy-layers`, additive-union contract pinned, bespoke POST dead** | **PERM-U01, SYS-06..08, STUDIO-04/06/07, POLWIN-*** |
 | **Entity lifecycle** | **/entities directory (list view), cascade DELETE behind a pure dry-run plan + typed confirm; hot reload — entity CRUD never restarts dev; field `span` (form grid) + `views` opt-in in Model Schema v1** | **LIFE-*, MS-S12/13** |
 | **Roles** | **role = named policy bundle; rolesIn() overview; /roles + multi-role /users pages over plain entity rows** | **ROLE-*** |
 | **Saved views (§7)** | **persisted through the Data Plane (permissioned, ownable); applyView reconstructs the list** | **VIEW-*** |
@@ -39,6 +39,7 @@ under Unfinished below, not silently dropped.
 | Kernel / CLI / Studio | extracted from akao; real-process CLI; full tabbed Studio (Data+Ask/Form/Search/Schema/Permissions) in `nexus dev` | KRN-*, CLI-*, NX*-* |
 | HTTP + serving | auto API (`/query`, `/search`, `/ask`); `/_health`; request logging | API-* |
 | **Production server** | **`nexus start` — refuses god-mode (E_NO_AUTH), TLS-required (E_NO_TLS/--insecure), auth-enforced, no Studio/framework exposure, self-served HTTPS** | **START-*** |
+| **Studio in production (issue #10)** | **the Studio's whole data plane now runs under `nexus start`: shipped as static assets (`nexus studio build` → `public/studio/`, served through the existing static boundary — zero new server surface); login is the ZEN challenge/verify handshake (`POST /api/v1/_auth/challenge` + `POST /api/v1/_auth/verify`), whoami is `GET /api/v1/_session` (read-only, no POST); the read-only policy baseline layers via `GET /api/v1/_policy-layers`; data, users, roles, permissions, jobs, search, and settings (locales/themes) all work end to end; nav is derived from the boot `mode`, so a production build's sidebar never offers a page it can't serve. Schema editing (`/_studio/model`, entity-delete) and config writing (`/_studio/config`, `/_studio/ai`) stay dev-only — see Unfinished** | **STUDIO-13, START-SESSION, STUDIO-09b, POLWIN-03, POLWIN-04, VND-07, STB-01, STB-02, STB-03, STB-03a, STB-03b, STB-04, START-STUDIO, START-STUDIO-ABSENT, PROD-01, PROD-02, PROD-03, ROUTES-*** |
 | Security | pentest findings pinned as clauses (info-disclosure, oracle, static-serve) | SEC-* |
 | **Install/lifecycle** | **one-line installers (install.sh / install.ps1, GitHub-first, tarball fallback, npm never required); `nexus update` (git fetch+hard-reset, the access pattern) and `nexus uninstall --yes`** | CLI-* (help pin) |
 | **Entity identity** | **schema `icon:` (any bootstrap-icons name — vendored 1.1 MB sprite, nx-icon registry-first with sprite fallback); picker in the /entities editor** | MS-S14 |
@@ -155,6 +156,43 @@ under Unfinished below, not silently dropped.
   (`/api/v1/nexus_user`, AUTH-REVOKE-DELETE), not this endpoint's. Deciding
   these endpoints' longer-term fate (keep as bootstrap tooling vs delete) is
   still open.
+- **Studio schema editing and config writing stay dev-only in production, deliberately**
+  (issue #10, `docs/superpowers/specs/2026-07-20-studio-in-production-design.md` §5):
+  `/_studio/model` (schema create/edit/delete) and entity-delete need hot-reload-under-load
+  and a transactional entity-delete first (issue #9's I8, still open above); `/_studio/config`
+  and `/_studio/ai` write the same file that holds `token_secret`/`api_keys` and have no safe
+  production shape yet. An operator changes structure through git + redeploy, not the
+  production Studio.
+- **Spec-to-code delta, deliberate**: the design spec (§3) called for deleting
+  `/_studio/entities` outright; the implementation kept it dev-only instead, in
+  `dev-access.js`'s table, because it feeds only the dev-only schema designer — deleting it
+  bought nothing once that designer stayed dev-gated, and the invariant clause (STUDIO-13)
+  still catches it if it were ever opened to production undeclared.
+- **`nexus studio build` is a copy step, not a bundler**: it walks `app.js`'s import graph and
+  copies the reachable files, rewriting `/_nexus/src/...` specifiers to relative paths — no
+  minification, no combining. Deliberate (zero-dep kernel, ES modules), not a gap, but
+  production Studio assets ship as individual, unminified files.
+- **Spec-to-code delta, deliberate**: `nexus studio build` is on-demand only — it is NOT yet
+  wired into `nexus create` or `nexus update`, though the design spec (§2.4) anticipated that
+  wiring. It belongs with the deferred install/update lifecycle work (issue #8). A freshly
+  created instance therefore has no production Studio until an operator runs
+  `nexus studio build` by hand.
+- **Honest security note**: the built shell is served PRE-authentication for Studio routes
+  (the shell itself has to load before login can happen) and bakes `boot.schemas` into that
+  shell — full schema documents: field names, types, permlevels. So an anonymous caller can
+  now read the schema SHAPE of an instance (no rows, no secrets, no config) just by hitting a
+  Studio route. That is a small new reconnaissance surface that did not exist when production
+  served no Studio at all — stated plainly rather than left implicit.
+- **PROD-02's "a declared production route is served" direction is latent**: the clause checks
+  both directions over the real `STUDIO_ACCESS` table, but every `/_studio/*` entry in that
+  table is still dev-only (the bullet above), so `PRODUCTION_ROUTES` is empty today and only
+  the "dev-only route correctly 404s in production" half is actually exercised. It starts
+  proving the positive half the day any `/_studio/*` route is declared `modes: [..., "production"]`.
+- **The authenticated browser click-through is manual, not a clause**: logging into the built
+  Studio, loading `/users` and `/permissions`, and confirming `/entities` is absent from nav
+  and `/_nexus/*` 404s is verified by hand, joining the existing E2E debt (login/cascade/
+  hot-reload/accent) below — the transport, the route set, and the authorization are what the
+  clauses above pin.
 - **Component discipline is not yet total** (the pre-Huy akao bar): sidebar entries are
   now `<nx-navlink>` and the shell composes components, but hand-built DOM remains in
   several routes (users list rows, roles cards, entities editor chrome, settings/general

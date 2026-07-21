@@ -12,7 +12,7 @@ import { tmpdir } from "os"
 import { join } from "path"
 import Test, { assert } from "../../src/core/Test.js"
 import { validate } from "../../src/core/Model.js"
-import { STUDIO_ACCESS, STUDIO_ROUTE_PATHS, accessFor } from "../../src/cli/dev-access.js"
+import { STUDIO_ACCESS, STUDIO_ROUTE_PATHS, accessFor, modesFor, PRODUCTION_ROUTES } from "../../src/cli/dev-access.js"
 
 const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
 const ZEN = (await import("../../vendor/zen/zen.js")).default
@@ -141,14 +141,18 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.equal(list.data.config.token_secret, "***")
     })
 
-    Test.it("STUDIO-06 GET /_studio/policies is the engine's own layers; a row created via the plane appears under rows", async () => {
+    Test.it("STUDIO-06 GET /api/v1/_policy-layers is the engine's own layers; a row created via the plane appears under rows", async () => {
+        // moved out of /_studio in Task 3 (issue #10): the view is now an
+        // ordinary, admin-authorized API route, so it no longer rides along
+        // with a devMode flag — that comes from /api/v1/_session instead
+        // (see permissions/index.js). The layers shape itself is unchanged.
         const created = await post("/api/v1/nexus_policy", {
             entity: "task", actions: JSON.stringify(["read"]), rule: null,
             permlevel: 0, ifowner: false, roles: JSON.stringify(["viewer"])
         })
         assert.equal(created.body.ok, true)
         const id = created.body.data.id
-        const w = await fetch((await ensure()) + "/_studio/policies").then((r) => r.json())
+        const w = await fetch((await ensure()) + "/api/v1/_policy-layers").then((r) => r.json())
         assert.equal(w.ok, true)
         const sources = w.data.layers.map((l) => l.source)
         assert.truthy(sources.includes("system") && sources.includes("admin") && sources.includes("rows"))
@@ -156,7 +160,6 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.equal(rows.readonly, false)
         assert.truthy(rows.policies.some((p) => p.id === id && p.entity === "task"))
         for (const layer of w.data.layers) if (layer.source !== "rows") assert.equal(layer.readonly, true)
-        assert.equal(typeof w.data.devMode, "boolean")
     })
 
     Test.it("STUDIO-07 an invalid nexus_policy row is VETOED at the plane — same law for every writer", async () => {
@@ -183,7 +186,12 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
             ["POST", "/_studio/model", { name: "sneaky", fields: [{ name: "x", type: "text" }] }],
             ["POST", "/_studio/config", { key: "token_secret", value: "stolen" }],
             ["GET", "/_studio/entities", undefined],
-            ["GET", "/_studio/policies", undefined]
+            // the policy layer view moved out of /_studio in Task 3 (issue #10)
+            // to GET /api/v1/_policy-layers, admin-only through the ordinary
+            // policy engine rather than this gate — it stays in this refusal
+            // sweep because it is still a state-exposing read a non-admin must
+            // never see, just at its new address
+            ["GET", "/api/v1/_policy-layers", undefined]
         ]) {
             const r = await callAs(VIEWER, method, path, body)
             assert.equal(r.status, 403, `${method} ${path}`)
@@ -192,18 +200,37 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.equal((await callAs(ADMIN, "GET", "/_studio/entities")).status, 200) // admin unaffected
     })
 
-    Test.it("STUDIO-09 /_studio/session stays open to any authenticated user", async () => {
-        assert.equal((await callAs(VIEWER, "GET", "/_studio/session")).status, 200)
+    Test.it("STUDIO-09 /api/v1/_session stays open to any authenticated user", async () => {
+        assert.equal((await callAs(VIEWER, "GET", "/api/v1/_session")).status, 200)
     })
 
-    Test.it("STUDIO-09a the reason the gate excludes /_studio/session: an anonymous caller (pre-login, no token) can probe whoami", async () => {
+    Test.it("STUDIO-09a whoami moved to /api/v1/_session (one contract, both modes) — /_studio/session is dead, and an anonymous caller (pre-login, no token) can still probe whoami at the new address", async () => {
+        // it moved, it did not fork — the dev-only path answers 404 like any
+        // other dead /_studio surface (same convention as STUDIO-04)
+        assert.equal((await fetch((await ensure()) + "/_studio/session")).status, 404)
         // the login UI must be able to ask "is auth on?" before it holds any token
-        const anon = await fetch((await ensureAuth()) + "/_studio/session")
+        const anon = await fetch((await ensureAuth()) + "/api/v1/_session")
         assert.equal(anon.status, 200)
         const body = await anon.json()
         assert.equal(body.data.user, null)
         assert.deepEqual(body.data.roles, [])
         assert.equal(typeof body.data.authRequired, "boolean")
+    })
+
+    Test.it("STUDIO-09b a token in the query string ALONE is anonymous at /api/v1/_session — only a header identifies it", async () => {
+        // _events legitimately accepts ?token= because EventSource cannot set
+        // headers; _session is called via fetch, which can, so it deliberately
+        // ignores the query string — a credential in a URL leaks into access
+        // logs, proxy logs, browser history, and Referer. The SAME valid token
+        // identifies the caller in a header but is anonymous in the query.
+        const token = await loginAs(VIEWER)
+        const queryOnly = await fetch((await ensureAuth()) + "/api/v1/_session?token=" + token)
+        assert.equal(queryOnly.status, 200)
+        const queryBody = await queryOnly.json()
+        assert.equal(queryBody.data.user, null, "a query-only token is treated as anonymous")
+        assert.deepEqual(queryBody.data.roles, [])
+        const headerBody = await (await fetch((await ensureAuth()) + "/api/v1/_session", { headers: { authorization: `Bearer ${token}` } })).json()
+        assert.equal(headerBody.data.user, VIEWER.pub, "the identical token in a header identifies the caller")
     })
 
     Test.it("STUDIO-10 INVARIANT: every /_studio route dev.js actually handles is declared in STUDIO_ACCESS; undeclared is admin-only", () => {
@@ -222,16 +249,18 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.truthy(handledRoutes.size >= STUDIO_ROUTE_PATHS.length, "the source scan found at least the declared routes")
         for (const path of handledRoutes) assert.truthy(path in STUDIO_ACCESS, `${path} is handled in dev.js but not declared in STUDIO_ACCESS`)
         assert.equal(accessFor("/_studio/nonexistent"), "admin", "an undeclared route is admin-only")
-        assert.equal(accessFor("/_studio/session"), "any", "the declared exception is honoured")
+        // the whoami exception moved out WITH the route in Task 2 — its
+        // /_studio address is undeclared now, same as any other dead path
+        assert.equal(accessFor("/_studio/session"), "admin", "the exception moved to /api/v1/_session; the old address defaults like any other undeclared route")
     })
 
-    Test.it("STUDIO-11 /_studio/session resolves roles from the LIVE directory, not the token's stale claims (issue #9 final review, item 1)", async () => {
+    Test.it("STUDIO-11 /api/v1/_session resolves roles from the LIVE directory, not the token's stale claims (issue #9 final review, item 1)", async () => {
         // VIEWER already holds a cached session token whose CLAIMS carry
         // roles: ["viewer"] (baked in at issue time). An admin now clears
         // that identity's roles in the directory through the ordinary plane
         // API — the SAME token must immediately start answering with the
         // LIVE roles, exactly like the /_studio gate already did; if
-        // /_studio/session instead echoed the token's own claims, a route
+        // /api/v1/_session instead echoed the token's own claims, a route
         // that trusts this response (the /users profile-save flow) would act
         // on a lie about a caller whose access was just revoked.
         const directory = await callAs(ADMIN, "GET", "/api/v1/nexus_user")
@@ -240,7 +269,7 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.truthy(viewerRow, "the viewer's directory row is visible to the admin")
         const cleared = await callAs(ADMIN, "PATCH", `/api/v1/nexus_user/${viewerRow.id}`, { roles: JSON.stringify([]) })
         assert.equal(cleared.status, 200, "the admin can clear another identity's roles")
-        const session = await callAs(VIEWER, "GET", "/_studio/session")
+        const session = await callAs(VIEWER, "GET", "/api/v1/_session")
         assert.equal(session.status, 200)
         assert.deepEqual(session.body.data.roles, [], "the SAME token now reports the live (empty) roles, not its stale claims")
     })
@@ -262,10 +291,22 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.equal(typeof token, "string")
         assert.truthy(token.length > 0, "the freshly provisioned identity received a real session token")
         tokenCache.set(freshPair, token) // reuse the handshake above instead of logging in twice
-        const whoami = await callAs(freshPair, "GET", "/_studio/session")
+        const whoami = await callAs(freshPair, "GET", "/api/v1/_session")
         assert.equal(whoami.status, 200)
         assert.equal(whoami.body.data.user, freshPair.pub)
         assert.deepEqual(whoami.body.data.roles, ["viewer"], "the role granted at provisioning time is live immediately")
+    })
+
+    Test.it("STUDIO-13 modes has no default: an undeclared route is dev-only, and the production set is exactly what is declared", () => {
+        assert.deepEqual(modesFor("/_studio/nonexistent"), ["dev"], "undeclared is dev-only — forgetting is safe")
+        assert.deepEqual(modesFor("/_studio/model"), ["dev"], "schema writes stay dev-only (spec §1)")
+        assert.deepEqual(modesFor("/_studio/config"), ["dev"], "config writes stay dev-only")
+        for (const path of PRODUCTION_ROUTES) assert.truthy(modesFor(path).includes("production"))
+        // the accessFor contract is unchanged by the new axis
+        assert.equal(accessFor("/_studio/nonexistent"), "admin")
+        // /_studio/session is gone (moved to /api/v1/_session, Task 2) — its
+        // old address is simply undeclared now, not a lingering special case
+        assert.equal(accessFor("/_studio/session"), "admin")
     })
 
     Test.it("STUDIO-99 cleanup", async () => {

@@ -75,6 +75,9 @@ import "./test/cli/cli.test.js"
 // CLI operations — migrate/site/app/doctor e2e (clauses OPS-*)
 import "./test/cli/ops.test.js"
 
+// CLI — the Studio as static assets for production (clauses STB-*)
+import "./test/cli/studio-build.test.js"
+
 // HTTP API — auto-generated from schemas, e2e over real HTTP (clauses API-*)
 import "./test/http/api.test.js"
 
@@ -93,8 +96,8 @@ import "./test/http/start.test.js"
 // Studio — dev-only content-type / permission write endpoints (clauses STUDIO-*)
 import "./test/http/studio.test.js"
 
-// Policy window ≡ engine — the read-only /_studio/policies window over the
-// engine's own live layers, proven enforced end-to-end (clauses POLWIN-*)
+// Policy window ≡ engine — the read-only GET /api/v1/_policy-layers window
+// over the engine's own live layers, proven enforced end-to-end (POLWIN-*)
 import "./test/http/policy-window.test.js"
 
 // Effect runner lives in the server — real dev server, real job thread, no
@@ -180,6 +183,10 @@ import "./test/studio/views.test.js"
 
 // Studio — the selection model under bulk operations (clauses SEL-*)
 import "./test/studio/selection.test.js"
+
+// Studio — studioRouteMatches, the shared router primitive dev.js and
+// start.js both ask (clauses ROUTES-*)
+import "./test/studio/routes.test.js"
 
 // App system — manifest format (clauses MF-*)
 import "./test/app/manifest.test.js"

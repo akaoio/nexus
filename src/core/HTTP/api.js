@@ -100,9 +100,24 @@ function listOptions(searchParams) {
  * @param {string} [config.base] - URL prefix (default /api/v1)
  * @param {Object} [config.events] - the realtime event hub (createEventHub()),
  *   or null when realtime is not enabled — mounts GET /api/v1/_events
+ * @param {() => boolean} [config.authRequired] - live auth-required flag
+ *   (buildInstanceApi passes () => authState.required); a function, not a
+ *   captured boolean, so it never goes stale — backs GET /api/v1/_session,
+ *   the one login contract shared by dev and production. Defaults to
+ *   () => true: this flag sits ON the auth boundary, so if a future caller
+ *   ever omits it, the safe failure is "tell the login UI auth is on" —
+ *   fail CLOSED, never open.
+ * @param {() => Object} [config.layers] - builds the read-only policy window
+ *   document ({ layers: [...] }) from the engine's own live arrays
+ *   (buildInstanceApi passes a closure over policyLayers()) — backs GET
+ *   /api/v1/_policy-layers. Defaults to null/absent, which the route below
+ *   treats as E_NOT_FOUND rather than an empty-but-successful answer: this
+ *   route sits ON the auth boundary (it exists to show what the admin
+ *   bundle alone may see), so an instance that forgets to wire it must fail
+ *   closed, not silently answer `{ layers: [] }` to everyone.
  * @returns {(req, res) => Promise<boolean>} true when the request was handled
  */
-export function createApi({ plane, context, base = "/api/v1", endpoints = [], events = null }) {
+export function createApi({ plane, context, base = "/api/v1", endpoints = [], events = null, authRequired = () => true, layers = null }) {
     return async function handle(req, res) {
         const url = new URL(req.url, "http://localhost")
         if (url.pathname !== base && !url.pathname.startsWith(base + "/")) return false
@@ -122,6 +137,58 @@ export function createApi({ plane, context, base = "/api/v1", endpoints = [], ev
                 const entities = url.searchParams.get("entities")
                 events.subscribe({ res, ctx, entities: entities ? entities.split(",").filter(Boolean) : null })
                 return true // the connection stays open — no ok()/end()
+            }
+
+            // Session (whoami). Lives in the versioned API so the login UI has
+            // ONE contract in both modes (issue #10). Anonymous is legal and
+            // returns the minimum: whether auth is on, and nothing else.
+            // Unlike _events, this route does NOT fold a ?token= query param
+            // into the Authorization header: _session is only ever called via
+            // fetch (never EventSource), and fetch CAN set a header, so a
+            // query-string credential would buy nothing here while still
+            // costing a credential-in-URL exposure (access logs, proxy logs,
+            // browser history, Referer) on a route that now lives in
+            // production. A token presented ONLY in the query string is
+            // therefore treated as anonymous, same as no token at all.
+            if (segments[0] === "_session" && req.method === "GET") {
+                let user = null
+                let roles = []
+                try {
+                    const ctx = context(req)
+                    user = ctx.user ?? null
+                    roles = ctx.roles ?? []
+                } catch (error) {
+                    // context() throwing E_AUTH for an anonymous, auth-required
+                    // caller is the legal, expected path here — it is answered
+                    // with the minimum shape, not surfaced as an error, because
+                    // the login UI must be able to ask "is auth on?" before it
+                    // holds any credential. Anything else is a genuine internal
+                    // failure and must surface, not be swallowed as "anonymous".
+                    if (!String(error?.message || "").startsWith("E_AUTH")) throw error
+                }
+                return ok(res, { authRequired: authRequired(), user, roles }), true
+            }
+
+            // The policy WINDOW as a normal API route (issue #10): same layers
+            // the engine composes, authorized by the SAME policy engine as
+            // everything else — `read` on nexus_policy, which only the admin
+            // bundle grants. No bespoke gate.
+            //
+            // SECURITY (review finding, POLWIN-04): this route discloses
+            // EVERY layer, unfiltered — it has no per-row filter to apply, so
+            // a probe that merely checked "may list SOME nexus_policy rows"
+            // (e.g. `plane.list(..., { limit: 1 })`, discarded) would let a
+            // SCOPED grant (a rule-bearing or ifOwner policy row) see the
+            // whole set anyway, silently turning "read your own policy" into
+            // "read everyone's". `plane.access()` returns the engine's own
+            // `{ allowed, filter }` without running a query; filter === null
+            // is the honest test for UNSCOPED — every row, not merely some.
+            if (segments[0] === "_policy-layers" && req.method === "GET") {
+                if (!layers) throw new Error("E_NOT_FOUND: no policy layers on this instance")
+                const ctx = context(req)
+                const { allowed, filter } = plane.access("nexus_policy", "read", ctx) // authorization, by the engine
+                if (!allowed || filter !== null) throw new Error("E_FORBIDDEN: read on nexus_policy")
+                return ok(res, layers()), true
             }
 
             const ctx = context(req)

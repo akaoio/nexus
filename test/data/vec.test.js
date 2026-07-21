@@ -9,7 +9,7 @@
 
 import { fileURLToPath } from "url"
 import Test, { assert } from "../../src/core/Test.js"
-import { createExecutor } from "../../src/core/Data/adapters.js"
+import { createExecutor } from "../../src/core/Data/executor.js"
 import { transformersProvider } from "../../src/core/Semantic/transformers.js"
 import { DataPlane } from "../../src/core/Data.js"
 import { tableDDL } from "../../src/core/Data/ddl.js"

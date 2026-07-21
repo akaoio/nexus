@@ -7,12 +7,37 @@
 
 import { fileURLToPath } from "url"
 import { spawnSync, spawn } from "child_process"
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "fs"
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSync, statSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import Test, { assert } from "../../src/core/Test.js"
+import { collectModules } from "../../src/cli/commands/studio.js"
+import { STUDIO_ROUTE_PATHS, modesFor } from "../../src/cli/dev-access.js"
 
 const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
+
+// Build checks over our own source — NOT a JavaScript parser (same discipline
+// as studio-build.test.js's walkJs/specifiersIn). Both are local to this
+// file: they gate two structural invariants, not general-purpose tooling.
+
+/** Every .js file under a directory, recursively. */
+function* walkJs(dir) {
+    const root = dir instanceof URL ? fileURLToPath(dir) : dir
+    for (const name of readdirSync(root)) {
+        const path = join(root, name)
+        if (statSync(path).isDirectory()) yield* walkJs(path)
+        else if (path.endsWith(".js")) yield path
+    }
+}
+
+/** Every name passed to `ctx.api.studio("<name>", …)` in a source string. */
+function studioCallNames(src) {
+    const names = []
+    const re = /ctx\.api\.studio\(\s*["']([^"']+)["']/g
+    let m
+    while ((m = re.exec(src))) names.push(m[1])
+    return names
+}
 
 function scaffold({ withAuth = false, withPolicies = false } = {}) {
     const scratch = mkdtempSync(join(tmpdir(), "nexus-start-"))
@@ -151,6 +176,125 @@ Test.describe("Production server — nexus start (START)", () => {
         }
     })
 
+    Test.it("START-SESSION production serves /api/v1/_session; anonymous gets the minimum, a member gets live roles", async () => {
+        const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true })
+        const { proc, ready } = startServer(instance, ["--insecure"])
+        try {
+            const base = await ready
+            const call = (method, path, body, key) =>
+                fetch(base + path, { method, headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: body && JSON.stringify(body) })
+
+            const anon = await call("GET", "/api/v1/_session")
+            assert.equal(anon.status, 200)
+            const a = (await anon.json()).data
+            assert.equal(a.user, null)
+            assert.deepEqual(a.roles, [])
+            assert.equal(typeof a.authRequired, "boolean")
+            const mine = (await (await call("GET", "/api/v1/_session", undefined, "k-admin")).json()).data
+            assert.deepEqual(mine.roles, ["admin"])
+            // and the dev-only path is gone from production
+            assert.equal((await call("GET", "/_studio/session")).status, 404)
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
+    Test.it("START-POLICY-LAYERS production serves GET /api/v1/_policy-layers — the permissions page needs it there too", async () => {
+        const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true })
+        const { proc, ready } = startServer(instance, ["--insecure"])
+        try {
+            const base = await ready
+            const call = (method, path, key) =>
+                fetch(base + path, { method, headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) } })
+
+            const admin = await call("GET", "/api/v1/_policy-layers", "k-admin")
+            assert.equal(admin.status, 200)
+            const sources = (await admin.json()).data.layers.map((l) => l.source)
+            assert.truthy(sources.includes("system") && sources.includes("admin") && sources.includes("rows"))
+            // no credential at all — the ordinary auth boundary refuses first
+            assert.equal((await call("GET", "/api/v1/_policy-layers")).status, 401)
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
+    Test.it("START-STUDIO with a built Studio, production serves the shell for Studio routes and its assets", async () => {
+        const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true })
+        spawnSync(process.execPath, [BIN, "studio", "build"], { cwd: instance })
+        const { proc, ready } = startServer(instance, ["--insecure"])
+        try {
+            const base = await ready
+            assert.equal((await fetch(base + "/users")).status, 200) // a Studio route → the shell
+            const html = await (await fetch(base + "/users")).text()
+            // the ACTUAL built shell (shell.js's studioIndex) embeds boot data in
+            // <script id="nx-boot">, not any "<nx-…>" custom element — those are
+            // created by app.js at RUNTIME, not present in the served markup
+            assert.truthy(html.includes("nx-boot"))
+            // assets — the real build layout preserves the package path
+            // (public/studio/src/studio/app.js), verified against the actual
+            // `nexus studio build` output rather than assumed
+            assert.equal((await fetch(base + "/studio/src/studio/app.js")).status, 200)
+            assert.equal((await fetch(base + "/_nexus/src/core/UI.js")).status, 404) // never framework source
+            assert.equal((await fetch(base + "/nope.js")).status, 404) // file-looking paths never reach the shell
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
+    Test.it("START-STUDIO-BOOTABLE the shell served at a NESTED route resolves its OWN asset refs (a browser can boot it)", async () => {
+        // START-STUDIO proved the shell serves (200) and the asset exists at
+        // its real URL (200) — but NEVER that the shell's OWN references
+        // resolve when it is served at a nested route. A "./"-relative ref
+        // resolves against the ROUTE, not the origin, so at /settings/ai it
+        // fetches /settings/src/studio/app.js → 404 → blank page. This clause
+        // is that missing end-to-end check.
+        const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true })
+        spawnSync(process.execPath, [BIN, "studio", "build"], { cwd: instance })
+        const { proc, ready } = startServer(instance, ["--insecure"])
+        try {
+            const base = await ready
+            // A REAL Studio route TWO segments deep (/settings/[feature],
+            // feature "ai") — deep enough that a single-segment-relative bug
+            // cannot accidentally pass.
+            const route = "/settings/ai"
+            const html = await (await fetch(base + route)).text()
+            assert.truthy(html.includes("nx-boot"), "the shell is served at the nested route")
+            const refs = [...html.matchAll(/(?:src|href)\s*=\s*"([^"]+)"/g)].map((m) => m[1])
+            assert.truthy(
+                refs.some((r) => r.endsWith(".js")) && refs.some((r) => r.endsWith(".css")),
+                `the shell must reference its module + stylesheet; got ${JSON.stringify(refs)}`
+            )
+            for (const ref of refs) {
+                // Resolve exactly as a browser does: against the REQUEST URL
+                // (the nested route), NOT the origin root. "./src/…" from
+                // /settings/ai → /settings/src/… (404); "/studio/src/…" → itself (200).
+                const resolved = new URL(ref, base + route).href
+                const res = await fetch(resolved)
+                assert.equal(res.status, 200, `${ref} → ${resolved} must resolve when the shell is served at ${route}`)
+                const type = res.headers.get("content-type") || ""
+                assert.truthy(/javascript|css/.test(type), `${resolved} served as "${type}", expected a JS/CSS content-type`)
+            }
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
+    Test.it("START-STUDIO-ABSENT without a build, production has no Studio and says so with a 404", async () => {
+        const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true })
+        const { proc, ready } = startServer(instance, ["--insecure"])
+        try {
+            const base = await ready
+            assert.equal((await fetch(base + "/users")).status, 404)
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
     Test.it("START-04 with a TLS certificate: serves HTTPS", async () => {
         const openssl = spawnSync("openssl", ["version"], { encoding: "utf8" })
         if (openssl.status !== 0) {
@@ -178,6 +322,51 @@ Test.describe("Production server — nexus start (START)", () => {
             if (prev === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
             else process.env.NODE_TLS_REJECT_UNAUTHORIZED = prev
             rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+})
+
+/**
+ * Structural invariants (PROD-*) — the boundary enforced by test, not
+ * remembered. Two pin the production surface directly; one pins the exact
+ * bug Task 4 fixed by hand so it cannot recur silently. Reuses the scaffold/
+ * startServer harness above rather than standing up a second one.
+ */
+Test.describe("Production surface — structural invariants (PROD)", () => {
+    Test.it("PROD-01 start.js never imports the dev module — the dev-only surface is unreachable, not merely unmounted", () => {
+        // start.js's STATIC import graph; dev.js (and anything only it reaches)
+        // must not appear — UNREACHABLE, not merely unmounted at runtime.
+        const reached = collectModules(new URL("../../src/cli/commands/start.js", import.meta.url), { staticOnly: true })
+        assert.equal(reached.some((f) => f.endsWith("commands/dev.js")), false)
+        assert.equal(reached.some((f) => f.includes("HMR")), false, "no hot-reload machinery in production")
+    })
+
+    Test.it("PROD-02 production answers exactly the declared production route set", async () => {
+        // Iterates ALL STUDIO_ROUTE_PATHS in both directions — a route wrongly
+        // opened to production OR wrongly withheld from it fails this clause.
+        const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true })
+        const { proc, ready } = startServer(instance, ["--insecure"])
+        try {
+            const base = await ready
+            for (const path of STUDIO_ROUTE_PATHS) {
+                const status = (await fetch(base + path)).status
+                const declared = modesFor(path).includes("production")
+                assert.equal(status !== 404, declared, `${path}: served=${status !== 404} declared=${declared}`)
+            }
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
+    Test.it("PROD-03 every ctx.api.studio(name, …) call site names a declared studio route", () => {
+        // Pins the exact bug Task 4 fixed by hand: the roles page once called
+        // a deleted /_studio/permissions. Scans the whole src/studio/ tree,
+        // not just routes/, since a violation could live anywhere in it.
+        const declared = new Set(STUDIO_ROUTE_PATHS.map((p) => p.replace("/_studio/", "")))
+        for (const file of walkJs(new URL("../../src/studio", import.meta.url))) {
+            for (const name of studioCallNames(readFileSync(file, "utf8")))
+                assert.truthy(declared.has(name), `${file} calls /_studio/${name}, not in the declared table`)
         }
     })
 })

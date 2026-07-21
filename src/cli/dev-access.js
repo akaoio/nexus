@@ -10,27 +10,43 @@
  * open-to-any-role.
  *
  * "any" means NO AUTH REQUIRED AT ALL — an anonymous, pre-login caller with
- * no Bearer token gets a 200 (STUDIO-09a: the login UI must be able to ask
- * "is auth on?" before it holds any token). It does NOT mean "authenticated,
- * any role accepted" — there is no such tier today; every other declared or
- * undeclared route demands the admin role once auth is required.
+ * no Bearer token gets a 200. It does NOT mean "authenticated, any role
+ * accepted" — there is no such tier. No /_studio route claims "any" today:
+ * the one that used to (the whoami probe) moved to GET /api/v1/_session in
+ * Task 2, since the login UI needs to ask "is auth on?" in BOTH modes, not
+ * just dev — every declared or undeclared /_studio route now demands the
+ * admin role once auth is required. The tier stays defined for a future
+ * route that genuinely needs it.
+ *
+ * "modes" has NO DEFAULT: an entry that omits it is dev-only. Opening a
+ * route to production is one deliberate line here, and the invariant
+ * clause asserts production answers exactly the declared set (issue #10).
  */
 
 export const STUDIO_ACCESS = Object.freeze({
-    "/_studio/session": "any",     // whoami — no auth required, anonymous included (STUDIO-09a)
-    "/_studio/model": "admin",
-    "/_studio/entities": "admin",
-    "/_studio/entity-delete": "admin",
-    "/_studio/policies": "admin",
-    "/_studio/users": "admin",
-    "/_studio/ai": "admin",
-    "/_studio/config": "admin"
+    // whoami moved to GET /api/v1/_session (Task 2) — one login contract in
+    // both modes; the /_studio address is simply gone, not merely re-tiered.
+    "/_studio/model": Object.freeze({ roles: "admin", modes: ["dev"] }),
+    "/_studio/entities": Object.freeze({ roles: "admin", modes: ["dev"] }),
+    "/_studio/entity-delete": Object.freeze({ roles: "admin", modes: ["dev"] }),
+    // baseline read moved to GET /api/v1/_policy-layers (Task 3) — an ordinary
+    // API route authorized by the policy engine, not this table; the
+    // /_studio address is simply gone, not merely re-tiered.
+    "/_studio/users": Object.freeze({ roles: "admin", modes: ["dev"] }),
+    "/_studio/ai": Object.freeze({ roles: "admin", modes: ["dev"] }),
+    "/_studio/config": Object.freeze({ roles: "admin", modes: ["dev"] })
 })
 
 /** The declared route list, for the invariant clause. */
 export const STUDIO_ROUTE_PATHS = Object.freeze(Object.keys(STUDIO_ACCESS))
 
 /** Required role for a path — undeclared means admin. */
-export const accessFor = (pathname) => STUDIO_ACCESS[pathname] ?? "admin"
+export const accessFor = (pathname) => STUDIO_ACCESS[pathname]?.roles ?? "admin"
 
-export default { STUDIO_ACCESS, STUDIO_ROUTE_PATHS, accessFor }
+/** Declared modes for a path — undeclared means dev-only (no permissive fallback). */
+export const modesFor = (pathname) => STUDIO_ACCESS[pathname]?.modes ?? ["dev"]
+
+/** The routes the table opens to production, derived — not hand-maintained. */
+export const PRODUCTION_ROUTES = Object.freeze(STUDIO_ROUTE_PATHS.filter((p) => modesFor(p).includes("production")))
+
+export default { STUDIO_ACCESS, STUDIO_ROUTE_PATHS, accessFor, modesFor, PRODUCTION_ROUTES }
