@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 700/747 node clauses, 0 red** (`node test.js`)
+**Green: 701/748 node clauses, 0 red** (`node test.js`)
 **Green: 47/47 browser clauses, 0 red** (`npm run test:browser`, real headless Chromium)
 
 Two runners, two verdicts, both stated — because until this was checked, only
@@ -405,17 +405,26 @@ places nobody thought to check are where these live.
 - **The browser suite is green here, and that is a per-machine claim**: it needs a real Chromium
   and runs over CDP. It is green on this Linux box; an environment without a browser exits 3 (no
   browser found) rather than pretending.
-- **CI now exists (`.github/workflows/conformance.yml`) and has NEVER BEEN OBSERVED RUNNING.**
-  Until it was added there was no automated run behind 747 clauses and twelve merged PRs at all —
+- **CI exists (`.github/workflows/conformance.yml`) and has now RUN — and caught a real defect on
+  its first attempt.** On Node 24 it failed with an unsettled top-level await (exit 13): the
+  background embedding drain's timer was unref'd, so on an otherwise-idle process the drain never
+  ran and `embeddingBackfill` never settled, leaving the corpus permanently half-embedded. That is
+  the exact failure SEM-CAP-02 was written to prevent, and SEM-CAP-02 could not have caught it —
+  inside a full suite run there is always other pending work keeping the loop alive, so the
+  property held by accident. Fixed, and pinned by SEM-CAP-04, which spawns a child whose loop
+  contains nothing but the drain. Node 22 passed the whole workflow including the browser suite,
+  which also settles the one assumption stated below as unverifiable from here.
+- **Historical note on that workflow's arrival:**
+  until it was added there was no automated run behind 748 clauses and twelve merged PRs at all —
   which is how the browser suite went red unnoticed. The workflow gates on BOTH runners across
   Node 22 and 24, installs the live-engine drivers as a hard step (so a broken install fails the
   job instead of quietly turning live-engine clauses into skips), and treats the browser runner's
   exit 3 as a failure, because a browser suite that did not run is not one that passed. What was
   verified locally: the YAML parses, the pinned driver ranges resolve, `NEXUS_BROWSER` is honoured
-  by the runner, and the exit-3 path exists. What was NOT and cannot be from here: that GitHub's
-  `ubuntu-latest` image actually carries one of the three browsers the workflow looks for. If it
-  does not, the "Locate a browser" step fails loudly with instructions rather than letting the
-  suite skip — that failure mode was chosen deliberately over a green run that proved less.
+  by the runner, and the exit-3 path exists. The one thing that could NOT be verified from here —
+  whether GitHub's `ubuntu-latest` image carries a browser — is now OBSERVED: the Node 22 job ran
+  the browser suite green. The "Locate a browser" step still fails loudly with instructions if a
+  future image drops it, rather than letting the suite silently skip.
 - **The real-model suites stay skipped in CI, deliberately**: `@huggingface/transformers` is not
   installed there because EmbeddingGemma/FunctionGemma download real models, which is not a
   per-PR cost. Those clauses skip in CI exactly as they do on a machine without the library.
