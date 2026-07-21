@@ -403,10 +403,22 @@ places nobody thought to check are where these live.
   now proven in a real browser (SEM-11: listbox/option roles, `aria-activedescendant` tracking,
   arrow selection, Enter emitting the chosen record); the router's half is not.
 - **The browser suite is green here, and that is a per-machine claim**: it needs a real Chromium
-  and runs over CDP. It is green on this Linux box with `/usr/bin/chromium` present; an
-  environment without a browser exits 3 (no browser found) rather than pretending. There is no CI
-  wiring making both runners a merge gate — that is a workflow decision, not a code one, and
-  nothing in the repo currently enforces it.
+  and runs over CDP. It is green on this Linux box; an environment without a browser exits 3 (no
+  browser found) rather than pretending.
+- **CI now exists (`.github/workflows/conformance.yml`) and has NEVER BEEN OBSERVED RUNNING.**
+  Until it was added there was no automated run behind 747 clauses and twelve merged PRs at all —
+  which is how the browser suite went red unnoticed. The workflow gates on BOTH runners across
+  Node 22 and 24, installs the live-engine drivers as a hard step (so a broken install fails the
+  job instead of quietly turning live-engine clauses into skips), and treats the browser runner's
+  exit 3 as a failure, because a browser suite that did not run is not one that passed. What was
+  verified locally: the YAML parses, the pinned driver ranges resolve, `NEXUS_BROWSER` is honoured
+  by the runner, and the exit-3 path exists. What was NOT and cannot be from here: that GitHub's
+  `ubuntu-latest` image actually carries one of the three browsers the workflow looks for. If it
+  does not, the "Locate a browser" step fails loudly with instructions rather than letting the
+  suite skip — that failure mode was chosen deliberately over a green run that proved less.
+- **The real-model suites stay skipped in CI, deliberately**: `@huggingface/transformers` is not
+  installed there because EmbeddingGemma/FunctionGemma download real models, which is not a
+  per-PR cost. Those clauses skip in CI exactly as they do on a machine without the library.
 - **E2E flows verified by hand in Chrome, not pinned in CI**: login, entity delete
   cascade, hot reload, accent switching, sidebar levels. A browser-suite pass over these
   is owed (the harness exists — NX*-* browser clauses).
