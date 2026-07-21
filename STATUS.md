@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 566/619 node clauses, 0 red.**
+**Green: 568/621 node clauses, 0 red.**
 (53 node "skips" are browser-only clauses plus the gated real-model suites —
 EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
 
@@ -44,6 +44,7 @@ under Unfinished below, not silently dropped.
 | **Entity identity** | **schema `icon:` (any bootstrap-icons name — vendored 1.1 MB sprite, nx-icon registry-first with sprite fallback); picker in the /entities editor** | MS-S14 |
 | **Effect engine** | **durable jobs as `nexus_job` rows (token-CAS claim, backoff, DLQ, recurring), Threads execution behind the narrow plane-RPC, webhook/mail/notification consumers as the effect app, Studio /jobs** | SYS-09, JOB-*, EXT-J1, THR-*, JOBL-*, WH-*, MAIL-*, NOTIF-* |
 | **Realtime** | **public SSE `/api/v1/_events` (auth'd incl. `?token=`, per-subscriber plane-gated, no row data on the wire, heartbeat); Studio live refresh on every list route via the public stream; dev `/__dev_events` + watcher + full module hot-swap + `"reload"` on schema hot-apply** | **EVT-U*, EVT-*, HMR-*, DEVE-*** |
+| **Harness integrity (issue #9 follow-up)** | **a run that verifies nothing is not green — zero passes fails the run and prints why, through one exported rule (`isGreen`) both the summary and the exit code read; the Sync stub stands in only for an *absent* `src/core/Sync.js`, so a present-but-broken module surfaces its own import error instead of answering `NOT_IMPLEMENTED`; a ZSYNC harness that produced no verdict is an explicit skip carrying its spawn error as a warning, not a `{ browser: true }` no-op with the error buried in the test name** | **RUN-01, SYNCLOAD-01, ZSYNC-00** |
 | **Security hardening (issue #9 Criticals + security Importants)** | **`nexus_user.roles` behind `permlevel:1` with an admin permlevel-1 companion policy, so self-service cannot promote itself, pinned by driving the actual escalation through the plane (SYS-11 also asserts the field IS restricted, so the invariant loop cannot silently skip it on a revert); `/_auth/verify` refuses an unprovisioned pub — holding a keypair is not membership; create/update return through the actor's READ-scoped field set, not the write set; backup carries the system entities (users/roles/policies/views/webhooks/notifications), redacts config secrets AND declared row-level secret columns (webhook `secret`, job `lease_token`), and fails loudly (not silently) on an app-schema read error; `/_studio/*` — including `/_studio/session`'s own whoami body, the last surface that used to trust token claims — authorizes from ONE declared per-route table (`dev-access.js`) with an admin-only default, "any" meaning no-auth-at-all rather than a role tier, and roles resolved from the live directory everywhere, never the token; engine capabilities are declared (`CAPABILITIES`/`capabilitiesFor`, fail-closed for unknown engines) and a non-transactional-DDL dialect refuses the structural path — dry-run included — before any statement runs; roles resolve per REQUEST from the live directory for token-bearing callers, so revoking/deleting a user's row takes effect on their very next call without re-issuing the token (this does NOT cover API keys, whose roles come from `config.api_keys[].roles` and are operator-managed rather than directory-revocable, nor an already-open SSE subscription, which captures its ctx once at connect); `/_studio/users` add/role-set writes the `nexus_user` directory row (not just `nexus.config.json`), so a Studio-provisioned identity can actually complete the ZEN handshake past first boot, instead of reporting `applied: true` for an identity that cannot log in; webhooks are http(s)-only at write and dispatch time, timeout-bounded, non-redirecting, and the signing secret never enters the job ledger; both servers cap pre-auth request bodies, the challenge map is swept and capped under a flood, and production refuses to boot without a real `token_secret`** | **SYS-10/11/12/13, AUTH-STRANGER, DPL-PERMLEVEL, DPL-ASYMMETRIC, SITE-BACKUP, OPS-10, STUDIO-08/09/09a/10/11/12, ADP-CAP, MIG-NOTX, AUTH-REVOKE, AUTH-REVOKE-DELETE, WH-04/05/06/07, START-BODY/CHALLENGE/SECRET** |
 
 ## Unfinished / known drift (honest list, 2026-07-20)
@@ -52,7 +53,7 @@ under Unfinished below, not silently dropped.
   security-hardening spec closed C1-C5 and the security-class Importants
   (I1-I5, I10). Everything below in this section that traces back to issue
   #9 — I6 through I9, I11, backup streaming, WAL/busy_timeout, rate
-  limiting, TOCTOU, SSE fan-out cost, and the `Test.js` hazard — is
+  limiting, TOCTOU, and SSE fan-out cost — is
   deliberately **deferred to a follow-up spec**, not silently dropped. None
   of it is a privilege-escalation or auth-bypass path; all of it is
   correctness/robustness debt.
@@ -99,12 +100,16 @@ under Unfinished below, not silently dropped.
   broadcasts every eligible event to every open subscriber with no backlog
   cap or slow-consumer handling; a large number of idle-but-connected
   subscribers all pay the cost of every write.
-- **`Test.js` hazard: an all-skipped run reports green**: if every `it()` in
-  a run is skipped (e.g. a misconfigured filter, or every gated real-model
-  suite skipping because `test/.engines` is absent), the runner currently
-  prints a passing summary rather than flagging that zero assertions
-  actually ran. Small, load-bearing, and explicitly called out as the item
-  that should land first in the follow-up spec.
+- **The harness-integrity chunk of the follow-up is done, and it moved one
+  number**: the `Test.js` all-skipped-reports-green hazard is fixed (see the
+  **Harness integrity** row). Two consequences worth stating plainly. First,
+  a filtered run that happens to skip everything now *fails* — that is the
+  intended reading ("nothing was verified"), but it is a behavior change for
+  anyone who ran a narrow subset and read exit 0 as success. Second, the
+  ZSYNC mesh suite still does not run on every machine: where the harness
+  cannot spawn (it needs `child_process` plus real local sockets) its nine
+  clauses skip, so the transport claims in the table above rest on the
+  environments where it does run, not on every run of `node test.js`.
 - **The honest SSRF scope on webhooks (I1's fix is a narrowing, not a
   boundary)**: rejecting non-`http(s)` schemes does NOT stop
   `http://169.254.169.254/` (cloud metadata) or `http://localhost:<port>`
