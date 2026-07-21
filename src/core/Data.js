@@ -585,10 +585,21 @@ export class DataPlane {
                     // A MACROTASK, not a microtask: a microtask would interleave
                     // with the very request that scheduled it, so the work would
                     // still land inside the response the cap exists to bound.
-                    // unref'd so a pending drain never holds a CLI process open.
+                    //
+                    // The timer is deliberately NOT unref'd. It was, once — the
+                    // reasoning being "a pending drain should never hold a CLI
+                    // process open" — and that quietly broke the promise this
+                    // whole design rests on: an unref'd timer does not keep the
+                    // event loop alive, so on an otherwise-idle process the
+                    // drain NEVER RUNS and `embeddingBackfill` never settles.
+                    // The corpus then stays permanently half-embedded, which is
+                    // exactly the failure the cap was made honest to avoid.
+                    // The work is bounded and short; a process waiting for
+                    // derived data it was asked to produce is correct, not a
+                    // leak. Pinned by SEM-CAP-04, which runs it in a child
+                    // process precisely so the loop has nothing else in it.
                     new Promise((done) => {
-                        const timer = setTimeout(() => this.#embedInto(entity, schema, rows).then(done, done), 0)
-                        timer.unref?.()
+                        setTimeout(() => this.#embedInto(entity, schema, rows).then(done, done), 0)
                     })
             )
             .catch((error) => this.onHookError({ entity, event: "embedding:backfill", error, ctx: null }))
