@@ -6,3 +6,5 @@ build/
 package-lock.json
 test/.engines/node_modules/
 test/.engines/package-lock.json
+# an install's own state — a dev checkout is its own NEXUS_HOME
+.state/

@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 701/748 node clauses, 0 red** (`node test.js`)
+**Green: 710/757 node clauses, 0 red** (`node test.js`)
 **Green: 47/47 browser clauses, 0 red** (`npm run test:browser`, real headless Chromium)
 
 Two runners, two verdicts, both stated — because until this was checked, only
@@ -71,6 +71,7 @@ because the way they hid is more instructive than the bugs themselves — see
 | **Entity identity** | **schema `icon:` (any bootstrap-icons name — vendored 1.1 MB sprite, nx-icon registry-first with sprite fallback); picker in the /entities editor** | MS-S14 |
 | **Effect engine** | **durable jobs as `nexus_job` rows (token-CAS claim, backoff, DLQ, recurring), Threads execution behind the narrow plane-RPC, webhook/mail/notification consumers as the effect app, Studio /jobs** | SYS-09, JOB-*, EXT-J1, THR-*, JOBL-*, WH-*, MAIL-*, NOTIF-* |
 | **Realtime** | **public SSE `/api/v1/_events` (auth'd incl. `?token=`, per-subscriber plane-gated, no row data on the wire, heartbeat); Studio live refresh on every list route via the public stream; dev `/__dev_events` + watcher + full module hot-swap + `"reload"` on schema hot-apply** | **EVT-U*, EVT-*, HMR-*, DEVE-*** |
+| **Install lifecycle, part 1 (issue #8)** | **the installer now records what it changed and `uninstall` undoes exactly that: `$NEXUS_HOME/.state/install.json` names the shims and PATH entries, so a shim at a non-default `NEXUS_BIN` is found — the old guess missed it and left a `nexus` on PATH pointing at a deleted tree. No manifest means an older install, which still uninstalls by the documented defaults and says which authority it used (N3). Both hard-resetting paths now refuse to destroy unexamined work: `install.sh` before any network call (`NEXUS_FORCE=1` overrides) and `nexus update` before any reset (`--force`). Updates are serialised by an atomic `wx` lock that reclaims a dead holder rather than wedging the install, and record `{channel, ref, commit, at}` so `nexus doctor` — now two scopes in one command — can finally answer when the framework last updated and through which channel** | **INST-01..09** |
 | **Studio lifecycle & keyboard access** | **the router has a real unmount hook (`kit/lifecycle.js`): routes register teardown with `onUnmount()` and the router brackets each render, so leaving a page releases what the page took — subscriptions AND the burst-collapse timers the old `host.isConnected` incantation was shape-blind to. Re-rendering the same route (a locale change) unmounts first rather than accumulating; a teardown that throws is contained the way the event hub and the plane's after-hooks already are; an invariant clause over `src/studio/routes` keeps the old pattern from creeping back. The shared EventSource's union is asserted to NARROW on unsubscribe, not merely widen on subscribe — the header used to claim otherwise. And the search overlay, which had no keyboard handling of any kind, is now operable without a mouse: wrapping arrow navigation, Home/End, Enter emitting the chosen record, Escape clearing, with listbox/option roles and `aria-activedescendant`** | **LIFE-UNMOUNT-01..04, EVT-UNION-01/02, NXSR-KEY-01/02** |
 | **HTTP coverage (issue #9 chunk 4)** | **the auth seam is exercised IN PROCESS, not only through spawned subprocesses: `createApi` returns a plain `handle(req, res)`, so routing → the `?token=` fold → `context()` → policy composition → the plane → the status mapping is drivable with a fake req/res, with no production change needed to make it testable. Pinned there: the dev identity branch production must never reach (the other half of START-01), deny-by-default for an authenticated caller with no roles, a token's `roles` claim being IGNORED in favour of the live directory (I4's mechanism, in one call rather than a whole instance), an unprovisioned pub carrying nothing (C1b's other half), `?token=` authenticating the event stream ONLY so a query-string token can never read data, and the enforced policy set and the read-only window deriving from ONE `policyLayers()` call so they cannot drift** | **HTTPX-A01..A05, HTTPX-R01..R04, HTTPX-P01** |
 | **Resource bounds (issue #9 chunk 3)** | **nothing unbounded by a single caller: a zero-dep token bucket limits both servers, with the pre-auth tier strictly tighter (anyone can reach it and each call costs a signature check), a separate bucket per (tier, key) so ordinary API traffic cannot drain the pre-auth allowance, `X-Forwarded-For` ignored unless `trust_proxy` is declared, `/_health` exempt so a flood cannot take the instance out of rotation, and — the two that matter most — the limiter's OWN key map swept and hard-capped, failing CLOSED to the tightest tier when full rather than waving strangers through; SSE fan-out memoised per emit by authorization fingerprint (INCLUDING the user, since `$CURRENT_USER`/`ifOwner` make identical policies mean different things), so N subscribers across k contexts cost k reads not N, plus a subscriber cap; webhook dispatch reads a cache refreshed through the same after-hook mechanism `nexus_policy`/`nexus_user` already use, so twenty writes cost one read instead of twenty and a Studio write is still instantly live; `search()` embeds at most a configured cap inside a request and drains the rest in the background, so a model switch cannot put 1000 rows of ML work in one HTTP response and the corpus still completes; `nexus site backup` streams in pages of 500 and its summary now reports what it ACTUALLY captured, naming what it skipped** | **RATE-01..09, EVT-FANOUT-01..03, EVT-CAP-01, WH-CACHE-01..03, SEM-CAP-01..03, SITE-STREAM-01/02, SITE-COUNT-01** |
@@ -120,6 +121,26 @@ the normal outcome. `entityDeletePlan` now names the index (the plan is the dry
 run an operator approves, and it was describing work that could not be
 performed), and `applyEntityDelete` drops it first (LIFE-TX-\*).
 
+**7. `nexus update` would hard-reset a developer's own working tree.** It is not
+cwd-scoped — it resets the installation the binary belongs to, wherever that is
+— so running it from a nexus checkout discards uncommitted work with no warning
+and no way back short of the reflog. `install.sh` already refused a dirty tree;
+there was no reason the other hard-resetting path should not, and the guard had
+simply been applied to one of the two. Found by a clause of mine that assumed
+cwd-scoping and reset a live worktree while this chunk was being written; the
+clause was rewritten to assert the guard *without* invoking the command, since
+running it is precisely the accident it describes (INST-09, `E_UPDATE_DIRTY`).
+
+**6. The background embedding drain never ran on an idle process.** Its timer
+was unref'd, on the reasoning that a pending drain should not hold a CLI process
+open — but an unref'd timer does not keep the event loop alive, so whenever the
+process had nothing else pending the drain never ran and `embeddingBackfill`
+never settled, leaving the corpus permanently half-embedded. That is exactly
+what SEM-CAP-02 exists to prevent, and SEM-CAP-02 could not have caught it:
+inside a full suite run there is always other pending work, so the property held
+by accident. Caught by CI on its first run, on Node 24, as exit 13. Pinned by
+SEM-CAP-04, which spawns a child whose loop contains nothing but the drain.
+
 **5. The browser conformance suite was RED, and the headline said "0 red".**
 `SEM-10` had been failing since the square-tint redesign changed the search
 result header from `note (1)` to `note · 1` and the empty state from
@@ -139,9 +160,15 @@ not make the report honest, and a backup that overstates itself is discovered at
 the worst possible moment. The count is now what the file actually holds, and
 anything left out is NAMED (SITE-COUNT-01).
 
-**What the five share.** Every one is a guarantee stated in a comment, a header,
-or a clause — and exercised only on the engine, the path, the route, or the
-runner where it happened to hold. None was found by reading the code with suspicion — the audit
+**What the seven share.** Every one is a guarantee stated in a comment, a header,
+or a clause — and exercised only on the engine, the path, the route, the runner,
+or the moment where it happened to hold. Three levels are worth telling apart,
+because each needed a different instrument to see: a claim never checked
+anywhere (1–4), a whole suite never run (5), and a clause that was green **for
+the wrong reason** (6) — that last one only visible by giving it a process whose
+event loop contained nothing else. (7) is the one that bit hardest: it was found
+by a test destroying real work, which is the most expensive way to learn that a
+guard belonged on two paths and had been written for one. None was found by reading the code with suspicion — the audit
 did that thoroughly and missed all four. Each was found by writing a clause that
 asserted the stated guarantee somewhere it had never been asserted before. That
 is the argument for spec-first stated more precisely than "tests are good": a
@@ -432,6 +459,17 @@ places nobody thought to check are where these live.
   cascade, hot reload, accent switching, sidebar levels. A browser-suite pass over these
   is owed (the harness exists — NX*-* browser clauses).
 - **LF/CRLF warnings** on Windows commits are noisy (no .gitattributes yet).
+- **Issue #8, steps 2–4 are still owed**: the service story (`systemd --user` +
+  `loginctl enable-linger`, verified reachable without root on Linux) and the
+  post-update restart are step 3 and get their own design, because they are the
+  only part that puts a supervised process on the machine; the tarball SHA check
+  and the Darwin service refusal are step 4. The manifest's `units` and
+  `cronMarkers` fields exist and are empty, so adding a service later is data
+  rather than a schema change.
+- **The Windows PATH entry is NAMED, not yet undone**: `uninstall` reports the
+  PATH entry the manifest records and tells the operator to remove it. Rewriting
+  a user's persistent PATH during an uninstall is a bigger decision than this
+  chunk should make silently, so it names and defers rather than acting.
 - **Installers are untested on clean machines**: install.sh/install.ps1 follow the
   access pattern and `nexus update`/`uninstall` are exercised only on this dev box
   (git-install path). A fresh-VM pass (POSIX + Windows), and a decision on npm

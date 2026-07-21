@@ -1,7 +1,19 @@
 /**
- * nexus doctor — instance diagnosis (§5.2, the bench-doctor coverage):
- * runtime version, instance validity, extensions, database reachability,
- * per-entity tables, pending migrations. Exit 0 healthy / 1 findings.
+ * nexus doctor — diagnosis at TWO scopes, one command (issue #8 answer 4).
+ *
+ * Inside an instance: instance validity, extensions, database reachability,
+ * per-entity tables, pending migrations — unchanged.
+ *
+ * Outside one, or with --install: the INSTALLATION itself — channel, home,
+ * shims and whether they are on PATH, when it last updated. Nothing could
+ * answer "when was the framework last updated, and through which channel?"
+ * before this.
+ *
+ * One command rather than two, because §5.2 keeps the CLI surface small and
+ * two commands means knowing which to run before knowing what is wrong. Scope
+ * follows cwd, the convention `nexus dev` already uses.
+ *
+ * Exit 0 healthy / 1 findings.
  */
 
 import { existsSync, readFileSync, readdirSync } from "fs"
@@ -10,6 +22,44 @@ import { loadInstance, CORE_VERSION } from "../instance.js"
 import { loadExtensions } from "../../core/App/extensions.js"
 import { openInstanceData } from "../data.js"
 import { appliedMigrations } from "../../core/Data/migrate.js"
+import { readManifest, readUpdateRecord } from "../install-state.js"
+import { fileURLToPath } from "url"
+import { dirname } from "path"
+
+const NEXUS_ROOT = fileURLToPath(new URL("../../..", import.meta.url))
+
+/** Install-scope checks: what this copy of Nexus IS, not what an instance holds. */
+function installChecks(check) {
+    let manifest = null
+    try {
+        manifest = readManifest(NEXUS_ROOT)
+    } catch (error) {
+        check("install manifest", false, error.message)
+    }
+    const channel = manifest?.channel
+        ?? (NEXUS_ROOT.includes("node_modules") ? "npm" : existsSync(join(NEXUS_ROOT, ".git")) ? "git" : "tarball")
+    check("install", true, `${channel} · ${NEXUS_ROOT}`)
+    check("install manifest", Boolean(manifest),
+        manifest ? `${manifest.shims.length} shim(s) recorded` : "absent — uninstall falls back to the default locations")
+
+    // A shim that exists but whose directory is not on PATH is the failure an
+    // operator meets as "command not found" and has no way to diagnose.
+    const pathDirs = (process.env.PATH ?? "").split(process.platform === "win32" ? ";" : ":")
+    for (const shim of manifest?.shims ?? []) {
+        const there = existsSync(shim)
+        const onPath = pathDirs.includes(dirname(shim))
+        check(`shim ${shim}`, there && onPath, !there ? "missing" : onPath ? "on PATH" : "present, but its directory is NOT on PATH")
+    }
+
+    let update = null
+    try {
+        update = readUpdateRecord(NEXUS_ROOT)
+    } catch (error) {
+        check("last update", false, error.message)
+    }
+    check("last update", true,
+        update ? `${update.at} · ${update.channel} · ${update.commit ?? "?"}` : "never recorded (updated before this was tracked, or never)")
+}
 
 export async function doctor(args, flags, out) {
     const root = process.cwd()
@@ -20,8 +70,15 @@ export async function doctor(args, flags, out) {
     check("node >= 18", major >= 18, `running ${process.versions.node}`)
     check("nexus core", true, `v${CORE_VERSION}`)
 
-    if (!existsSync(join(root, "nexus.config.json"))) {
-        check("instance", false, "no nexus.config.json here")
+    const inInstance = existsSync(join(root, "nexus.config.json"))
+    // --install forces install scope even inside an instance; outside one it is
+    // the only sensible scope, so it is implied rather than demanded.
+    if (flags.install === true || !inInstance) installChecks(check)
+
+    if (!inInstance) {
+        if (flags.install !== true) check("instance", false, "no nexus.config.json here — reporting the INSTALL instead")
+    } else if (flags.install === true) {
+        // install scope was asked for explicitly; the instance half is skipped
     } else {
         let instance = null
         try {

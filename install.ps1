@@ -48,10 +48,30 @@ $shim = Join-Path $BinDir "nexus.cmd"
 
 # user PATH (append once)
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+$addedPath = $false
 if ($userPath -notlike "*$BinDir*") {
     [Environment]::SetEnvironmentVariable("Path", "$userPath;$BinDir", "User")
+    $addedPath = $true
     Write-Host "Added $BinDir to your user PATH (new terminals pick it up)."
 }
+
+# the install manifest — what this installer changed, so `nexus uninstall` can
+# undo exactly that (issue #8 answer 2). Windows needs it most: the PATH entry
+# appended above is the one thing uninstall could never find.
+$state = Join-Path $Dir ".state"
+New-Item -ItemType Directory -Force $state | Out-Null
+$channel = if (Test-Path (Join-Path $Dir ".git")) { "git" } else { "zip" }
+$manifest = [ordered]@{
+    manifestVersion = 1
+    installedAt     = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+    channel         = $channel
+    home            = $Dir
+    shims           = @($shim)
+    pathEntries     = $(if ($addedPath) { @($BinDir) } else { @() })
+    units           = @()
+    cronMarkers     = @()
+}
+$manifest | ConvertTo-Json | Out-File -FilePath (Join-Path $state "install.json") -Encoding utf8
 
 Write-Host ""
 Write-Host "Nexus installed."
