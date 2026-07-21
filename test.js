@@ -51,6 +51,7 @@ import "./test/data/migrate-tx.test.js"
 
 // Data Plane — CRUD API full-stack on a real engine (clauses DPL-*)
 import "./test/data/dataplane.test.js"
+import "./test/data/toctou.test.js"
 
 // Data Plane — engine adapters behind the executor contract (clauses ADP-*)
 import "./test/data/adapters.test.js"

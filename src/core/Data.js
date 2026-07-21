@@ -304,7 +304,18 @@ export class DataPlane {
 
         const set = Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, this.#toBinding(v ?? null)]))
         set.updated_at = post.updated_at
-        await this.#run(this.kysely.updateTable(entity).set(set).where("id", "=", id).compile())
+        // TOCTOU (DPL-TOCTOU-01): the write carries the SAME injected WHERE the
+        // pre-image read used, not `id` alone. Between the check and the use a
+        // concurrent writer can move the row out of the caller's permission
+        // scope; keyed on id alone, the write would land on it regardless.
+        await this.#run(applyWhere(this.kysely.updateTable(entity).set(set), where, { dialect: this.dialect }).compile())
+        // …then confirm it actually matched. run() is deliberately void in the
+        // executor contract — it reports no row count — so the honest way to
+        // tell "wrote it" from "matched nothing" is to look. One extra read per
+        // write is the price of not guessing, and E_NOT_FOUND keeps the same
+        // opacity a genuinely missing row has: no new error channel.
+        if (!(await this.#all(applyWhere(this.kysely.selectFrom(entity).select(["id"]), where, { dialect: this.dialect }).compile())).length)
+            throw err("E_NOT_FOUND", `${entity}/${id}`)
         await this.#maintainEmbedding(entity, post) // embedding needs the FULL post-image
         if (this.hooks) await this.hooks.run("after:update", entity, { row: post }, ctx) // hooks see the FULL post-image too
         // SECURITY (C2/DPL-ASYMMETRIC): the reply is cut to what the actor may
@@ -323,7 +334,15 @@ export class DataPlane {
         const rows = await this.#all(query.compile())
         if (!rows.length) throw err("E_NOT_FOUND", `${entity}/${id}`)
         if (this.hooks) await this.hooks.run("before:remove", entity, { id }, ctx)
-        await this.#run(this.kysely.deleteFrom(entity).where("id", "=", id).compile())
+        // TOCTOU (DPL-TOCTOU-02): same guard as update — the DELETE carries the
+        // permission predicate, and a row that left the caller's scope between
+        // the check and the use simply does not match.
+        await this.#run(applyWhere(this.kysely.deleteFrom(entity), where, { dialect: this.dialect }).compile())
+        // Still there? Then the DELETE matched nothing and the caller must not
+        // be told it succeeded (nor that the row exists — E_NOT_FOUND is the
+        // same answer a missing row gets).
+        if ((await this.#all(applyWhere(this.kysely.selectFrom(entity).select(["id"]), idDoc(id), { dialect: this.dialect }).compile())).length)
+            throw err("E_NOT_FOUND", `${entity}/${id}`)
         await this.#dropEmbedding(entity, id)
         if (this.hooks) await this.hooks.run("after:remove", entity, { id }, ctx)
         return true
