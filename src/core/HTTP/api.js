@@ -24,6 +24,12 @@ const BODY_LIMIT = 1024 * 1024 // 1MB
 
 const STATUS = {
     E_AUTH: 401,
+    // 413, not the 400 default. This module's own contract above has always
+    // said "413 oversized body", and both servers answer 413 for the same
+    // condition at their pre-auth readers — but the code was missing here, so
+    // the API layer alone answered 400. A client written against the documented
+    // contract mishandled it (HTTPX-R02).
+    E_BODY_SIZE: 413,
     E_FORBIDDEN: 403,
     E_FORBIDDEN_ROW: 403,
     E_FIELD_FORBIDDEN: 403,

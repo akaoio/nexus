@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 682/728 node clauses, 0 red.**
+**Green: 692/738 node clauses, 0 red.**
 (46 node "skips" are browser-only clauses plus the gated real-model suites —
 EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
 
@@ -22,11 +22,16 @@ the time. Three chunks have landed since:
    `fire()`'s full scan per write, `search()`'s inline re-embed cap, backup
    memory. See the **Resource bounds** row below.
 
-What remains of #9 is the **in-process HTTP coverage** clauses for
-`server.js`/`api.js`/`start.js`, which are still exercised only as black-box
-subprocesses. Every finding it raised is otherwise closed, and each bound
-carries its blast radius under Unfinished rather than implying more than it
-delivers.
+5. **In-process HTTP coverage** — the auth seam and the transport contract are
+   now driven directly, not only observed through spawned subprocesses. See the
+   **HTTP coverage** row below.
+
+**Issue #9 is closed.** Every Critical, every Important and every moderate it
+raised has landed, and each bound carries its blast radius under Unfinished
+rather than implying more than it delivers. The one item from its coverage map
+still owed is `update.js`/`uninstall.js`, which cannot be pinned before issue #8
+decides what that lifecycle IS — writing clauses against undecided behaviour
+would freeze it by accident.
 
 **Two findings in this work were NOT in the audit**, and both are recorded
 because the way they hid is more instructive than the bugs themselves — see
@@ -61,18 +66,27 @@ because the way they hid is more instructive than the bugs themselves — see
 | **Entity identity** | **schema `icon:` (any bootstrap-icons name — vendored 1.1 MB sprite, nx-icon registry-first with sprite fallback); picker in the /entities editor** | MS-S14 |
 | **Effect engine** | **durable jobs as `nexus_job` rows (token-CAS claim, backoff, DLQ, recurring), Threads execution behind the narrow plane-RPC, webhook/mail/notification consumers as the effect app, Studio /jobs** | SYS-09, JOB-*, EXT-J1, THR-*, JOBL-*, WH-*, MAIL-*, NOTIF-* |
 | **Realtime** | **public SSE `/api/v1/_events` (auth'd incl. `?token=`, per-subscriber plane-gated, no row data on the wire, heartbeat); Studio live refresh on every list route via the public stream; dev `/__dev_events` + watcher + full module hot-swap + `"reload"` on schema hot-apply** | **EVT-U*, EVT-*, HMR-*, DEVE-*** |
+| **HTTP coverage (issue #9 chunk 4)** | **the auth seam is exercised IN PROCESS, not only through spawned subprocesses: `createApi` returns a plain `handle(req, res)`, so routing → the `?token=` fold → `context()` → policy composition → the plane → the status mapping is drivable with a fake req/res, with no production change needed to make it testable. Pinned there: the dev identity branch production must never reach (the other half of START-01), deny-by-default for an authenticated caller with no roles, a token's `roles` claim being IGNORED in favour of the live directory (I4's mechanism, in one call rather than a whole instance), an unprovisioned pub carrying nothing (C1b's other half), `?token=` authenticating the event stream ONLY so a query-string token can never read data, and the enforced policy set and the read-only window deriving from ONE `policyLayers()` call so they cannot drift** | **HTTPX-A01..A05, HTTPX-R01..R04, HTTPX-P01** |
 | **Resource bounds (issue #9 chunk 3)** | **nothing unbounded by a single caller: a zero-dep token bucket limits both servers, with the pre-auth tier strictly tighter (anyone can reach it and each call costs a signature check), a separate bucket per (tier, key) so ordinary API traffic cannot drain the pre-auth allowance, `X-Forwarded-For` ignored unless `trust_proxy` is declared, `/_health` exempt so a flood cannot take the instance out of rotation, and — the two that matter most — the limiter's OWN key map swept and hard-capped, failing CLOSED to the tightest tier when full rather than waving strangers through; SSE fan-out memoised per emit by authorization fingerprint (INCLUDING the user, since `$CURRENT_USER`/`ifOwner` make identical policies mean different things), so N subscribers across k contexts cost k reads not N, plus a subscriber cap; webhook dispatch reads a cache refreshed through the same after-hook mechanism `nexus_policy`/`nexus_user` already use, so twenty writes cost one read instead of twenty and a Studio write is still instantly live; `search()` embeds at most a configured cap inside a request and drains the rest in the background, so a model switch cannot put 1000 rows of ML work in one HTTP response and the corpus still completes; `nexus site backup` streams in pages of 500 and its summary now reports what it ACTUALLY captured, naming what it skipped** | **RATE-01..09, EVT-FANOUT-01..03, EVT-CAP-01, WH-CACHE-01..03, SEM-CAP-01..03, SITE-STREAM-01/02, SITE-COUNT-01** |
 | **Durability & atomicity (issue #9 chunk 2)** | **the executor has a REAL transaction seam — one connection for the whole callback, so a pooled driver can no longer scatter `BEGIN`/body/`COMMIT` across three connections (the pre-seam improvisation did, silently); `BEGIN IMMEDIATE` on sqlite/turso, capability-declared (`CAPABILITIES.transactions`, kept separate from `transactionalDDL`), no nesting (`E_NESTED_TX`), and a failed rollback never replaces the error that caused it. On top of it: a write and everything derived from it commit together, with the embedding derived BEFORE the transaction so a failed model leaves no row and inference never holds a write lock; an `after:` hook that throws no longer fails a durable write and is contained through `onHookError`; `update`/`remove` carry the permission predicate on the write STATEMENT and confirm it matched, closing the TOCTOU window; entity delete moved into core as one transaction that swallows nothing (and now actually drops the link column — see the findings section); `hotApply` runs inside a transaction where DDL can roll back and reports `atomic: false` where it cannot; `after:remove` carries the captured pre-image so a deleted row's id no longer crosses the row rule that protected it — the row DECIDES and is never SENT; a timed-out job reclaims its queue entry AND recycles the worker, and the execution timeout is derived from the lease so the two cannot be equal again; file-backed sqlite runs in WAL with a busy timeout, surfaced by `nexus doctor`** | **TXN-01..05, ADP-TXN, ADP-WAL-*, DPL-ATOMIC-*, DPL-TOCTOU-*, LIFE-TX-*, MIG-HOTTX-*, EVT-ROWGATE-*, THR-CANCEL-*, JOB-TIMEOUT-*** |
 | **Harness integrity (issue #9 follow-up)** | **a run that verifies nothing is not green — zero passes fails the run and prints why, through one exported rule (`isGreen`) both the summary and the exit code read; the Sync stub stands in only for an *absent* `src/core/Sync.js`, so a present-but-broken module surfaces its own import error instead of answering `NOT_IMPLEMENTED`; a ZSYNC harness that produced no verdict is an explicit skip carrying its spawn error as a warning, not a `{ browser: true }` no-op with the error buried in the test name** | **RUN-01, SYNCLOAD-01, ZSYNC-00** |
 | **Security hardening (issue #9 Criticals + security Importants)** | **`nexus_user.roles` behind `permlevel:1` with an admin permlevel-1 companion policy, so self-service cannot promote itself, pinned by driving the actual escalation through the plane (SYS-11 also asserts the field IS restricted, so the invariant loop cannot silently skip it on a revert); `/_auth/verify` refuses an unprovisioned pub — holding a keypair is not membership; create/update return through the actor's READ-scoped field set, not the write set; backup carries the system entities (users/roles/policies/views/webhooks/notifications), redacts config secrets AND declared row-level secret columns (webhook `secret`, job `lease_token`), and fails loudly (not silently) on an app-schema read error; `/_studio/*` — including `/_studio/session`'s own whoami body, the last surface that used to trust token claims — authorizes from ONE declared per-route table (`dev-access.js`) with an admin-only default, "any" meaning no-auth-at-all rather than a role tier, and roles resolved from the live directory everywhere, never the token; engine capabilities are declared (`CAPABILITIES`/`capabilitiesFor`, fail-closed for unknown engines) and a non-transactional-DDL dialect refuses the structural path — dry-run included — before any statement runs; roles resolve per REQUEST from the live directory for token-bearing callers, so revoking/deleting a user's row takes effect on their very next call without re-issuing the token (this does NOT cover API keys, whose roles come from `config.api_keys[].roles` and are operator-managed rather than directory-revocable, nor an already-open SSE subscription, which captures its ctx once at connect); `/_studio/users` add/role-set writes the `nexus_user` directory row (not just `nexus.config.json`), so a Studio-provisioned identity can actually complete the ZEN handshake past first boot, instead of reporting `applied: true` for an identity that cannot log in; webhooks are http(s)-only at write and dispatch time, timeout-bounded, non-redirecting, and the signing secret never enters the job ledger; both servers cap pre-auth request bodies, the challenge map is swept and capped under a flood, and production refuses to boot without a real `token_secret`** | **SYS-10/11/12/13, AUTH-STRANGER, DPL-PERMLEVEL, DPL-ASYMMETRIC, SITE-BACKUP, OPS-10, STUDIO-08/09/09a/10/11/12, ADP-CAP, MIG-NOTX, AUTH-REVOKE, AUTH-REVOKE-DELETE, WH-04/05/06/07, START-BODY/CHALLENGE/SECRET** |
 
-## What the durability chunk found that nobody had looked for
+## What writing the clauses found that nobody had looked for
 
-Two defects surfaced while writing clauses for issue #9's I8/I9, neither of them
-in the audit. Both are fixed; both are recorded because how they stayed hidden
-is the transferable part.
+Four defects surfaced while writing clauses across chunks 2–4, none of them in
+the audit. All are fixed; all are recorded because how they stayed hidden is the
+transferable part.
 
-**1. The structural migration's transaction was a no-op on a pooled Postgres.**
+**1. The API layer answered 400 where its own contract said 413.** `api.js`'s
+header has always documented "413 oversized body", and both servers answer 413
+for the same condition at their pre-auth readers — but `E_BODY_SIZE` was missing
+from the status map, so the API route alone fell through to the 400 default. A
+client written against the documented contract mishandled it. Found by the first
+in-process clause that ever asserted the mapping (HTTPX-R02); no subprocess test
+had ever sent an oversized body to an entity route.
+
+**2. The structural migration's transaction was a no-op on a pooled Postgres.**
 The engine had no transaction primitive: `applyMigration` improvised by sending
 literal `BEGIN`/`COMMIT`/`ROLLBACK` strings through `run()`. That is correct on
 ONE handle (node:sqlite, PGlite) and unsound on a POOL — `pg` and `mysql2` hand
@@ -87,7 +101,7 @@ Closed by the transaction seam (`src/core/Data/transaction.js`, TXN-\*), and
 TXN-02 pins it with a fake pool **deliberately** — a live-only test would have
 kept it invisible for the same reason.
 
-**2. Deleting an entity silently failed to drop link columns — every time.**
+**3. Deleting an entity silently failed to drop link columns — every time.**
 sqlite refuses to drop a column an index still references, and the DDL compiler
 creates `idx_<entity>_<field>` for every link field. The cascade's
 `ALTER TABLE … DROP COLUMN` therefore failed on **every** delete that had a link
@@ -100,16 +114,32 @@ the normal outcome. `entityDeletePlan` now names the index (the plan is the dry
 run an operator approves, and it was describing work that could not be
 performed), and `applyEntityDelete` drops it first (LIFE-TX-\*).
 
-The pattern both share: a guarantee stated in a comment, exercised only on the
-one engine or the one path where it happens to hold.
+**4. `nexus site backup` reported eight entities and wrote one.** On a fresh
+instance the system tables do not exist yet — they are created when a server
+first boots — so `isMissingTableError` correctly skipped them. But the summary
+counted every schema it *intended* to back up. C3 made backup complete; it did
+not make the report honest, and a backup that overstates itself is discovered at
+the worst possible moment. The count is now what the file actually holds, and
+anything left out is NAMED (SITE-COUNT-01).
+
+**What the four share.** Every one is a guarantee stated in a comment or a
+header, and exercised only on the engine, the path, or the route where it
+happened to hold. None was found by reading the code with suspicion — the audit
+did that thoroughly and missed all four. Each was found by writing a clause that
+asserted the stated guarantee somewhere it had never been asserted before. That
+is the argument for spec-first stated more precisely than "tests are good": a
+clause is worth writing exactly where a claim has never been checked, and the
+places nobody thought to check are where these live.
 
 ## Unfinished / known drift (honest list, 2026-07-21)
 
-- **Issue #9: what is left is HTTP coverage.** C1–C5 and I1–I5/I10 closed with
-  the security chunk; I6–I9 and I11 with the durability chunk, along with
-  TOCTOU and WAL/`busy_timeout`; the moderates with the resource-bounds chunk.
-  What remains is that `server.js`, `api.js` and `start.js` have no in-process
-  clauses — they are observed only as black-box subprocesses. The bullets
+- **Issue #9 is closed; `update.js`/`uninstall.js` coverage is owed to #8.**
+  C1–C5 and I1–I5/I10 closed with the security chunk; I6–I9 and I11 with the
+  durability chunk, along with TOCTOU and WAL/`busy_timeout`; the moderates with
+  resource bounds; the auth-seam coverage gap with the HTTP-coverage chunk. The
+  coverage map's remaining entry — self-update does `git fetch` + hard reset and
+  is entirely unexercised — stays open on purpose: clauses written against a
+  lifecycle issue #8 has not specified would freeze it by accident. The bullets
   below record what each landed bound does NOT cover.
 - **A behaviour change, declared (N3): an `after:` hook that throws no longer
   fails the write.** It runs once the write is durable, so propagating it told
