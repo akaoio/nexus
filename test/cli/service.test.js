@@ -154,21 +154,38 @@ Test.describe("Service plan (SVC)", () => {
     Test.it("SVC-09 systemd itself accepts the generated unit — validated by its own parser, without installing anything", () => {
         // "It looks like a unit file" is not the same claim as "systemd will
         // load it". `systemd-analyze verify` parses it exactly as the manager
-        // would and reports nothing when it is valid — a real check that
-        // enables no process, which matters because installing one is a
-        // system-modifying action a test has no business performing.
-        const probe = spawnSync("systemd-analyze", ["--version"], { stdio: "ignore" })
-        if (probe.status !== 0) {
-            console.warn("  SVC-09 skipped — systemd-analyze not available on this machine")
-            return
-        }
+        // would — a real check that enables no process, which matters because
+        // installing one is a system-modifying action a test has no business
+        // performing.
+        //
+        // But the verifier is environment-sensitive: on a runner without a
+        // usable systemd it rejects even trivially valid units. So a KNOWN-GOOD
+        // unit is probed first. If that fails, this environment cannot tell us
+        // anything and the clause skips honestly; only if the probe passes does
+        // OUR unit have to pass too. That distinction — "our unit is wrong" vs
+        // "this machine cannot check" — is the whole point, and collapsing it
+        // would make the clause either a false alarm or a rubber stamp.
         const { box, root } = instance("shop")
+        const probeFile = join(box, "nexus-probe.service")
         const unitFile = join(box, "nexus-shop.service")
         try {
-            const plan = servicePlan({ ...LINUX, instanceRoot: root })
+            writeFileSync(probeFile, "[Unit]\nDescription=probe\n\n[Service]\nType=oneshot\nExecStart=/bin/true\n\n[Install]\nWantedBy=default.target\n")
+            const probe = spawnSync("systemd-analyze", ["verify", "--user", probeFile], { encoding: "utf8" })
+            if (probe.error || probe.status !== 0) {
+                console.warn(`  SVC-09 skipped — systemd-analyze cannot validate here: ${(probe.stderr || probe.error?.message || "").trim().split("\n")[0]}`)
+                return
+            }
+
+            // Real paths, so the only thing under test is the unit we generate.
+            const plan = servicePlan({
+                ...LINUX,
+                instanceRoot: root,
+                node: process.execPath,
+                nexusRoot: fileURLToPath(new URL("../..", import.meta.url))
+            })
             writeFileSync(unitFile, renderUnit(plan))
             const r = spawnSync("systemd-analyze", ["verify", "--user", unitFile], { encoding: "utf8" })
-            assert.equal(r.status, 0, `systemd rejected the unit: ${(r.stderr || r.stdout).trim()}`)
+            assert.truthy(r.status === 0, `systemd rejected the unit: ${(r.stderr || r.stdout || "").trim()}`)
         } finally {
             rmSync(box, { recursive: true, force: true })
         }
