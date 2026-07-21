@@ -32,80 +32,15 @@ import { createRequire } from "module"
 import { pathToFileURL } from "url"
 import { join } from "path"
 import { ENGINES, err } from "./adapters.js"
+// Transaction CONTROL FLOW is browser-safe and lives one tier up, beside the
+// capability declarations; only the real connections it drives live here.
+import { runTransaction, acquireHandle, acquirePg, acquireMysql } from "./transaction.js"
+export { runTransaction, acquireHandle, acquirePg, acquireMysql } from "./transaction.js"
 
 const INSTALL = {
     turso: "npm install @tursodatabase/database",
     postgres: "npm install pg",
     mysql: "npm install mysql2"
-}
-
-/**
- * The ONE place transaction control flow lives (TXN-01/03/05). Every engine
- * supplies an `acquire()` returning `{ run, all, release? }`; this decides
- * begin/commit/rollback identically for all of them.
- *
- * Two rules worth stating because getting either wrong is silent:
- *
- *  - **One connection for the whole callback.** `acquire()` is called ONCE.
- *    On a pooled driver that means checking a client out and running
- *    everything on it — `pool.query()` per statement hands out an arbitrary
- *    idle client, so BEGIN, the body and COMMIT would land on different
- *    connections and the transaction would be a no-op (TXN-02). That is
- *    precisely how the pre-seam `run("BEGIN")` improvisation was unsound on
- *    pg/mysql2 while looking correct on sqlite and PGlite.
- *  - **A failed rollback never replaces the error that caused it.** The
- *    caller must be told why its work failed, not that cleanup also failed;
- *    the rollback failure is appended, never substituted (TXN-05).
- *
- * No nesting in v1: the `tx` handed to the callback refuses `transaction()`
- * with E_NESTED_TX. Savepoint syntax differs per engine, and silently
- * flattening a nested call would produce a transaction that commits half-way.
- */
-export async function runTransaction({ acquire, begin = "BEGIN" }, fn) {
-    const conn = await acquire()
-    const tx = {
-        run: (sql, params = []) => conn.run(sql, params),
-        all: (sql, params = []) => conn.all(sql, params),
-        transaction() { throw err("E_NESTED_TX", "transactions do not nest in v1 — savepoints are engine-specific") }
-    }
-    try {
-        await conn.run(begin, [])
-        const result = await fn(tx)
-        await conn.run("COMMIT", [])
-        return result
-    } catch (error) {
-        try {
-            await conn.run("ROLLBACK", [])
-        } catch (rollbackError) {
-            error.message = `${error.message} (rollback also failed: ${rollbackError.message})`
-        }
-        throw error
-    } finally {
-        conn.release?.()
-    }
-}
-
-/** A single handle (node:sqlite, Turso, PGlite) IS the connection — nothing to check out. */
-const acquireHandle = (run, all) => async () => ({ run, all })
-
-/** `pg`: check a client out of the pool for the whole transaction, release it once. */
-export const acquirePg = (pool) => async () => {
-    const client = await pool.connect()
-    return {
-        run: async (sql, params = []) => void (await client.query(sql, params)),
-        all: async (sql, params = []) => (await client.query(sql, params)).rows,
-        release: () => client.release()
-    }
-}
-
-/** `mysql2`: same guarantee, different check-out verb. */
-export const acquireMysql = (pool) => async () => {
-    const conn = await pool.getConnection()
-    return {
-        run: async (sql, params = []) => void (await conn.query(sql, params)),
-        all: async (sql, params = []) => (await conn.query(sql, params))[0],
-        release: () => conn.release()
-    }
 }
 
 async function importDriver(name, engine, root) {

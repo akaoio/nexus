@@ -47,6 +47,7 @@ import "./test/data/ddl.test.js"
 
 // Data Plane — Migration Engine on a real engine (clauses MIG-*)
 import "./test/data/migrate.test.js"
+import "./test/data/migrate-tx.test.js"
 
 // Data Plane — CRUD API full-stack on a real engine (clauses DPL-*)
 import "./test/data/dataplane.test.js"
