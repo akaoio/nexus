@@ -47,12 +47,20 @@ import "./test/data/ddl.test.js"
 
 // Data Plane — Migration Engine on a real engine (clauses MIG-*)
 import "./test/data/migrate.test.js"
+import "./test/data/migrate-tx.test.js"
 
 // Data Plane — CRUD API full-stack on a real engine (clauses DPL-*)
 import "./test/data/dataplane.test.js"
+import "./test/data/toctou.test.js"
+import "./test/data/atomic-write.test.js"
 
 // Data Plane — engine adapters behind the executor contract (clauses ADP-*)
 import "./test/data/adapters.test.js"
+
+// Data Plane — the executor's transaction seam (clauses TXN-*, issue #9 chunk 2)
+import "./test/data/transaction.test.js"
+import "./test/data/wal.test.js"
+
 import "./test/data/live-engine.test.js"
 import "./test/data/live-postgres.test.js"
 import "./test/data/vec.test.js"
@@ -66,6 +74,7 @@ import "./test/kernel/events.test.js"
 import "./test/kernel/states.test.js"
 import "./test/kernel/router.test.js"
 import "./test/kernel/threads.test.js"
+import "./test/core/thread-cancel.test.js"
 import "./test/kernel/ui.test.js"
 import "./test/kernel/fs.test.js"
 import "./test/kernel/sql.test.js"
@@ -86,6 +95,7 @@ import "./test/http/api.test.js"
 
 // Realtime event hub — SSE subscribers, permission per subscriber (clauses EVT-*)
 import "./test/http/events-hub.test.js"
+import "./test/http/event-rowgate.test.js"
 
 // Realtime on the wire — GET /api/v1/_events mounted, live clauses (EVT-01/02/03/05)
 import "./test/http/events-live.test.js"
@@ -169,6 +179,7 @@ import "./test/studio/roles.test.js"
 // App — system entities (clauses SYS-*)
 import "./test/app/system.test.js"
 import "./test/app/lifecycle.test.js"
+import "./test/app/entity-delete.test.js"
 
 // App — HMR file watcher (clauses HMR-*)
 import "./test/app/hmr-watch.test.js"
@@ -178,6 +189,7 @@ import "./test/app/jobs.test.js"
 
 // App — job thread + plane pseudo-thread RPC, real worker (clauses THR-*)
 import "./test/app/jobthread.test.js"
+import "./test/app/job-timeout.test.js"
 
 // Studio — nx-schema-designer (clauses NXS-*)
 import "./test/studio/schema-designer.test.js"

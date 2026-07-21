@@ -32,6 +32,10 @@ import { createRequire } from "module"
 import { pathToFileURL } from "url"
 import { join } from "path"
 import { ENGINES, err } from "./adapters.js"
+// Transaction CONTROL FLOW is browser-safe and lives one tier up, beside the
+// capability declarations; only the real connections it drives live here.
+import { runTransaction, acquireHandle, acquirePg, acquireMysql } from "./transaction.js"
+export { runTransaction, acquireHandle, acquirePg, acquireMysql } from "./transaction.js"
 
 const INSTALL = {
     turso: "npm install @tursodatabase/database",
@@ -75,12 +79,35 @@ export async function createExecutor(engine = "sqlite", config = {}) {
             } catch (error) {
                 if (config.vec === "require") throw err("E_VEC", `sqlite-vec required but unavailable: ${error.message}`)
             }
+        const run = (sql, params = []) => void db.prepare(sql).run(...params)
+        const all = (sql, params = []) => db.prepare(sql).all(...params)
+
+        // Concurrency pragmas (ADP-WAL-*). The Data Plane's writes, the entity-
+        // delete cascade and hot apply all hold write transactions now, and
+        // with the 1s job poller plus per-subscriber plane.get on the same
+        // file, the default rollback journal turns that into SQLITE_BUSY
+        // surfacing as a raw 500. WAL lets readers proceed against a writer;
+        // busy_timeout makes a second WRITER wait rather than fail instantly.
+        //
+        // WAL is asked for on FILE databases only: :memory: cannot honour it
+        // and silently stays "memory", so asking there would leave a pragma in
+        // the code that reads like a guarantee and is not (ADP-WAL-03).
+        const sqlitePath = config.path ?? ":memory:"
+        if (sqlitePath !== ":memory:") all(`PRAGMA journal_mode = WAL`)
+        all(`PRAGMA busy_timeout = ${Number(config.busyTimeoutMs ?? 5000)}`)
+
         return {
             engine,
             dialect: "sqlite",
             vec,
-            run: (sql, params = []) => void db.prepare(sql).run(...params),
-            all: (sql, params = []) => db.prepare(sql).all(...params),
+            run,
+            all,
+            // BEGIN IMMEDIATE, not bare BEGIN: SQLite's default DEFERRED
+            // transaction takes its write lock at the first WRITE, so a
+            // read-then-write transaction — which is exactly what the Data
+            // Plane's update/remove are — can have another writer slip in
+            // between. A deferred transaction is not a TOCTOU fix (TXN-04).
+            transaction: (fn) => runTransaction({ acquire: acquireHandle(run, all), begin: "BEGIN IMMEDIATE" }, fn),
             close: () => db.close()
         }
     }
@@ -90,11 +117,15 @@ export async function createExecutor(engine = "sqlite", config = {}) {
         const Database = mod.default ?? mod.Database
         const db = new Database(config.path ?? ":memory:")
         if (typeof db.connect === "function") await db.connect()
+        const run = async (sql, params = []) => void (await db.prepare(sql).run(...params))
+        const all = async (sql, params = []) => db.prepare(sql).all(...params)
         return {
             engine,
             dialect: "turso",
-            run: async (sql, params = []) => void (await db.prepare(sql).run(...params)),
-            all: async (sql, params = []) => db.prepare(sql).all(...params),
+            run,
+            all,
+            // Same SQL dialect as sqlite, so the same up-front write lock.
+            transaction: (fn) => runTransaction({ acquire: acquireHandle(run, all), begin: "BEGIN IMMEDIATE" }, fn),
             close: () => db.close()
         }
     }
@@ -119,11 +150,15 @@ export async function createExecutor(engine = "sqlite", config = {}) {
             }
             const PGlite = mod.PGlite ?? mod.default?.PGlite ?? mod.default
             const db = new PGlite(config.path)
+            const run = async (sql, params = []) => void (await db.query(sql, params))
+            const all = async (sql, params = []) => (await db.query(sql, params)).rows
             return {
                 engine,
                 dialect: "postgres",
-                run: async (sql, params = []) => void (await db.query(sql, params)),
-                all: async (sql, params = []) => (await db.query(sql, params)).rows,
+                run,
+                all,
+                // PGlite is ONE in-process instance — it is its own connection.
+                transaction: (fn) => runTransaction({ acquire: acquireHandle(run, all) }, fn),
                 close: () => db.close()
             }
         }
@@ -135,6 +170,9 @@ export async function createExecutor(engine = "sqlite", config = {}) {
             dialect: "postgres",
             run: async (sql, params = []) => void (await pool.query(sql, params)),
             all: async (sql, params = []) => (await pool.query(sql, params)).rows,
+            // A POOL is where per-statement checkout would silently break the
+            // transaction — acquirePg holds one client for the whole callback.
+            transaction: (fn) => runTransaction({ acquire: acquirePg(pool) }, fn),
             close: () => pool.end()
         }
     }
@@ -148,8 +186,12 @@ export async function createExecutor(engine = "sqlite", config = {}) {
         dialect: "mysql",
         run: async (sql, params = []) => void (await pool.query(sql, params)),
         all: async (sql, params = []) => (await pool.query(sql, params))[0],
+        // DML transactions work on MySQL; DDL ones do not (it implicitly
+        // COMMITs) — that stays a separate, narrower claim, CAPABILITIES
+        // .transactionalDDL, and the migration path still refuses on it (C5).
+        transaction: (fn) => runTransaction({ acquire: acquireMysql(pool) }, fn),
         close: () => pool.end()
     }
 }
 
-export default { createExecutor }
+export default { createExecutor, runTransaction, acquirePg, acquireMysql }

@@ -124,6 +124,24 @@ export class Threads {
         return queue
     }
 
+    /**
+     * Abandon a queued call: forget its entry, so any reply arriving later is
+     * dropped. The missing half of `queue()`, which already hands back its id
+     * precisely so it can be given back.
+     *
+     * Without this an entry left `queues` only when a reply ARRIVED — so a
+     * caller that gave up (a timeout being the obvious case) leaked its entry
+     * forever, and a worker that eventually answered would settle a promise
+     * whose owner had long since moved on.
+     *
+     * @returns {boolean} whether there was an entry to cancel
+     */
+    cancel(queue) {
+        if (!queue || !this.queues?.[queue]) return false
+        delete this.queues[queue]
+        return true
+    }
+
     /** Call a method on a thread without waiting for a response. */
     call({ thread, method, params, transfer }) {
         if (!thread || !method || !this.threads?.[thread]) return

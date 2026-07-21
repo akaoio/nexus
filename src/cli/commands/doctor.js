@@ -39,6 +39,17 @@ export async function doctor(args, flags, out) {
             }
             try {
                 const { executor } = await openInstanceData(root, instance.config)
+                // What the engine is ACTUALLY running under, not what was
+                // configured: a pragma that was sent and ignored is the failure
+                // mode worth showing an operator (ADP-WAL-*).
+                if (executor.dialect === "sqlite")
+                    try {
+                        const journal = (await executor.all(`PRAGMA journal_mode`))[0]?.journal_mode
+                        const busy = (await executor.all(`PRAGMA busy_timeout`))[0]?.timeout
+                        check("sqlite concurrency", journal === "wal" || journal === "memory", `journal_mode=${journal}, busy_timeout=${busy}ms`)
+                    } catch (error) {
+                        check("sqlite concurrency", false, error.message)
+                    }
                 for (const schema of instance.schemas) {
                     try {
                         await executor.all(`SELECT 1 FROM "${schema.name}" LIMIT 1`)

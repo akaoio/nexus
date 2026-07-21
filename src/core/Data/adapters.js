@@ -36,15 +36,21 @@ export const engineDialect = (engine) => engine
  * migration engine asks instead of hardcoding dialect names, and an engine
  * added without a record fails closed rather than inheriting "yes".
  *
+ * transactions: can DML run inside a transaction? True everywhere — this is
+ *   the seam the Data Plane's atomic writes, the entity-delete cascade and
+ *   hot apply are built on (issue #9 I7/I8/I9).
+ *
  * transactionalDDL: can DDL run inside a transaction and be rolled back?
  *   MySQL implicitly COMMITs on DDL, so its dry run would destroy the very
- *   table it was asked to measure (issue #9 C5).
+ *   table it was asked to measure (issue #9 C5). Deliberately SEPARATE from
+ *   `transactions` — MySQL has the one and not the other, and collapsing them
+ *   into one flag is exactly how that distinction would get lost.
  */
 export const CAPABILITIES = Object.freeze({
-    sqlite: Object.freeze({ transactionalDDL: true, vector: "sqlite-vec", fts: "fts5" }),
-    turso: Object.freeze({ transactionalDDL: true, vector: "native", fts: "experimental" }),
-    postgres: Object.freeze({ transactionalDDL: true, vector: "pgvector", fts: "tsvector" }),
-    mysql: Object.freeze({ transactionalDDL: false, vector: "none", fts: "fulltext" })
+    sqlite: Object.freeze({ transactions: true, transactionalDDL: true, vector: "sqlite-vec", fts: "fts5" }),
+    turso: Object.freeze({ transactions: true, transactionalDDL: true, vector: "native", fts: "experimental" }),
+    postgres: Object.freeze({ transactions: true, transactionalDDL: true, vector: "pgvector", fts: "tsvector" }),
+    mysql: Object.freeze({ transactions: true, transactionalDDL: false, vector: "none", fts: "fulltext" })
 })
 
 /** Capabilities for an engine; unknown engines throw rather than defaulting. */

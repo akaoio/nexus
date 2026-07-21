@@ -211,7 +211,21 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
                 }
             }
         }
-        plane = new DataPlane({ executor, schemas: allSchemas, dialect: executor.dialect, hooks: extensions, embedder, nlProvider })
+        plane = new DataPlane({
+            executor,
+            schemas: allSchemas,
+            dialect: executor.dialect,
+            hooks: extensions,
+            embedder,
+            nlProvider,
+            // An after-hook runs once the write is DURABLE, so its failure must
+            // not be reported to the caller as a failed write — the client's
+            // correct response to that would be a retry, i.e. a duplicate. It
+            // must not vanish either: this is the operator's channel for it,
+            // the same doctrine the event hub has always run under (I7, WH-03).
+            onHookError: ({ entity, event, error }) =>
+                console.error(`[nexus] ${event} hook failed on ${entity}: ${error?.message ?? error}`)
+        })
 
         // ── the RBAC directory lives in the plane ─────────────────────────────
         // nexus_policy rows are the LIVE policy layer (app files stay shipped

@@ -114,13 +114,22 @@ Test.describe("Realtime event hub (EVT-*)", () => {
         hub.stop()
     })
 
-    Test.it("EVT-U2 remove events use the doc-level check (the row is gone)", async () => {
+    // CHANGED by issue #9 I11. This clause used to read "remove events use the
+    // doc-level check (the row is gone)" and emitted with NO row — which is
+    // precisely what pinned the leak in place: a document-level yes was
+    // enough, so every deleted id crossed every row-level rule. What the
+    // clause was actually there to protect — a subscriber with read on the
+    // entity is told, one without is not — is unchanged and still asserted
+    // below. The row rule is now applied as well, against the pre-image the
+    // plane captures; EVT-ROWGATE-* pins that half, including that a missing
+    // pre-image now denies rather than allows.
+    Test.it("EVT-U2 remove events still respect the document-level grant — told if you may read the entity, silent if you may not", async () => {
         const plane = setup()
         const hub = createEventHub({ plane, heartbeatMs: 0 })
         const v = fakeRes(), n = fakeRes()
         hub.subscribe({ res: v, ctx: VIEWER, entities: null })
         hub.subscribe({ res: n, ctx: NOBODY, entities: null })
-        await hub.emit({ entity: "task", event: "remove", id: "gone-id" })
+        await hub.emit({ entity: "task", event: "remove", id: "gone-id", row: { id: "gone-id", title: "t", owner: "someone" } })
         assert.equal(events(v).length, 1)
         assert.equal(events(n).length, 0)
         hub.stop()

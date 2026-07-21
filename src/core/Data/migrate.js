@@ -43,6 +43,7 @@ import { sha256 } from "../Utils.js"
 import { DIALECT_NAMES } from "./kysely.js"
 import { tableDDL, columnType } from "./ddl.js"
 import { capabilitiesFor } from "./adapters.js"
+import { transactionOf } from "./transaction.js"
 
 // dialect and engine are 1:1 today (engineDialect = (engine) => engine,
 // adapters.js:39) — named so the day they diverge is a compile-time
@@ -50,6 +51,12 @@ import { capabilitiesFor } from "./adapters.js"
 const engineOf = (dialect) => dialect
 
 const err = (code, detail) => new Error(detail ? `${code}: ${detail}` : code)
+
+// A dry run must end in a ROLLBACK, which the transaction seam only performs
+// on a throw. This sentinel says "roll back, deliberately" and carries the
+// report out with it — so the seam keeps its single, uniform control flow
+// instead of growing a "commit unless…" special case for one caller.
+const DRY_RUN = Symbol("nexus.migration.dryRun")
 const clone = (x) => JSON.parse(JSON.stringify(x))
 const quote = (name) => `"${String(name).replace(/"/g, '""')}"` // SEC: double embedded quotes
 const fieldMap = (schema) => new Map(schema.fields.map((f) => [f.name, f]))
@@ -146,7 +153,24 @@ export function plan(kysely, oldSchema, newSchema, options = {}) {
 /**
  * Apply a fully-hot change set live. Refuses loudly when anything requires
  * the structural path (E_STRUCTURAL) or a rebuild on this dialect (E_NOT_HOT).
- * @returns {{applied: number, statements: number}}
+ *
+ * A hot apply is a SEQUENCE of DDL statements, so a failure partway used to
+ * leave the table between states with no ledger entry to say so (issue #9 I9).
+ * It now runs inside one transaction wherever the engine's declared
+ * capabilities allow DDL to roll back.
+ *
+ * Where they do not — MySQL implicitly COMMITs on DDL (C5) — the work is still
+ * done and `atomic: false` is RETURNED. That is deliberately the opposite
+ * choice from the entity-delete cascade, which refuses outright on the same
+ * engines, and the difference is the nature of the operation: a cascade is
+ * destructive, so a half-done one loses data and refusing merely costs the
+ * operator a different route; a hot apply is additive by construction (plan()
+ * defers everything that is not an added column or index), so a half-done one
+ * loses nothing, and refusing would mean a MySQL instance could not add a
+ * field at all. Report the weaker guarantee; do not hide it, do not withdraw
+ * the feature.
+ *
+ * @returns {{applied: number, statements: number, atomic: boolean}}
  */
 export async function hotApply(executor, kysely, oldSchema, newSchema, options = {}) {
     const p = plan(kysely, oldSchema, newSchema, options)
@@ -154,13 +178,17 @@ export async function hotApply(executor, kysely, oldSchema, newSchema, options =
         throw err("E_STRUCTURAL", `requires a migration: ${p.structural.map((c) => c.field ?? c.change).join(", ")}`)
     if (p.deferred.length)
         throw err("E_NOT_HOT", `requires a rebuild on this dialect: ${p.deferred.map((c) => `${c.field}(${c.change})`).join(", ")}`)
-    let statements = 0
-    for (const entry of p.hot)
-        for (const compiled of entry.statements) {
-            await executor.run(compiled.sql, [...compiled.parameters])
-            statements++
-        }
-    return { applied: p.hot.length, statements }
+
+    const atomic = capabilitiesFor(engineOf(options.dialect ?? "sqlite")).transactionalDDL
+    const compiled = p.hot.flatMap((entry) => entry.statements)
+    const issue = async (conn) => {
+        for (const statement of compiled) await conn.run(statement.sql, [...statement.parameters])
+    }
+
+    if (atomic) await transactionOf(executor)(issue)
+    else await issue(executor)
+
+    return { applied: p.hot.length, statements: compiled.length, atomic }
 }
 
 // ─── STRUCTURAL path ──────────────────────────────────────────────────────────
@@ -246,45 +274,49 @@ export async function applyMigration(executor, kysely, migration, options = {}) 
     )
 
     await executor.run(`DROP TABLE IF EXISTS ${quote(temp)}`)
-    await executor.run("BEGIN")
+
+    // The transaction seam, not literal BEGIN/COMMIT strings through run():
+    // on a POOLED driver those land on arbitrary connections, so the envelope
+    // this function's whole guarantee rests on would not exist (TXN-02). A dry
+    // run still ends in a rollback — it just says so by throwing a private
+    // sentinel that carries the report out, rather than by driving the
+    // transaction's control flow by hand.
     try {
-        const lost = {}
-        for (const column of dropped) {
-            const [row] = await executor.all(`SELECT COUNT(*) AS n FROM ${quote(entity)} WHERE ${quote(column)} IS NOT NULL`)
-            lost[column] = row.n
-        }
+        return await transactionOf(executor)(async (tx) => {
+            const lost = {}
+            for (const column of dropped) {
+                const [row] = await tx.all(`SELECT COUNT(*) AS n FROM ${quote(entity)} WHERE ${quote(column)} IS NOT NULL`)
+                lost[column] = row.n
+            }
 
-        // 1) temp table with the target shape (indexes come after the swap)
-        const [createTemp] = tableDDL(kysely, { ...clone(migration.to), name: temp, indexes: [] }, { dialect })
-        await executor.run(createTemp.compile().sql)
+            // 1) temp table with the target shape (indexes come after the swap)
+            const [createTemp] = tableDDL(kysely, { ...clone(migration.to), name: temp, indexes: [] }, { dialect })
+            await tx.run(createTemp.compile().sql)
 
-        // 2) mapped copy
-        const destList = pairs.map((p) => quote(p.dest)).join(", ")
-        const sourceList = pairs.map((p) => quote(p.source)).join(", ")
-        await executor.run(`INSERT INTO ${quote(temp)} (${destList}) SELECT ${sourceList} FROM ${quote(entity)}`)
-        const [count] = await executor.all(`SELECT COUNT(*) AS n FROM ${quote(temp)}`)
+            // 2) mapped copy
+            const destList = pairs.map((p) => quote(p.dest)).join(", ")
+            const sourceList = pairs.map((p) => quote(p.source)).join(", ")
+            await tx.run(`INSERT INTO ${quote(temp)} (${destList}) SELECT ${sourceList} FROM ${quote(entity)}`)
+            const [count] = await tx.all(`SELECT COUNT(*) AS n FROM ${quote(temp)}`)
 
-        // 3) swap + indexes under their final names
-        await executor.run(`DROP TABLE ${quote(entity)}`)
-        await executor.run(`ALTER TABLE ${quote(temp)} RENAME TO ${quote(entity)}`)
-        const [, ...indexBuilders] = tableDDL(kysely, migration.to, { dialect })
-        for (const builder of indexBuilders) await executor.run(builder.compile().sql)
+            // 3) swap + indexes under their final names
+            await tx.run(`DROP TABLE ${quote(entity)}`)
+            await tx.run(`ALTER TABLE ${quote(temp)} RENAME TO ${quote(entity)}`)
+            const [, ...indexBuilders] = tableDDL(kysely, migration.to, { dialect })
+            for (const builder of indexBuilders) await tx.run(builder.compile().sql)
 
-        const report = { copied: count.n, lost }
-        if (dryRun) {
-            await executor.run("ROLLBACK")
-            return { dryRun: true, report }
-        }
-        await executor.run(`INSERT INTO _nexus_migrations (id, entity, checksum, applied_at) VALUES (?, ?, ?, ?)`, [
-            migration.id,
-            entity,
-            migration.checksum,
-            new Date().toISOString()
-        ])
-        await executor.run("COMMIT")
-        return { dryRun: false, report }
+            const report = { copied: count.n, lost }
+            if (dryRun) throw Object.assign(new Error("E_DRY_RUN"), { [DRY_RUN]: report })
+            await tx.run(`INSERT INTO _nexus_migrations (id, entity, checksum, applied_at) VALUES (?, ?, ?, ?)`, [
+                migration.id,
+                entity,
+                migration.checksum,
+                new Date().toISOString()
+            ])
+            return { dryRun: false, report }
+        })
     } catch (error) {
-        await executor.run("ROLLBACK")
+        if (error?.[DRY_RUN]) return { dryRun: true, report: error[DRY_RUN] }
         throw error
     }
 }

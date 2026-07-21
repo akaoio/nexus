@@ -310,7 +310,7 @@ export async function dev(args, flags, out) {
             }
             const name = req.method === "GET" ? url.searchParams.get("name") : body?.name
             try {
-                const { entityDeletePlan } = await import("../../core/App/lifecycle.js")
+                const { entityDeletePlan, applyEntityDelete } = await import("../../core/App/lifecycle.js")
                 const dbPolicyRows = await plane.list("nexus_policy", {}, nexusCtx("nexus_policy", ["read"]))
                 const viewRows = await plane.list("nexus_view", {}, nexusCtx("nexus_view", ["read"]))
                 let rowCount = 0
@@ -326,20 +326,19 @@ export async function dev(args, flags, out) {
                 if (req.method === "GET") return json(res, 200, { ok: true, data: plan })
                 if (body?.confirm !== name)
                     return json(res, 400, { ok: false, error: { code: "E_CONFIRM", message: "type the entity name to confirm" } })
-                // execute the plan — nothing beyond what it named
-                for (const id of plan.dbPolicies) await plane.remove("nexus_policy", id, nexusCtx("nexus_policy", ["read", "delete"]))
-                for (const id of plan.views) await plane.remove("nexus_view", id, nexusCtx("nexus_view", ["read", "delete"]))
-                for (const drop of plan.linkDrops) {
-                    const file = join(root, drop.file)
-                    const doc = JSON.parse(readFileSync(file, "utf8"))
-                    doc.fields = doc.fields.filter((f) => f.name !== drop.field)
-                    writeFileSync(file, JSON.stringify(doc, null, 4))
-                    try { await plane.executor.run(`ALTER TABLE "${drop.entity}" DROP COLUMN "${drop.field}"`, []) } catch {}
-                }
-                try { await plane.executor.run(`DELETE FROM "_nexus_embeddings" WHERE entity = ?`, [name]) } catch {}
-                await plane.executor.run(`DROP TABLE IF EXISTS "${name}"`, [])
-                const { rmSync } = await import("fs")
-                rmSync(join(root, plan.schemaFile))
+                // Execute the plan — nothing beyond what it named. The cascade
+                // itself lives in core (applyEntityDelete): it is one
+                // transaction, it swallows nothing, and it is clause-covered
+                // (LIFE-TX-*), none of which was true while it lived here as a
+                // route body no test could import. This endpoint's job is
+                // gathering inputs and reporting — which is all its comment
+                // above ever claimed it did.
+                await applyEntityDelete({ executor: plane.executor, root, plan, dialect: plane.dialect })
+                // The policy/view rows went through raw DML inside that
+                // transaction rather than plane.remove(), because a nested
+                // transaction is not a thing (E_NESTED_TX) — so the caches
+                // those after-hooks would have refreshed are rebuilt by the
+                // reload below, which a structural change triggers anyway.
                 await reloadInstance()
                 devBroadcast("reload") // structural change — the client does a full page reload
                 return json(res, 200, { ok: true, data: { deleted: name, plan } })
