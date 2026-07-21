@@ -114,13 +114,30 @@ export async function dev(args, flags, out) {
     // only supplies which root means what.
     const watcher = createWatcher({
         dirs: [join(NEXUS_ROOT, "src", "studio"), join(NEXUS_ROOT, "src", "core"), join(root, "apps")],
-        onChange: (change) => {
+        onChange: async (change) => {
             // NEXUS_ROOT (from fileURLToPath of a directory URL) carries a
             // trailing separator; devMessage's dir comparison is exact, so
             // strip it here rather than fuzz the pure helper's match rule.
             const nexusRoot = NEXUS_ROOT.replace(/[\\/]+$/, "")
-            const msg = devMessage(change, { nexusRoot, appsDir: join(root, "apps") })
-            if (msg) devBroadcast(msg)
+            const appsDir = join(root, "apps")
+            const msg = devMessage(change, { nexusRoot, appsDir })
+            if (!msg) return
+            // An app file that changed on DISK — a model added by hand, a
+            // hooks.js edited in an editor — needs the instance re-read before
+            // the browser is told to reload. Broadcasting alone sent the page
+            // back for the SAME schema list the server still held, so a model
+            // file dropped into apps/ stayed invisible until dev was restarted.
+            // The Studio's own /_studio/model path always called this; the
+            // watcher path never did, so the two disagreed about what "hot
+            // reload" meant depending on who wrote the file (E2E-04).
+            if (change.dir === appsDir) {
+                try {
+                    await reloadInstance()
+                } catch (error) {
+                    console.warn(`hot reload: could not re-read the instance — ${String(error?.message ?? error)}`)
+                }
+            }
+            devBroadcast(msg)
         }
     })
 

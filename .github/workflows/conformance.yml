@@ -85,6 +85,7 @@ jobs:
         run: node script/test-browser.js
 
       - name: End-to-end
+        timeout-minutes: 12
         # A real browser driving a real `nexus dev`. This is the only runner
         # that loads the Studio's actual module graph against a real server —
         # the browser clauses never see a server and the subprocess suites

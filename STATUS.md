@@ -3,9 +3,9 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 729/776 node clauses, 0 red** (`node test.js`)
+**Green: 731/778 node clauses, 0 red** (`node test.js`)
 **Green: 47/47 browser clauses, 0 red** (`npm run test:browser`, real headless Chromium)
-**Green: 3/3 end-to-end clauses, 0 red** (`npm run test:e2e`, real browser driving a real `nexus dev`)
+**Green: 6/6 end-to-end clauses, 0 red** (`npm run test:e2e`, real browser driving a real `nexus dev`)
 
 Three runners, three verdicts, all stated — because until this was checked, only
 the first was. Each sees something the others cannot: the node suite never opens
@@ -127,6 +127,17 @@ the normal outcome. `entityDeletePlan` now names the index (the plan is the dry
 run an operator approves, and it was describing work that could not be
 performed), and `applyEntityDelete` drops it first (LIFE-TX-\*).
 
+**9. `nexus dev` never noticed a model file added by hand.** `assetKind()`
+returned null for `.json` — the format the Studio itself writes — so a schema
+file appearing in `apps/` was the one change the watcher ignored completely.
+The Studio's own create path worked, because it calls `reloadInstance()`
+explicitly; a file dropped in by an editor did not, so what "hot reload" meant
+depended on who wrote the file. Even once the watcher saw it, the server never
+re-read the instance on an app-file change, so the browser was told to reload
+and came back to the SAME schema list. Both halves are fixed, pinned by
+HMR-JSON01/02 under Node and by E2E-04 end to end; E2E-04's ability to fail was
+verified by reverting the `.json` case and watching it go red.
+
 **8. The rate limiter throttled the Studio into a page that could not boot.**
 Every path that was not `/_auth/` took the `api` tier, including the framework
 source in dev (`/_nexus/*`) and the built assets in production (`/studio/*`). A
@@ -185,7 +196,7 @@ not make the report honest, and a backup that overstates itself is discovered at
 the worst possible moment. The count is now what the file actually holds, and
 anything left out is NAMED (SITE-COUNT-01).
 
-**What the eight share.** Every one is a guarantee stated in a comment, a header,
+**What the nine share.** Every one is a guarantee stated in a comment, a header,
 or a clause — and exercised only on the engine, the path, the route, the runner,
 or the moment where it happened to hold. Three levels are worth telling apart,
 because each needed a different instrument to see: a claim never checked
@@ -499,9 +510,15 @@ places nobody thought to check are where these live.
   the Studio booting and rendering nav from real schemas (E2E-01), a route's
   subscription actually closing on navigation (E2E-02 — the gap the
   route-lifecycle work explicitly declined to claim), and the accent surviving a
-  reload (E2E-03). E2E-02's ability to FAIL was verified by disabling the
-  teardown and watching it go red. STILL BY HAND: login (needs auth configured
-  plus in-browser keypair derivation), entity delete cascade, and hot reload.
+  reload (E2E-03), the dev loop — a schema saved to disk reaching the running
+  page (E2E-04) — and cascade delete refusing a wrong typed confirmation before
+  really removing the entity (E2E-05/05b). E2E-02's and E2E-04's ability to FAIL
+  were each verified by breaking the thing they pin and watching them go red.
+  STILL BY HAND: **login**. Driving it needs stubbing the native `prompt()` the
+  "add me as admin" flow uses and then a passphrase-derived keypair handshake;
+  the stub did not take effect in headless during this pass and the flow was
+  left out rather than landed flaky — an E2E clause that passes for the wrong
+  reason is worse than an honest gap.
 - **LF/CRLF warnings** on Windows commits are noisy (no .gitattributes yet).
 - **Issue #8: the service landed; the APPLY path is not exercised end to end
   here.** `servicePlan()` is pure and fully clause-covered, `systemd-analyze

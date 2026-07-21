@@ -80,6 +80,7 @@ import "./test/kernel/fs.test.js"
 import "./test/kernel/sql.test.js"
 import "./test/kernel/storage.test.js"
 import "./test/kernel/hmr.test.js"
+import "./test/kernel/hmr-watch.test.js"
 
 // CLI — spawned as a real process (clauses CLI-*)
 import "./test/cli/cli.test.js"

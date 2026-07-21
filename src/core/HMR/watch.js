@@ -22,6 +22,11 @@ export function assetKind(path) {
     if (p.endsWith(".css.js") || p.endsWith(".css")) return "css"
     if (p.endsWith("/template.js") || p === "template.js") return "template"
     if (p.endsWith(".js") || p.endsWith(".yaml")) return "js" // yaml (i18n) rides the js path → full swap/reload downstream
+    // Model schemas are .json — the format the Studio itself writes — and this
+    // returned null for them, so a model file appearing in apps/ was the one
+    // change the watcher ignored completely. Not "js": JSON is data, not a
+    // module to hot-swap, so it takes the reload path downstream.
+    if (p.endsWith(".json")) return "data"
     return null
 }
 
@@ -62,6 +67,9 @@ export function createWatcher({ dirs = [], onChange, debounceMs = 80 } = {}) {
 export function devMessage({ dir, path, asset, timestamp }, { nexusRoot, appsDir }) {
     const p = String(dir).replaceAll("\\", "/")
     const nr = String(nexusRoot).replaceAll("\\", "/")
+    // Data is not swappable — a changed .json under the framework dirs means a
+    // full reload, not a module hot-swap.
+    if (asset === "data" && (p === nr + "/src/studio" || p === nr + "/src/core")) return "reload"
     if (p === nr + "/src/studio") return { type: "hmr", path: "/_nexus/src/studio/" + path, asset, timestamp }
     if (p === nr + "/src/core") return { type: "hmr", path: "/_nexus/src/core/" + path, asset, timestamp }
     if (p === String(appsDir).replaceAll("\\", "/")) return "reload"

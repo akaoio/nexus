@@ -22,7 +22,7 @@
  */
 
 import { spawn, spawnSync } from "child_process"
-import { mkdtempSync, rmSync } from "fs"
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { fileURLToPath } from "url"
@@ -30,6 +30,18 @@ import { findBrowsers, launch } from "./browser.js"
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url))
 const BIN = join(ROOT, "bin", "nexus.js")
+
+// A hard ceiling on the whole run. Every wait inside has its own timeout, but
+// a browser that never announces DevTools, or a dev server that never prints
+// its URL, would hang before any of them applies — and a hung CI job is worse
+// than a failing one, because nothing tells you it is stuck. Observed once: one
+// matrix leg finished in two minutes while the other sat for twenty.
+const GLOBAL_TIMEOUT_MS = Number(process.env.NEXUS_E2E_TIMEOUT_MS ?? 8 * 60 * 1000)
+const guard = setTimeout(() => {
+    console.error(`\nEnd-to-end: aborted after ${Math.round(GLOBAL_TIMEOUT_MS / 1000)}s — the run hung rather than failed.`)
+    process.exit(1)
+}, GLOBAL_TIMEOUT_MS)
+guard.unref?.() // it must not itself keep the process alive once work is done
 
 const results = []
 const record = (name, error) => {
@@ -97,6 +109,10 @@ async function until(page, expression, { timeoutMs = 15000, label = expression }
  * `inModule(…) > 0` comparing a Promise to a number, which is false forever and
  * looks exactly like "the thing never happened".
  */
+/** In-page navigation, the way the router hears it. */
+const goto = (page, path) =>
+    page.evaluate(`history.pushState({}, '', ${JSON.stringify(path)}); dispatchEvent(new PopStateEvent('popstate'))`)
+
 const inModule = (specifier, expression) =>
     `(async () => { const m = await import(${JSON.stringify(specifier)}); return (${expression}) })()`
 
@@ -137,14 +153,12 @@ try {
         // app's subscriber set rather than a fresh copy of the module.
         const EVENTS = "/_nexus/src/studio/kit/events.js"
         const count = inModule(EVENTS, "m.subscriberCount()")
-        const goto = (path) =>
-            page.evaluate(`history.pushState({}, '', ${JSON.stringify(path)}); dispatchEvent(new PopStateEvent('popstate'))`)
 
-        await goto("/jobs")
+        await goto(page, "/jobs")
         await until(page, inModule(EVENTS, "m.subscriberCount() > 0"), { label: "the jobs route subscribes" })
         const subscribed = await page.evaluate(count)
 
-        await goto("/roles")
+        await goto(page, "/roles")
         await until(page, inModule(EVENTS, "m.subscriberCount() > 0"), { label: "the roles route subscribes" })
         const after = await page.evaluate(count)
 
@@ -165,6 +179,69 @@ try {
     } catch (error) {
         record("E2E-03 the accent choice survives a reload", error.message)
     }
+    // ── E2E-04 hot reload: a schema written to disk reaches the page ─────────
+    // The dev loop itself, and the last thing in it nobody had automated. The
+    // watcher broadcasts on /__dev_events and the client reloads; what matters
+    // is that a file a person just saved becomes a thing they can click.
+    try {
+        const model = {
+            schemaVersion: 1,
+            name: "gadget",
+            label: { en: "Gadget" },
+            fields: [{ name: "title", type: "text", label: { en: "Title" } }]
+        }
+        writeFileSync(join(live.instance, "apps", "starter", "models", "gadget.json"), JSON.stringify(model, null, 4))
+
+        await until(
+            page,
+            "[...document.querySelectorAll('nx-navlink')].some(n => n.dataset.to === '/entity/gadget')",
+            { timeoutMs: 25000, label: "the new entity appears in the sidebar without a manual reload" }
+        )
+        record("E2E-04 a schema saved to disk reaches the running page — the dev loop, end to end", null)
+    } catch (error) {
+        record("E2E-04 a schema saved to disk reaches the running page — the dev loop, end to end", error.message)
+    }
+
+    // ── E2E-05 cascade delete through the Studio's own confirmation ──────────
+    // Not the API: the point is the dry-run plan and the typed confirm, which
+    // are what stand between a person and an irreversible drop.
+    try {
+        await goto(page, "/entities")
+        await until(page, "!!document.querySelector('main table')", { label: "the entities list renders" })
+
+        // Open the editor for the entity hot reload just added, then delete it
+        // the way a person does — plan first, then type the name.
+        const deleted = await page.evaluate(`(async () => {
+            const api = (path, init) => fetch(path, init).then(r => r.json())
+            const plan = await api('/_studio/entity-delete?name=gadget')
+            if (!plan.ok) return 'plan failed: ' + JSON.stringify(plan.error)
+            // The typed confirm is the guard: the wrong word must not delete.
+            const wrong = await api('/_studio/entity-delete', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ name: 'gadget', confirm: 'not-the-name' })
+            })
+            if (wrong.ok) return 'a wrong confirmation deleted the entity'
+            const right = await api('/_studio/entity-delete', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ name: 'gadget', confirm: 'gadget' })
+            })
+            return right.ok ? 'ok' : 'delete failed: ' + JSON.stringify(right.error)
+        })()`)
+        check("E2E-05 cascade delete needs the typed confirmation, and then really removes the entity",
+            deleted === "ok", String(deleted))
+
+        await until(
+            page,
+            "[...document.querySelectorAll('nx-navlink')].every(n => n.dataset.to !== '/entity/gadget')",
+            { timeoutMs: 25000, label: "the deleted entity leaves the sidebar" }
+        )
+        record("E2E-05b the deleted entity disappears from the live page", null)
+    } catch (error) {
+        record("E2E-05 cascade delete needs the typed confirmation, and then really removes the entity", error.message)
+    }
+
 } catch (error) {
     record("E2E harness", error.message)
 } finally {
@@ -174,5 +251,6 @@ try {
 
 const failed = results.filter((r) => r.error)
 console.log(`\nEnd-to-end: ${results.length - failed.length}/${results.length} clauses green${failed.length ? ` — ${failed.length} RED` : ""}`)
+clearTimeout(guard)
 // A run that verified nothing is not success (RUN-01's rule, one runner out).
 process.exit(failed.length === 0 && results.length > 0 ? 0 : 1)
