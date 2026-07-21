@@ -1,14 +1,19 @@
 /**
  * The realtime event hub (design 2026-07-20 §1): SSE subscribers fed from
  * the entity after-hooks. THE RULE: permission never leaves the plane — an
- * event reaches a subscriber only if that subscriber can re-read the row
- * through the Data Plane (removes fall back to the doc-level resolve; the
- * row is gone). No row data ever rides the stream. Failures are contained
- * twice over: a hook failure never fails the write (WH-03 doctrine), and
- * one broken subscriber never starves the rest.
+ * event reaches a subscriber only if that subscriber could see the row.
+ * For create/update that means re-reading it through the Data Plane; for
+ * remove the row is gone, so the plane hands over the pre-image it captured
+ * and the row rule is evaluated against that (I11) — it used to settle for a
+ * document-level answer, which leaked every deleted id past every row-level
+ * restriction. No row data ever rides the stream: the pre-image DECIDES, it
+ * is never SENT. Failures are contained twice over: a hook failure never
+ * fails the write (WH-03 doctrine), and one broken subscriber never starves
+ * the rest.
  */
 
 import Permission from "../Permission.js"
+import * as AST from "../AST.js"
 
 const DEFAULT_EXCLUDED = ["nexus_job"] // lifecycle churn — opt in via ?entities=
 
@@ -36,13 +41,27 @@ export function createEventHub({ plane, heartbeatMs = 30000 } = {}) {
      * `res.write` and reap the subscriber; a policy-evaluation failure here
      * must never reach that catch and be mistaken for a dead connection.
      */
-    async function visible(sub, { entity, event, id }) {
+    async function visible(sub, { entity, event, id, row }) {
         try {
             if (sub.entities ? !sub.entities.includes(entity) : DEFAULT_EXCLUDED.includes(entity)) return false
-            if (event === "remove")
-                return Permission.resolve(sub.ctx.policies ?? [], {
+            if (event === "remove") {
+                // The row is gone, so it cannot be re-read — but `remove` now
+                // arrives with the pre-image the Data Plane captured, and the
+                // row rule is evaluated against THAT (I11). Stopping at
+                // `.allowed`, as this used to, discards the `rule`/`ifOwner`
+                // that survive only in `filter`; `.allowed` is true for anyone
+                // holding any permlevel-0 read policy on the entity, so every
+                // deleted row's id crossed every row-level restriction — a
+                // cross-tenant identifier feed on a multi-tenant instance.
+                //
+                // No pre-image means no way to prove visibility, and unable to
+                // prove is not permission to send (EVT-ROWGATE-04).
+                if (!row) return false
+                const { allowed, filter } = Permission.resolve(sub.ctx.policies ?? [], {
                     entity, action: "read", user: sub.ctx.user, roles: sub.ctx.roles ?? [], now: plane.now()
-                }).allowed
+                })
+                return allowed && (filter === null || AST.predicate(filter)(row))
+            }
             return (await plane.get(entity, id, sub.ctx)) != null
         } catch {
             return false // denied, unreadable, or a policy-evaluation error — the subscriber learns nothing, the connection survives
@@ -71,13 +90,14 @@ export function createEventHub({ plane, heartbeatMs = 30000 } = {}) {
             return off
         },
 
-        async emit({ entity, event, id }) {
+        async emit({ entity, event, id, row = null }) {
             const ts = Date.now()
             const toDelete = []
             for (const sub of [...subscribers]) {
                 // visible() never throws — a policy-evaluation failure denies the
                 // event, it never lands here and is never mistaken for a broken pipe.
-                if (!(await visible(sub, { entity, event, id }))) continue
+                // `row` is the removal pre-image: it DECIDES, and is never sent.
+                if (!(await visible(sub, { entity, event, id, row }))) continue
                 try {
                     sub.res.write(`data:${JSON.stringify({ entity, event, id, ts })}\n\n`)
                 } catch (err) {
@@ -98,8 +118,12 @@ export function createEventHub({ plane, heartbeatMs = 30000 } = {}) {
         attach(extensions, schemas = []) {
             const fire = (entity, event) => (payload) => {
                 const id = payload.row?.id ?? payload.id
+                // For a removal this is the captured pre-image, carried only so
+                // visible() can evaluate the row rule against it (I11). It
+                // never reaches the wire — the frame stays {entity,event,id,ts}.
+                const row = payload.row ?? null
                 try {
-                    this.emit({ entity, event, id }).catch(() => {
+                    this.emit({ entity, event, id, row }).catch(() => {
                         // fire-and-forget: an async rejection never fails the write
                     })
                 } catch {

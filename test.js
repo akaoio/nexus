@@ -94,6 +94,7 @@ import "./test/http/api.test.js"
 
 // Realtime event hub — SSE subscribers, permission per subscriber (clauses EVT-*)
 import "./test/http/events-hub.test.js"
+import "./test/http/event-rowgate.test.js"
 
 // Realtime on the wire — GET /api/v1/_events mounted, live clauses (EVT-01/02/03/05)
 import "./test/http/events-live.test.js"

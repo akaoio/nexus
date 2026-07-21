@@ -385,14 +385,26 @@ export class DataPlane {
         return Object.fromEntries(Object.entries(post).filter(([k]) => readable.includes(k)))
     }
 
-    /** Delete a row — same not-found/forbidden opacity as update. */
+    /**
+     * Delete a row — same not-found/forbidden opacity as update.
+     *
+     * The pre-image is read in FULL, not just its id (I11). Once the row is
+     * gone there is nothing left to evaluate a row-level rule against, so a
+     * consumer of `after:remove` had no way to ask "could this subscriber have
+     * read that row?" and fell back to a document-level answer — which is true
+     * for anyone holding any read policy on the entity, and so leaked the id of
+     * every deleted row past every `rule`/`ifOwner`. Capturing the pre-image
+     * here is what lets the event hub answer the question properly; the row
+     * itself never leaves the server (EVT-ROWGATE-03).
+     */
     async remove(entity, id, ctx = {}) {
-        const { filter } = this.#gate(entity, "delete", ctx)
+        const { schema, filter } = this.#gate(entity, "delete", ctx)
         const where = AST.inject(idDoc(id), filter ?? matchAll)
-        const query = applyWhere(this.kysely.selectFrom(entity).select(["id"]), where, { dialect: this.dialect })
+        const query = applyWhere(this.kysely.selectFrom(entity).selectAll(), where, { dialect: this.dialect })
         const rows = await this.#all(query.compile())
         if (!rows.length) throw err("E_NOT_FOUND", `${entity}/${id}`)
-        if (this.hooks) await this.hooks.run("before:remove", entity, { id }, ctx)
+        const row = this.#normalize(schema, rows[0])
+        if (this.hooks) await this.hooks.run("before:remove", entity, { id, row }, ctx)
         // Infrastructure DDL before the transaction opens, for the same reason
         // as on the create path: it is idempotent, it is not the caller's
         // data, and creating it inside a transaction that later rolls back
@@ -410,7 +422,7 @@ export class DataPlane {
                 throw err("E_NOT_FOUND", `${entity}/${id}`)
             await this.#dropEmbedding(entity, id, tx)
         })
-        await this.#after("after:remove", entity, { id }, ctx)
+        await this.#after("after:remove", entity, { id, row }, ctx)
         return true
     }
 
