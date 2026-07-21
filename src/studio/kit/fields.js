@@ -14,13 +14,61 @@ import { resolveInterface } from "./registry.js"
 const label = (field, locale) =>
     (field.label && (field.label[locale] || field.label.en || Object.values(field.label)[0])) || field.name
 
-/** One input element, classed and wired. */
-function control(tag, props, onchange) {
+/**
+ * One input element, classed and wired — the kit's control primitive.
+ *
+ * EXPORTED because it was private, and four files each rebuilt it: settings,
+ * entities, entity/[entity] and this module. "One kit for DOM" (§7.1) only
+ * holds if the kit hands the primitive out; a private one is a rule people
+ * route around by writing their own (NXFP-01/02).
+ */
+export function control(tag, props, onchange) {
     const node = document.createElement(tag)
     node.className = "nx-input"
     Object.assign(node, props)
     if (onchange) node.addEventListener("change", onchange)
     return node
+}
+
+/**
+ * The bare `.nx-field` wrapper. Separate from labelledField because a boolean's
+ * interface carries its own label (the checkbox's text), so it needs the
+ * wrapper WITHOUT a second label above it — and that exception is the reason
+ * buildForm used to rebuild the class inline, which is how the fourth copy of
+ * this markup came to exist.
+ */
+export function fieldWrap(...children) {
+    const wrap = document.createElement("div")
+    wrap.className = "nx-field"
+    wrap.append(...children.filter(Boolean))
+    return wrap
+}
+
+/**
+ * A labelled field: the `.nx-field` wrapper around a `.nx-label` and a control.
+ *
+ * ONE definition, because there were four — this module built it inside
+ * buildForm while three routes each built their own, so changing what a
+ * labelled field looks like meant finding every copy and hoping. The wrapper is
+ * returned rather than styled here; a caller that wants a width sets it on what
+ * it gets back, instead of this growing an options bag for every page.
+ *
+ * @param {string|Node} text - the label, as text or an element (i18n)
+ * @param {Node} controlEl - the input this labels
+ * @param {{required?: boolean}} [options]
+ */
+export function labelledField(text, controlEl, { required = false } = {}) {
+    const wrap = fieldWrap()
+    const label = document.createElement("label")
+    label.className = "nx-label"
+    // A Node as well as a string: the entities editor labels its name field
+    // with an <nx-context> i18n element, and forcing that through textContent
+    // would have meant it keeping its own copy of the wrapper instead.
+    if (text instanceof Node) label.append(text)
+    else label.textContent = String(text ?? "")
+    if (required) label.append(" *")
+    wrap.append(label, controlEl)
+    return wrap
 }
 
 // ── INTERFACES: type → (field, value, onChange) → input element ────────────────
@@ -147,18 +195,17 @@ export function buildForm(schema, { data = {}, onSubmit, submitLabel = "Save", l
     form.addEventListener("submit", (e) => { e.preventDefault(); onSubmit?.(values) })
     form.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); onSubmit?.(values) } })
     for (const field of editableFields(schema).filter((f) => !only || only.includes(f.name))) {
-        const wrap = document.createElement("div")
-        wrap.className = "nx-field"
-        wrap.style.gridColumn = "span " + (field.span ?? 3)
+        // A boolean's interface carries its own label (the checkbox's text), so
+        // it gets the wrapper without a second one above it.
+        const editor = interfaceFor(field, overrides)(field, values[field.name], (val) => (values[field.name] = val))
+        let wrap
         if (field.type === "boolean") {
             if (values[field.name] === undefined) values[field.name] = field.default ?? false
+            wrap = fieldWrap(editor)
         } else {
-            const l = document.createElement("label")
-            l.className = "nx-label"
-            l.textContent = label(field, locale) + (field.required ? " *" : "")
-            wrap.append(l)
+            wrap = labelledField(label(field, locale), editor, { required: field.required === true })
         }
-        wrap.append(interfaceFor(field, overrides)(field, values[field.name], (val) => (values[field.name] = val)))
+        wrap.style.gridColumn = "span " + (field.span ?? 3)
         form.append(wrap)
     }
     const actions = document.createElement("div")

@@ -3,7 +3,7 @@
  *  behind a dry-run plan + typed confirmation. Views are declared here
  *  (schema `views:` — opt-in, never automatic). */
 
-import { mountTemplate, button, text, toast } from "../../kit/index.js"
+import { mountTemplate, button, text, toast , control, labelledField } from "../../kit/index.js"
 import { createSelection } from "../../kit/selection.js"
 import { VIEWS } from "../../views/index.js"
 import * as list from "../../views/list.js"
@@ -93,11 +93,8 @@ export function render(ctx) {
         row.className = "nx-toolbar"
         const preview = document.createElement("nx-icon")
         preview.setAttribute("name", schema?.icon || "database")
-        const input = document.createElement("input")
-        input.className = "nx-input"
+        const input = control("input", { placeholder: "bootstrap icon name, e.g. cart4", value: schema?.icon ?? "" })
         input.style.maxWidth = "16rem"
-        input.placeholder = "bootstrap icon name, e.g. cart4"
-        input.value = schema?.icon ?? ""
         input.setAttribute("list", "nx-icon-names")
         const list = document.createElement("datalist")
         list.id = "nx-icon-names"
@@ -147,9 +144,7 @@ export function render(ctx) {
         prompt.className = "nx-muted"
         prompt.style.margin = "0"
         prompt.textContent = 'This cannot be undone. Type "' + name + '" to confirm.'
-        const input = document.createElement("input")
-        input.className = "nx-input"
-        input.placeholder = name
+        const input = control("input", { placeholder: name })
         const row = document.createElement("div")
         row.className = "nx-actions"
         const cancel = button({ onclick: () => modal.close() }, [text("cancel")])
@@ -193,15 +188,8 @@ export function render(ctx) {
         c.$crumb.textContent = isNew ? "new" : editing
         const back = button({ variant: "icon", iconName: "x-lg", title: "Back to the directory", onclick: () => { editing = null; paint() } })
         if (isNew) {
-            const name = document.createElement("input")
-            name.className = "nx-input"
-            name.placeholder = "Entity name (e.g. customer)"
-            const fieldWrap = document.createElement("div")
-            fieldWrap.className = "nx-field"
-            const label = document.createElement("label")
-            label.className = "nx-label"
-            label.append(text("name"))
-            fieldWrap.append(label, name)
+            const name = control("input", { placeholder: "Entity name (e.g. customer)" })
+            const fieldWrap = labelledField(text("name"), name)
             const builder = document.createElement("nx-form-builder")
             const create = button({ variant: "primary", onclick: () => save({ ...(builder.value || { fields: [] }), name: name.value.trim() }) }, [text("createCollection")])
             c.$body.replaceChildren(card([fieldWrap, builder, actions(back, create)]))

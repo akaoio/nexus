@@ -5,7 +5,7 @@
  * registry (list, kanban, …). Structure lives in template.js.
  */
 
-import { mountTemplate, button, icon, text, toast, confirmDialog, subscribe, onUnmount } from "../../../kit/index.js"
+import { mountTemplate, button, icon, text, toast, confirmDialog, subscribe, onUnmount , control, fieldWrap, labelledField } from "../../../kit/index.js"
 import { buildForm, editableFields, interfaces } from "../../../kit/fields.js"
 import { hexSVG } from "../../../css/elements/bits.css.js"
 import { activeFilter } from "../../../components/query-builder/index.js"
@@ -67,16 +67,14 @@ export function render(ctx) {
     // bulk edit: pick ONE field, set ONE value, applied to every selected row
     function bulkEdit() {
         const fields = editableFields(s)
-        const picker = document.createElement("select")
-        picker.className = "nx-input"
+        const picker = control("select")
         for (const f of fields) {
             const option = document.createElement("option")
             option.value = f.name
             option.textContent = f.label?.en ?? f.name
             picker.append(option)
         }
-        const slot = document.createElement("div")
-        slot.className = "nx-field"
+        const slot = fieldWrap()
         let value
         const mountValue = () => {
             const f = fields.find((x) => x.name === picker.value)
@@ -85,12 +83,7 @@ export function render(ctx) {
         }
         picker.addEventListener("change", mountValue)
         mountValue()
-        const fieldWrap = document.createElement("div")
-        fieldWrap.className = "nx-field"
-        const fieldLabel = document.createElement("label")
-        fieldLabel.className = "nx-label"
-        fieldLabel.textContent = "Field"
-        fieldWrap.append(fieldLabel, picker)
+        const pickerField = labelledField("Field", picker)
         const actions = document.createElement("div")
         actions.className = "nx-actions"
         actions.append(button({
@@ -108,7 +101,7 @@ export function render(ctx) {
             }
         }, [text("save")]))
         const body = document.createElement("div")
-        body.append(fieldWrap, slot, actions)
+        body.append(pickerField, slot, actions)
         ctx.drawer(ctx.i18n.resolve("edit") + " " + selection.size + " · " + s.name, body)
     }
 
