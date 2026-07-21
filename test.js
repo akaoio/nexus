@@ -93,6 +93,9 @@ import "./test/cli/studio-build.test.js"
 // HTTP API — auto-generated from schemas, e2e over real HTTP (clauses API-*)
 import "./test/http/api.test.js"
 
+// HTTP — request rate limiting (clauses RATE-*, issue #9 chunk 3)
+import "./test/http/ratelimit.test.js"
+
 // Realtime event hub — SSE subscribers, permission per subscriber (clauses EVT-*)
 import "./test/http/events-hub.test.js"
 import "./test/http/event-rowgate.test.js"

@@ -20,8 +20,8 @@ the time. Three chunks have landed since:
 
 What remains of #9 is one coherent chunk of **resource bounds** (rate limiting,
 connection/subscriber caps, backup streaming, SSE fan-out parallelism, `fire()`'s
-full scan per write, `search()`'s inline re-embed cap, `dev.js`'s oversize-body
-hang) and the **in-process HTTP coverage** clauses. Both are listed under
+full scan per write, `search()`'s inline re-embed cap) and the **in-process HTTP
+coverage** clauses. Both are listed under
 Unfinished, not silently dropped.
 
 **Two findings in this work were NOT in the audit**, and both are recorded
@@ -105,7 +105,7 @@ one engine or the one path where it happens to hold.
   the durability chunk (see its row above), along with TOCTOU and
   WAL/`busy_timeout`. The remaining #9 items in this section — backup
   streaming, rate limiting, SSE fan-out cost, `fire()`'s full scan,
-  `search()`'s inline re-embed cap, `dev.js`'s oversize-body hang — are one
+  `search()`'s inline re-embed cap — are one
   coherent **resource-bounds** chunk, deliberately deferred rather than mixed
   into the atomicity work. None is a privilege-escalation or auth-bypass path.
 - **A behaviour change, declared (N3): an `after:` hook that throws no longer
