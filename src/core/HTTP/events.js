@@ -17,7 +17,20 @@ import * as AST from "../AST.js"
 
 const DEFAULT_EXCLUDED = ["nexus_job"] // lifecycle churn — opt in via ?entities=
 
-export function createEventHub({ plane, heartbeatMs = 30000 } = {}) {
+/**
+ * The authorization inputs `visible()` actually depends on. Two subscribers
+ * with the same fingerprint MUST get the same answer for the same event, so
+ * one query can serve both (EVT-FANOUT-01).
+ *
+ * `user` is in here for a reason worth stating: `$CURRENT_USER` and `ifOwner`
+ * make an identical policy set mean different things for different people, so
+ * a fingerprint over policies alone would let one tenant's row be announced to
+ * another (EVT-FANOUT-02).
+ */
+const authFingerprint = (ctx = {}) =>
+    JSON.stringify([ctx.user ?? null, ctx.roles ?? [], ctx.policies ?? [], ctx.shares ?? []])
+
+export function createEventHub({ plane, heartbeatMs = 30000, maxSubscribers = 1000 } = {}) {
     const subscribers = new Set()
 
     const reap = (sub) => {
@@ -69,7 +82,15 @@ export function createEventHub({ plane, heartbeatMs = 30000 } = {}) {
     }
 
     return {
+        /**
+         * @returns {Function|null} an unsubscribe fn, or null when the hub is
+         *   at `maxSubscribers`. An open SSE connection is a held socket plus a
+         *   share of every write's cost; unbounded is not a position. The
+         *   caller answers 503 — refusing a new connection must never disturb
+         *   the ones already established (EVT-CAP-01).
+         */
         subscribe({ res, ctx, entities = null }) {
+            if (subscribers.size >= maxSubscribers) return null
             try {
                 res.writeHead?.(200, {
                     "content-type": "text/event-stream",
@@ -93,11 +114,24 @@ export function createEventHub({ plane, heartbeatMs = 30000 } = {}) {
         async emit({ entity, event, id, row = null }) {
             const ts = Date.now()
             const toDelete = []
+            // One answer per distinct authorization context, not per subscriber
+            // (EVT-FANOUT-01). visible() is a pure function of the event plus
+            // these inputs, and this event is fixed for the whole loop — so a
+            // thousand subscribers across five contexts cost five reads, not a
+            // thousand. Parallelising instead would merely turn a thousand
+            // serial queries into a thousand concurrent ones.
+            //
+            // The memo is created HERE and discarded when this call returns:
+            // scoped to one emit, so there is no staleness window and nothing
+            // to invalidate (EVT-FANOUT-03).
+            const decided = new Map()
             for (const sub of [...subscribers]) {
                 // visible() never throws — a policy-evaluation failure denies the
                 // event, it never lands here and is never mistaken for a broken pipe.
                 // `row` is the removal pre-image: it DECIDES, and is never sent.
-                if (!(await visible(sub, { entity, event, id, row }))) continue
+                const key = `${sub.entities ? sub.entities.join(",") : "*"}\u0000${authFingerprint(sub.ctx)}`
+                if (!decided.has(key)) decided.set(key, await visible(sub, { entity, event, id, row }))
+                if (!decided.get(key)) continue
                 try {
                     sub.res.write(`data:${JSON.stringify({ entity, event, id, ts })}\n\n`)
                 } catch (err) {
