@@ -74,6 +74,7 @@ import "./test/kernel/events.test.js"
 import "./test/kernel/states.test.js"
 import "./test/kernel/router.test.js"
 import "./test/kernel/threads.test.js"
+import "./test/core/thread-cancel.test.js"
 import "./test/kernel/ui.test.js"
 import "./test/kernel/fs.test.js"
 import "./test/kernel/sql.test.js"
@@ -188,6 +189,7 @@ import "./test/app/jobs.test.js"
 
 // App — job thread + plane pseudo-thread RPC, real worker (clauses THR-*)
 import "./test/app/jobthread.test.js"
+import "./test/app/job-timeout.test.js"
 
 // Studio — nx-schema-designer (clauses NXS-*)
 import "./test/studio/schema-designer.test.js"
