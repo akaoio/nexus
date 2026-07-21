@@ -35,6 +35,7 @@ import * as Permission from "./Permission.js"
 import * as AST from "./AST.js"
 import { createCompiler } from "./Data/kysely.js"
 import { applyWhere } from "./Data/compile.js"
+import { transactionOf } from "./Data/transaction.js"
 import { ulid } from "./Data/ulid.js"
 import { serializeRow, cosine, textScore, rrf } from "./Semantic.js"
 import { translate, ruleProvider } from "./NL.js"
@@ -60,9 +61,19 @@ export class DataPlane {
     #embeddingsReady = false
     #vecReady = new Set()
 
-    constructor({ executor, schemas = [], dialect = "sqlite", now, hooks = null, embedder = null } = {}) {
+    constructor({ executor, schemas = [], dialect = "sqlite", now, hooks = null, embedder = null, onHookError } = {}) {
         if (!executor) throw err("E_EXECUTOR", "an executor { run, all } is required")
         this.executor = executor
+        // One transaction per write (I7): the row and its derived state commit
+        // together or not at all. transactionOf keeps executors that predate
+        // the contract working — see Data/transaction.js for what that costs.
+        this.tx = transactionOf(executor)
+        // Where a CONTAINED after-hook failure goes. An after-hook runs once
+        // the write is durable, so letting it fail the call would tell the
+        // caller to retry a write that already happened — but silence would be
+        // worse. Loud in the operator's log, invisible to the caller.
+        this.onHookError = onHookError ?? (({ entity, event, error }) =>
+            console.error(`[nexus] ${event} hook failed on ${entity}: ${error?.message ?? error}`))
         this.dialect = dialect
         this.family = dialect === "turso" ? "sqlite" : dialect
         this.kysely = createCompiler(dialect)
@@ -197,12 +208,36 @@ export class DataPlane {
         return out
     }
 
-    #run(compiled) {
-        return this.executor.run(compiled.sql, [...compiled.parameters].map((v) => this.#toBinding(v)))
+    // `conn` is the transaction's connection when inside one, the executor
+    // otherwise — the two speak the identical { run, all } contract, so the
+    // query-building code above never has to know which it is holding.
+    #run(compiled, conn = this.executor) {
+        return conn.run(compiled.sql, [...compiled.parameters].map((v) => this.#toBinding(v)))
     }
 
-    #all(compiled) {
-        return this.executor.all(compiled.sql, [...compiled.parameters].map((v) => this.#toBinding(v)))
+    #all(compiled, conn = this.executor) {
+        return conn.all(compiled.sql, [...compiled.parameters].map((v) => this.#toBinding(v)))
+    }
+
+    /**
+     * Run an after-hook without letting it fail the write (I7).
+     *
+     * By the time this runs the row is durably committed, so a propagated
+     * throw would tell the caller its write failed when it did not — and the
+     * client's correct response to a failed write is to retry it, producing a
+     * duplicate. The failure is CONTAINED, never swallowed: it goes to
+     * onHookError with the entity and the event.
+     *
+     * An app that genuinely needs to veto has `before:` — that is what it is
+     * for, and the migration is one word.
+     */
+    async #after(event, entity, payload, ctx) {
+        if (!this.hooks) return
+        try {
+            await this.hooks.run(event, entity, payload, ctx)
+        } catch (error) {
+            this.onHookError({ entity, event, error, ctx })
+        }
     }
 
     // ─── CRUD ─────────────────────────────────────────────────────────────────
@@ -229,10 +264,20 @@ export class DataPlane {
         // Post-image must sit inside the caller's own permission scope
         if (filter !== null && !AST.predicate(filter)(row)) throw err("E_FORBIDDEN_ROW", "row falls outside your permission rule")
 
+        // Derived state first, outside the write (DPL-ATOMIC-01/05): an
+        // embedding that cannot be computed must leave no row behind, and
+        // model inference must not hold a write lock.
+        const embedding = await this.#deriveEmbedding(entity, row) // needs the FULL row
+
         const values = Object.fromEntries(Object.entries(row).map(([k, v]) => [k, this.#toBinding(v)]))
-        await this.#run(this.kysely.insertInto(entity).values(values).compile())
-        await this.#maintainEmbedding(entity, row) // embedding needs the FULL row
-        if (this.hooks) await this.hooks.run("after:create", entity, { row }, ctx) // hooks see the FULL row too
+        await this.tx(async (tx) => {
+            await this.#run(this.kysely.insertInto(entity).values(values).compile(), tx)
+            if (embedding) await this.#storeEmbedding(entity, row.id, embedding, tx)
+        })
+        // Past this line the write is DURABLE. after: hooks reach the world —
+        // realtime, webhooks, caches — and their failures are contained, never
+        // reported to the caller as a failed write (DPL-ATOMIC-02/03).
+        await this.#after("after:create", entity, { row }, ctx) // hooks see the FULL row
         // SECURITY (C2/DPL-ASYMMETRIC): the reply is cut to what the actor may
         // READ, not what it was allowed to write — the full `row` above is
         // for embedding/hooks only, never the reply. A write-only grant with
@@ -308,16 +353,30 @@ export class DataPlane {
         // pre-image read used, not `id` alone. Between the check and the use a
         // concurrent writer can move the row out of the caller's permission
         // scope; keyed on id alone, the write would land on it regardless.
-        await this.#run(applyWhere(this.kysely.updateTable(entity).set(set), where, { dialect: this.dialect }).compile())
-        // …then confirm it actually matched. run() is deliberately void in the
-        // executor contract — it reports no row count — so the honest way to
-        // tell "wrote it" from "matched nothing" is to look. One extra read per
-        // write is the price of not guessing, and E_NOT_FOUND keeps the same
-        // opacity a genuinely missing row has: no new error channel.
-        if (!(await this.#all(applyWhere(this.kysely.selectFrom(entity).select(["id"]), where, { dialect: this.dialect }).compile())).length)
-            throw err("E_NOT_FOUND", `${entity}/${id}`)
-        await this.#maintainEmbedding(entity, post) // embedding needs the FULL post-image
-        if (this.hooks) await this.hooks.run("after:update", entity, { row: post }, ctx) // hooks see the FULL post-image too
+        //
+        // The pre-image read above is deliberately OUTSIDE the transaction, and
+        // so is the embedding derived below. That is not a weakening: the
+        // authoritative pre-image gate is the injected WHERE on the UPDATE
+        // itself, re-evaluated by the engine at write time. What the outside
+        // read buys is keeping model inference — which can take seconds — off
+        // the write lock. The residual is bounded and worth naming: a
+        // concurrent write to a field the permission rule does NOT mention can
+        // make `post` (and therefore the embedding) reflect a slightly stale
+        // row. That is derived-data freshness, not an access-control question,
+        // and the next write of that row re-derives it.
+        const embedding = await this.#deriveEmbedding(entity, post) // needs the FULL post-image
+        await this.tx(async (tx) => {
+            await this.#run(applyWhere(this.kysely.updateTable(entity).set(set), where, { dialect: this.dialect }).compile(), tx)
+            // Confirm it actually matched. run() is deliberately void in the
+            // executor contract — it reports no row count — so the honest way
+            // to tell "wrote it" from "matched nothing" is to look. Throwing
+            // here rolls the whole transaction back, embedding included, and
+            // E_NOT_FOUND keeps the same opacity a genuinely missing row has.
+            if (!(await this.#all(applyWhere(this.kysely.selectFrom(entity).select(["id"]), where, { dialect: this.dialect }).compile(), tx)).length)
+                throw err("E_NOT_FOUND", `${entity}/${id}`)
+            if (embedding) await this.#storeEmbedding(entity, id, embedding, tx)
+        })
+        await this.#after("after:update", entity, { row: post }, ctx) // hooks see the FULL post-image
         // SECURITY (C2/DPL-ASYMMETRIC): the reply is cut to what the actor may
         // READ, not what it was allowed to write — the full `post` above is
         // for embedding/hooks/predicate only, never the reply. A write-only
@@ -334,17 +393,24 @@ export class DataPlane {
         const rows = await this.#all(query.compile())
         if (!rows.length) throw err("E_NOT_FOUND", `${entity}/${id}`)
         if (this.hooks) await this.hooks.run("before:remove", entity, { id }, ctx)
+        // Infrastructure DDL before the transaction opens, for the same reason
+        // as on the create path: it is idempotent, it is not the caller's
+        // data, and creating it inside a transaction that later rolls back
+        // would leave #embeddingsReady claiming a table that no longer exists.
+        if (this.embedder) await this.#ensureEmbeddings()
         // TOCTOU (DPL-TOCTOU-02): same guard as update — the DELETE carries the
         // permission predicate, and a row that left the caller's scope between
         // the check and the use simply does not match.
-        await this.#run(applyWhere(this.kysely.deleteFrom(entity), where, { dialect: this.dialect }).compile())
-        // Still there? Then the DELETE matched nothing and the caller must not
-        // be told it succeeded (nor that the row exists — E_NOT_FOUND is the
-        // same answer a missing row gets).
-        if ((await this.#all(applyWhere(this.kysely.selectFrom(entity).select(["id"]), idDoc(id), { dialect: this.dialect }).compile())).length)
-            throw err("E_NOT_FOUND", `${entity}/${id}`)
-        await this.#dropEmbedding(entity, id)
-        if (this.hooks) await this.hooks.run("after:remove", entity, { id }, ctx)
+        await this.tx(async (tx) => {
+            await this.#run(applyWhere(this.kysely.deleteFrom(entity), where, { dialect: this.dialect }).compile(), tx)
+            // Still there? Then the DELETE matched nothing and the caller must
+            // not be told it succeeded (nor that the row exists — E_NOT_FOUND
+            // is the same answer a missing row gets). Throwing rolls back.
+            if ((await this.#all(applyWhere(this.kysely.selectFrom(entity).select(["id"]), idDoc(id), { dialect: this.dialect }).compile(), tx)).length)
+                throw err("E_NOT_FOUND", `${entity}/${id}`)
+            await this.#dropEmbedding(entity, id, tx)
+        })
+        await this.#after("after:remove", entity, { id }, ctx)
         return true
     }
 
@@ -358,6 +424,10 @@ export class DataPlane {
 
     // ─── semantic search (§4.6) ───────────────────────────────────────────────
 
+    // Infrastructure DDL, deliberately OUTSIDE any write transaction: it is
+    // idempotent, it is not the caller's data, and creating it inside a
+    // transaction that later rolls back would leave #embeddingsReady claiming
+    // a table that no longer exists.
     async #ensureEmbeddings() {
         if (this.#embeddingsReady) return
         await this.executor.run(
@@ -387,25 +457,40 @@ export class DataPlane {
         return `${this.embedder.name}@${this.embedder.version ?? 0}`
     }
 
-    async #storeEmbedding(entity, rowId, vector) {
-        await this.executor.run(`DELETE FROM _nexus_embeddings WHERE entity = ? AND row_id = ?`, [entity, rowId])
-        await this.executor.run(`INSERT INTO _nexus_embeddings (entity, row_id, model, vector) VALUES (?, ?, ?, ?)`, [
+    async #storeEmbedding(entity, rowId, vector, conn = this.executor) {
+        await conn.run(`DELETE FROM _nexus_embeddings WHERE entity = ? AND row_id = ?`, [entity, rowId])
+        await conn.run(`INSERT INTO _nexus_embeddings (entity, row_id, model, vector) VALUES (?, ?, ?, ?)`, [
             entity, rowId, this.#modelTag(), JSON.stringify(vector)
         ])
         // sqlite-vec ANN index (real KNN), when the engine loaded the extension
         if (this.executor.vec) {
-            await this.#ensureVec(entity, vector.length)
-            await this.executor.run(`DELETE FROM "_nexus_vec_${entity}" WHERE row_id = ?`, [rowId])
-            await this.executor.run(`INSERT INTO "_nexus_vec_${entity}"(row_id, embedding) VALUES (?, ?)`, [rowId, this.#f32(vector)])
+            await conn.run(`DELETE FROM "_nexus_vec_${entity}" WHERE row_id = ?`, [rowId])
+            await conn.run(`INSERT INTO "_nexus_vec_${entity}"(row_id, embedding) VALUES (?, ?)`, [rowId, this.#f32(vector)])
         }
     }
 
-    async #maintainEmbedding(entity, row) {
+    /**
+     * Compute the row's embedding and prepare its storage — everything that
+     * can fail or block, done BEFORE the write transaction opens (I7,
+     * DPL-ATOMIC-01/05).
+     *
+     * Two reasons this is not simply "embed inside the transaction":
+     *  - A model that cannot answer must leave NO row behind. Deriving first
+     *    means the failure happens before anything is written, so the caller's
+     *    error is true and a retry is correct.
+     *  - Model inference can take seconds. Holding a write lock across it
+     *    would block every other writer for the length of an inference.
+     *
+     * @returns {Promise<number[]|null>} the vector, or null when this entity
+     *   has no semantic block or the instance has no embedder.
+     */
+    async #deriveEmbedding(entity, row) {
         const schema = this.schemas.get(entity)
-        if (!this.embedder || !schema?.semantic) return
+        if (!this.embedder || !schema?.semantic) return null
         await this.#ensureEmbeddings()
         const [vector] = await this.embedder.embed([serializeRow(schema, row)])
-        await this.#storeEmbedding(entity, row.id, vector)
+        if (this.executor.vec) await this.#ensureVec(entity, vector.length)
+        return vector
     }
 
     /**
@@ -435,12 +520,11 @@ export class DataPlane {
         return vectors
     }
 
-    async #dropEmbedding(entity, id) {
+    async #dropEmbedding(entity, id, conn = this.executor) {
         if (!this.embedder) return
-        await this.#ensureEmbeddings()
-        await this.executor.run(`DELETE FROM _nexus_embeddings WHERE entity = ? AND row_id = ?`, [entity, id])
+        await conn.run(`DELETE FROM _nexus_embeddings WHERE entity = ? AND row_id = ?`, [entity, id])
         if (this.executor.vec && this.#vecReady.has(entity))
-            await this.executor.run(`DELETE FROM "_nexus_vec_${entity}" WHERE row_id = ?`, [id])
+            await conn.run(`DELETE FROM "_nexus_vec_${entity}" WHERE row_id = ?`, [id])
     }
 
     /**
