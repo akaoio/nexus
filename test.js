@@ -86,6 +86,9 @@ import "./test/cli/cli.test.js"
 
 // CLI operations — migrate/site/app/doctor e2e (clauses OPS-*)
 import "./test/cli/ops.test.js"
+
+// CLI — install lifecycle: state dir, manifest, update lock (clauses INST-*, issue #8)
+import "./test/cli/install-lifecycle.test.js"
 import "./test/cli/backup-stream.test.js"
 
 // CLI — the Studio as static assets for production (clauses STB-*)

@@ -10,12 +10,16 @@ import { existsSync } from "fs"
 import { join } from "path"
 import { fileURLToPath } from "url"
 import { spawnSync } from "child_process"
+import { acquireUpdateLock, recordUpdate } from "../install-state.js"
 
 const NEXUS_ROOT = fileURLToPath(new URL("../../..", import.meta.url))
 
 export async function update(args, flags, out) {
     const gitDir = join(NEXUS_ROOT, ".git")
 
+    // The channels this command does not own answer FIRST, before any lock
+    // exists — there is nothing to serialise, and a lock taken for work that
+    // never happens is a lock that can leak (INST-09).
     // npm-managed installs belong to npm — say so precisely
     if (NEXUS_ROOT.includes("node_modules")) {
         out.print("This Nexus is npm-managed. Update it with:")
@@ -34,24 +38,69 @@ export async function update(args, flags, out) {
 
     const git = (...argv) => spawnSync("git", ["-C", NEXUS_ROOT, ...argv], { encoding: "utf8", stdio: "pipe", shell: process.platform === "win32" })
 
-    const before = git("rev-parse", "--short", "HEAD").stdout.trim()
-    out.print(`Updating Nexus at ${NEXUS_ROOT} (currently ${before})…`)
+    // NEVER DESTROY UNEXAMINED WORK. `update` is not cwd-scoped — it hard-resets
+    // the installation this binary belongs to, wherever that is. A developer
+    // running `nexus update` from a nexus checkout therefore loses whatever
+    // they were working on, with no warning and no way back short of the
+    // reflog. (Found the hard way: a test that assumed cwd-scoping reset a live
+    // working tree.) install.sh already refuses a dirty tree; this is the other
+    // half of the same contract, and there is no reason it should have been
+    // applied to only one of the two paths that hard-reset.
+    const dirty = git("status", "--porcelain").stdout.trim()
+    if (dirty && flags.force !== true) {
+        out.print(`${NEXUS_ROOT} has local changes that an update would discard:`)
+        for (const line of dirty.split("\n")) out.print(`    ${line}`)
+        out.print("")
+        out.print("An install directory is a deployment, not a workspace — but nothing here")
+        out.print("will be thrown away without you saying so. To update anyway:")
+        out.print("    nexus update --force")
+        out.error("refusing to hard-reset a dirty tree", { code: "E_UPDATE_DIRTY" })
+        process.exitCode = 1
+        return
+    }
 
-    const fetch = git("fetch", "origin", "main")
-    if (fetch.status !== 0) {
-        out.error("git fetch failed: " + (fetch.stderr || fetch.stdout).trim(), { code: "E_UPDATE" })
+    // One update at a time (issue #8 answer 9). `openSync(path, "wx")` is an
+    // ATOMIC exclusive create — the closest thing Node gives to access's
+    // non-blocking flock, and unlike flock it exists on every platform Node
+    // supports (N2 rules out a native module). access added its lock after a
+    // real overlap regression; having it before anything can trigger an update
+    // automatically is the cheap order.
+    let lock
+    try {
+        lock = acquireUpdateLock(NEXUS_ROOT)
+    } catch (error) {
+        out.error(error.message, { code: "E_UPDATE_LOCKED" })
         process.exitCode = 1
         return
     }
-    const reset = git("reset", "--hard", "origin/main")
-    if (reset.status !== 0) {
-        out.error("git reset failed: " + (reset.stderr || reset.stdout).trim(), { code: "E_UPDATE" })
-        process.exitCode = 1
-        return
+
+    try {
+        const before = git("rev-parse", "--short", "HEAD").stdout.trim()
+        out.print(`Updating Nexus at ${NEXUS_ROOT} (currently ${before})…`)
+
+        const fetch = git("fetch", "origin", "main")
+        if (fetch.status !== 0) {
+            out.error("git fetch failed: " + (fetch.stderr || fetch.stdout).trim(), { code: "E_UPDATE" })
+            process.exitCode = 1
+            return
+        }
+        const reset = git("reset", "--hard", "origin/main")
+        if (reset.status !== 0) {
+            out.error("git reset failed: " + (reset.stderr || reset.stdout).trim(), { code: "E_UPDATE" })
+            process.exitCode = 1
+            return
+        }
+        const after = git("rev-parse", "--short", "HEAD").stdout.trim()
+        // Recorded so `nexus doctor` can answer "when was the framework last
+        // updated, and through which channel?" — which nothing could before.
+        // Tracking main stays the policy at 0.0.0; carrying the field now makes
+        // --channel a later config change rather than a redesign.
+        recordUpdate(NEXUS_ROOT, { channel: "git", ref: "origin/main", commit: after })
+        out.print(after === before ? `Already up to date (${after}).` : `Updated ${before} → ${after}.`)
+        out.emit({ ok: true, managed: "git", before, after, root: NEXUS_ROOT })
+    } finally {
+        lock.release()
     }
-    const after = git("rev-parse", "--short", "HEAD").stdout.trim()
-    out.print(after === before ? `Already up to date (${after}).` : `Updated ${before} → ${after}.`)
-    out.emit({ ok: true, managed: "git", before, after, root: NEXUS_ROOT })
 }
 
 export default { update }
