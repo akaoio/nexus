@@ -194,6 +194,7 @@ import "./test/app/jobs.test.js"
 // App — job thread + plane pseudo-thread RPC, real worker (clauses THR-*)
 import "./test/app/jobthread.test.js"
 import "./test/app/job-timeout.test.js"
+import "./test/app/webhook-cache.test.js"
 
 // Studio — nx-schema-designer (clauses NXS-*)
 import "./test/studio/schema-designer.test.js"

@@ -78,20 +78,53 @@ export default function effects(registrar, { schemas = [], plane = null, ctx = n
 
     // ── emitters (main only: they need the real plane to read subscriptions)
     if (!plane) return
+    // Subscriptions are CACHED, and refreshed through the same after-hook
+    // mechanism apps use — the shape server.js already uses for nexus_policy
+    // and nexus_user (refreshPolicies/refreshUsers). Reusing it rather than
+    // inventing a second cache is the point: this is where "a Studio write is
+    // instantly live, no restart" comes from, and WH-CACHE-02 pins that the
+    // speed did not cost it.
+    //
+    // Before this, EVERY create/update/delete on EVERY entity did a full scan
+    // of nexus_webhook to discover subscriptions — on the hot path of every
+    // write, on an instance that in the common case has none at all.
+    let subscriptions = []
+    let loaded = false
+    const refreshWebhooks = async () => {
+        try {
+            const rows = await plane.list("nexus_webhook", {}, ctx)
+            subscriptions = rows
+                .filter((row) => row.enabled)
+                .map((row) => {
+                    // Malformed `events` is reported HERE, once, at refresh
+                    // time — so a broken row is named when it is written
+                    // instead of warning on every subsequent write forever.
+                    let events = null
+                    try {
+                        events = row.events ? JSON.parse(row.events) : null
+                    } catch (error) {
+                        console.warn(`effects: nexus_webhook row ${row.id} has malformed events — ${String(error?.message ?? error)}`)
+                        return null
+                    }
+                    return { id: row.id, entity: row.entity, events }
+                })
+                .filter(Boolean)
+            loaded = true
+        } catch (error) {
+            console.warn(`effects: could not refresh webhook subscriptions — ${String(error?.message ?? error)}`)
+        }
+    }
+    for (const event of EVENTS) registrar.hook("nexus_webhook", event, () => refreshWebhooks())
+
     const fire = (entity, event) => async (payload) => {
         try {
-            const hooks = await plane.list("nexus_webhook", {}, ctx)
+            // First write of the process loads the table once; every write
+            // after that reads memory.
+            if (!loaded) await refreshWebhooks()
             const id = payload.row?.id ?? payload.id
-            for (const row of hooks) {
-                if (!row.enabled) continue
+            for (const row of subscriptions) {
                 if (row.entity && row.entity !== entity) continue
-                let events = null
-                try {
-                    events = row.events ? JSON.parse(row.events) : null
-                } catch (error) {
-                    console.warn(`effects: nexus_webhook row ${row.id} has malformed events — ${String(error?.message ?? error)}`)
-                    continue
-                }
+                const events = row.events
                 if (events?.length && !events.includes(event)) continue
                 // enqueue the id, never the secret (issue #9 I10) — nexus_job.payload
                 // is Studio-rendered and admin-exposed; the HMAC secret must not sit there
