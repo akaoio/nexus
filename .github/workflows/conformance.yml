@@ -1,0 +1,85 @@
+# Conformance — BOTH runners, on every push and every pull request.
+#
+# Why this exists: the browser suite went red on `main` and nobody noticed,
+# because `node test.js` skips { browser: true } and nothing ever ran
+# `npm run test:browser`. Twelve merged PRs and 747 clauses had no automated
+# run behind them at all. A suite nobody runs is not a suite.
+#
+# Three rules this file is built around:
+#
+#  1. BOTH verdicts gate the merge. A green node run is not "everything
+#     passed" — it never was.
+#  2. A run that verifies LESS must fail, not pass quietly. The engine drivers
+#     are installed as a hard step, so a broken install fails the job instead
+#     of silently turning live-engine clauses into skips. Likewise the browser
+#     runner exits 3 when it finds no browser, and 3 is a failure here — "no
+#     browser, so nothing ran" is exactly the outcome this workflow exists to
+#     make impossible.
+#  3. What CI does NOT cover is stated, not implied. See the note on the
+#     real-model suites below.
+
+name: conformance
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22 is the declared floor (install.sh refuses below it — node:sqlite),
+        # and the dev box runs 24. Both are tested because node:sqlite is the
+        # DEFAULT engine and its API has moved between majors: a drift there
+        # would break every instance, not one test.
+        node: [22, 24]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Engine drivers (live matrix)
+        # A HARD step on purpose. Without these, Turso/PGlite/sqlite-vec clauses
+        # skip and the run reports green over a narrower suite than the dev box
+        # — the same "the number covers less than you think" trap that let the
+        # browser suite rot. --no-save keeps the checked-in package.json intact.
+        #
+        # @huggingface/transformers is deliberately NOT installed: the
+        # EmbeddingGemma / FunctionGemma suites download real models, which is
+        # not a per-PR cost. Those clauses stay skipped in CI, exactly as they
+        # are on a machine without the library, and STATUS says so.
+        run: |
+          npm --prefix test/.engines install --no-save \
+            @electric-sql/pglite@^0.5.4 \
+            @tursodatabase/database@^0.7.0 \
+            sqlite-vec@^0.1.9
+
+      - name: Node conformance
+        run: node test.js
+
+      - name: Locate a browser
+        # Fails HERE with a legible message rather than letting the runner exit
+        # 3 and leaving someone to decode the code.
+        run: |
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then
+              echo "NEXUS_BROWSER=$candidate" >> "$GITHUB_ENV"
+              echo "using $candidate"
+              exit 0
+            fi
+          done
+          echo "No Chromium/Chrome on this runner — the browser conformance suite cannot run."
+          echo "Install one in this job rather than letting the suite silently not run."
+          exit 1
+
+      - name: Browser conformance
+        # Exit 0 green · 1 failures · 3 no browser. All three are handled by the
+        # default "non-zero fails the step" — including 3, which must fail: a
+        # browser suite that did not run is not a browser suite that passed.
+        run: node script/test-browser.js
