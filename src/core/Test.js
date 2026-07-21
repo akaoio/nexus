@@ -228,7 +228,16 @@ async function run(filter, onProgress) {
                     DIM(" (a run that verifies nothing is not success)")
             )
 
-        console.log(line + "\n")
+        // A skipped clause has NOT been verified by this run, and browser-only
+        // clauses have a verdict of their own. Saying so at the moment of the
+        // skip is the point: the browser suite was RED and unnoticed for as
+        // long as a green Node run read as "everything passed". Same doctrine
+        // as RUN-01, one runner out — a number is only honest about what it
+        // actually covers.
+        if (results.skipped)
+            console.log(
+                DIM(`  ${results.skipped} skipped here — browser clauses have their own verdict: `) + "npm run test:browser\n"
+            )
 
         if (NODE && !isGreen(results)) process.exitCode = 1
     }

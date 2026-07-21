@@ -3,9 +3,14 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 700/746 node clauses, 0 red.**
-(46 node "skips" are browser-only clauses plus the gated real-model suites —
-EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
+**Green: 700/747 node clauses, 0 red** (`node test.js`)
+**Green: 47/47 browser clauses, 0 red** (`npm run test:browser`, real headless Chromium)
+
+Two runners, two verdicts, both stated — because until this was checked, only
+the first was. The 47 node "skips" are the browser clauses plus the gated
+real-model suites (EmbeddingGemma/FunctionGemma run where `test/.engines` has
+the library); the node summary now names the browser verdict at the moment it
+skips them, so a green node run can no longer read as "everything passed".
 
 **Issue #9 is closed except for one deferred chunk.** A skeptical audit (issue
 #9) found 5 Critical and 11 Important findings, none covered by any clause at
@@ -115,6 +120,17 @@ the normal outcome. `entityDeletePlan` now names the index (the plan is the dry
 run an operator approves, and it was describing work that could not be
 performed), and `applyEntityDelete` drops it first (LIFE-TX-\*).
 
+**5. The browser conformance suite was RED, and the headline said "0 red".**
+`SEM-10` had been failing since the square-tint redesign changed the search
+result header from `note (1)` to `note · 1` and the empty state from
+`no matches` to `No matches for …`. Nothing caught it because `node test.js`
+skips `{ browser: true }` and nobody ran `npm run test:browser` — so the
+project's headline number was true for one runner and silently untrue for the
+other. Found by running it for the first time on Linux. The clause now asserts
+the SUBSTANCE (grouped per entity, count, label, score, an empty state that says
+so) rather than punctuation a redesign is entitled to change, and the node
+summary now names the second verdict wherever it skips.
+
 **4. `nexus site backup` reported eight entities and wrote one.** On a fresh
 instance the system tables do not exist yet — they are created when a server
 first boots — so `isMissingTableError` correctly skipped them. But the summary
@@ -123,9 +139,9 @@ not make the report honest, and a backup that overstates itself is discovered at
 the worst possible moment. The count is now what the file actually holds, and
 anything left out is NAMED (SITE-COUNT-01).
 
-**What the four share.** Every one is a guarantee stated in a comment or a
-header, and exercised only on the engine, the path, or the route where it
-happened to hold. None was found by reading the code with suspicion — the audit
+**What the five share.** Every one is a guarantee stated in a comment, a header,
+or a clause — and exercised only on the engine, the path, the route, or the
+runner where it happened to hold. None was found by reading the code with suspicion — the audit
 did that thoroughly and missed all four. Each was found by writing a clause that
 asserted the stated guarantee somewhere it had never been asserted before. That
 is the argument for spec-first stated more precisely than "tests are good": a
@@ -383,7 +399,14 @@ places nobody thought to check are where these live.
 - **The teardown is proven by clause and by boot, NOT yet by a browser click-through**: the
   lifecycle logic, the union narrowing and the key handling all run under Node, and the built
   Studio boots with the new kit — but "navigate away and observe the subscription actually close"
-  joins the existing E2E debt below rather than being claimed here.
+  joins the existing E2E debt below rather than being claimed here. The search overlay's half IS
+  now proven in a real browser (SEM-11: listbox/option roles, `aria-activedescendant` tracking,
+  arrow selection, Enter emitting the chosen record); the router's half is not.
+- **The browser suite is green here, and that is a per-machine claim**: it needs a real Chromium
+  and runs over CDP. It is green on this Linux box with `/usr/bin/chromium` present; an
+  environment without a browser exits 3 (no browser found) rather than pretending. There is no CI
+  wiring making both runners a merge gate — that is a workflow decision, not a code one, and
+  nothing in the repo currently enforces it.
 - **E2E flows verified by hand in Chrome, not pinned in CI**: login, entity delete
   cascade, hot reload, accent switching, sidebar levels. A browser-suite pass over these
   is owed (the harness exists — NX*-* browser clauses).
