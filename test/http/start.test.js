@@ -39,7 +39,7 @@ function studioCallNames(src) {
     return names
 }
 
-function scaffold({ withAuth = false, withPolicies = false } = {}) {
+function scaffold({ withAuth = false, withPolicies = false, limits = null } = {}) {
     const scratch = mkdtempSync(join(tmpdir(), "nexus-start-"))
     spawnSync(process.execPath, [BIN, "create", "shop"], { cwd: scratch })
     const instance = join(scratch, "shop")
@@ -50,11 +50,14 @@ function scaffold({ withAuth = false, withPolicies = false } = {}) {
             JSON.stringify([{ entity: "task", actions: ["read", "write", "create", "delete"], rule: null, permlevel: 0, ifOwner: false, roles: ["admin"] }])
         )
     }
-    if (withAuth) {
+    if (withAuth || limits) {
         const configPath = join(instance, "nexus.config.json")
         const config = JSON.parse(readFileSync(configPath, "utf8"))
-        config.token_secret = "fixed-start-secret"
-        config.api_keys = [{ key: "k-admin", user: "alice", roles: ["admin"] }]
+        if (withAuth) {
+            config.token_secret = "fixed-start-secret"
+            config.api_keys = [{ key: "k-admin", user: "alice", roles: ["admin"] }]
+        }
+        if (limits) config.limits = limits
         writeFileSync(configPath, JSON.stringify(config, null, 4))
     }
     return { scratch, instance }
@@ -158,8 +161,13 @@ Test.describe("Production server — nexus start (START)", () => {
         }
     })
 
+    // Rate limiting is OFF for this one deliberately. It pins the challenge
+    // MAP cap, which needs 1100 requests to actually reach the map; with the
+    // limiter in the way the clause would pass on 429s and prove nothing about
+    // the bound it names. Two independent bounds, tested independently —
+    // RATE-08 below covers the limiter on the same endpoint.
     Test.it("START-CHALLENGE the challenge map is capped and sweeps expiries", async () => {
-        const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true })
+        const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true, limits: { enabled: false } })
         const { proc, ready } = startServer(instance, ["--insecure"])
         try {
             const base = await ready
@@ -170,6 +178,32 @@ Test.describe("Production server — nexus start (START)", () => {
             assert.equal(r.status, 503, "past the cap the server must refuse, not keep growing the map")
             const body = await r.json()
             assert.equal(body.error.code, "E_BUSY")
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
+    Test.it("RATE-08 a flood of pre-auth requests is refused with 429 + retry-after, and /_health still answers", async () => {
+        const { scratch, instance } = scaffold({ withAuth: true, withPolicies: true, limits: { auth: { burst: 5, perMs: 60000 } } })
+        const { proc, ready } = startServer(instance, ["--insecure"])
+        try {
+            const base = await ready
+            const post = () => fetch(base + "/api/v1/_auth/challenge", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
+
+            let limited = null
+            for (let i = 0; i < 12 && !limited; i++) {
+                const r = await post()
+                if (r.status === 429) limited = r
+            }
+            assert.truthy(limited, "a burst past the tier must be refused")
+            assert.truthy(Number(limited.headers.get("retry-after")) > 0, "and the caller told when to come back, not merely refused")
+            assert.equal((await limited.json()).error.code, "E_RATE_LIMIT")
+
+            // The probe a load balancer depends on must never be starved by a
+            // flood aimed at the API — otherwise the limiter takes the instance
+            // out of rotation on the attacker's behalf.
+            assert.equal((await fetch(base + "/_health")).status, 200)
         } finally {
             await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
             rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })

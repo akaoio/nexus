@@ -27,6 +27,7 @@ import { randomBytes } from "crypto"
 import { fileURLToPath } from "url"
 import { createWatcher, devMessage } from "../../core/HMR/watch.js"
 import { accessFor } from "../dev-access.js"
+import { limiterFor, tierFor, clientKey } from "../../core/HTTP/ratelimit.js"
 
 const MIME = {
     ".html": "text/html; charset=utf-8",
@@ -175,6 +176,11 @@ export async function dev(args, flags, out) {
         return studioRouteMatches(pathname, { schemas, locales: i18n.locales })
     }
 
+    // Dev is limited too: it is routinely reachable on a LAN and holds real
+    // data. Same tiers, same config key, same off switch as production.
+    const limiter = limiterFor(config)
+    const trustProxy = config.limits?.trust_proxy === true
+
     const server = createServer(async (req, res) => {
         const url = new URL(req.url, "http://localhost")
 
@@ -182,6 +188,18 @@ export async function dev(args, flags, out) {
         // --json). Timed at response finish so the status and latency are real.
         const started = Date.now()
         res.on("finish", () => process.stderr.write(`  ${req.method} ${url.pathname} ${out.dim("→")} ${res.statusCode} ${out.dim(`${Date.now() - started}ms`)}\n`))
+
+        // Rate limiting (RATE-*). Before any work, and after the log line so a
+        // refusal is still visible. Dev shares production's tiers and its
+        // exemptions: /_health so a probe is never starved, and the dev event
+        // stream so HMR cannot throttle itself during a burst of file saves.
+        if (limiter && url.pathname !== "/_health" && url.pathname !== "/__dev_events") {
+            const verdict = limiter.check(clientKey(req, { trustProxy }), tierFor(url.pathname))
+            if (!verdict.allowed) {
+                res.setHeader?.("retry-after", String(verdict.retryAfter))
+                return json(res, 429, { ok: false, error: { code: "E_RATE_LIMIT", message: `too many requests — retry in ${verdict.retryAfter}s` } })
+            }
+        }
 
         // Liveness/readiness — always available, no auth, cheap.
         if (url.pathname === "/_health") {

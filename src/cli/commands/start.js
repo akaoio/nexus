@@ -28,6 +28,7 @@ import { buildInstanceApi } from "../../core/HTTP/server.js"
 import { verifyChallenge, issueToken } from "../../core/App/auth.js"
 import { studioRouteMatches } from "../../studio/routes.js"
 import { randomBytes } from "crypto"
+import { limiterFor, tierFor, clientKey } from "../../core/HTTP/ratelimit.js"
 
 const MIME = {
     ".html": "text/html; charset=utf-8",
@@ -129,10 +130,28 @@ export async function start(args, flags, out) {
             req.on("error", () => done(null))
         })
 
+    // Rate limiting (RATE-*): the body-size and challenge caps bound memory PER
+    // REQUEST; this bounds the RATE. Pre-auth routes get the tighter tier —
+    // anyone can reach them and each costs a signature check. null when the
+    // operator turned it off for an instance already limited by its proxy.
+    const limiter = limiterFor(config)
+    const trustProxy = config.limits?.trust_proxy === true
+
     const handler = async (req, res) => {
         const url = new URL(req.url, "http://localhost")
         const started = Date.now()
         res.on("finish", () => process.stderr.write(`  ${req.method} ${url.pathname} ${out.dim("→")} ${res.statusCode} ${out.dim(`${Date.now() - started}ms`)}\n`))
+
+        // Before ANY work: the point of a limit is to be cheaper than what it
+        // protects. /_health is exempt so a load balancer's probe can never be
+        // starved by a flood aimed at the API.
+        if (limiter && url.pathname !== "/_health") {
+            const verdict = limiter.check(clientKey(req, { trustProxy }), tierFor(url.pathname))
+            if (!verdict.allowed) {
+                res.setHeader?.("retry-after", String(verdict.retryAfter))
+                return json(res, 429, { ok: false, error: { code: "E_RATE_LIMIT", message: `too many requests — retry in ${verdict.retryAfter}s` } })
+            }
+        }
 
         if (url.pathname === "/_health") {
             return json(res, 200, { ok: true, data: { status: "ok", entities: schemas.map((s) => s.name), engine, uptime: Math.round(process.uptime()) } })

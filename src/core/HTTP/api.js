@@ -135,7 +135,12 @@ export function createApi({ plane, context, base = "/api/v1", endpoints = [], ev
                 }
                 const ctx = context(req)
                 const entities = url.searchParams.get("entities")
-                events.subscribe({ res, ctx, entities: entities ? entities.split(",").filter(Boolean) : null })
+                // null means the hub is at its subscriber cap (EVT-CAP-01) —
+                // an open SSE connection is a held socket plus a share of every
+                // write's cost, so it is bounded. Refusing must not disturb the
+                // connections already established.
+                const off = events.subscribe({ res, ctx, entities: entities ? entities.split(",").filter(Boolean) : null })
+                if (!off) throw new Error("E_BUSY: too many realtime subscribers")
                 return true // the connection stays open — no ok()/end()
             }
 

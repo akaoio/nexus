@@ -13,7 +13,7 @@
  * (v1 restores into the same engine family — raw storage values copy as-is.)
  */
 
-import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync } from "fs"
+import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, createWriteStream } from "fs"
 import { join, dirname } from "path"
 import { loadInstance } from "../instance.js"
 import { openInstanceData, ensureTables } from "../data.js"
@@ -77,33 +77,91 @@ async function backup(args, flags, out, root) {
     // back up the SAME set the server composes — app schemas plus the system
     // entities, or a restore returns data nobody can log in to (issue #9 C3)
     const backupSchemas = [...schemas, ...SYSTEM_ENTITIES]
-    const data = {}
-    // app data: fail loudly — ensureTables above guarantees these tables exist,
-    // so a read error here is a real fault (permissions, I/O, corruption), not
-    // something to swallow and report as a clean, if incomplete, backup
-    for (const schema of schemas) data[schema.name] = maskSecretColumns(schema.name, await executor.all(`SELECT * FROM ${quote(schema.name)}`))
-    for (const schema of SYSTEM_ENTITIES) {
-        try { data[schema.name] = maskSecretColumns(schema.name, await executor.all(`SELECT * FROM ${quote(schema.name)}`)) }
-        catch (error) {
-            // an older instance may predate a system entity — that is fine; anything else is not
-            if (!isMissingTableError(error)) throw error
-        }
-    }
-    const document = {
-        backupVersion: BACKUP_VERSION,
-        createdAt: new Date().toISOString(),
-        config: redact(config),
-        secretsRedacted: true, // restore must re-supply token_secret / api_keys / webhook secrets
-        apps: appFiles,
-        data,
-        migrations: await appliedMigrations(executor)
-    }
     const file = args[1] ?? `backup-${Date.now()}.json`
-    writeFileSync(join(root, file), JSON.stringify(document, null, 2))
-    const rows = Object.values(data).reduce((n, list) => n + list.length, 0)
-    out.print(`${out.green("✓")} Backed up ${backupSchemas.length} entities, ${rows} rows → ${out.cyan(file)}`)
+    const target = join(root, file)
+
+    // STREAMED, in pages (issue #9's backup-memory moderate). The document
+    // used to be assembled whole in memory — every row of every table — and
+    // the security chunk made that strictly worse by adding the system
+    // entities to it. Peak memory is now one page, and the DOCUMENT is
+    // unchanged: same keys, same values, restore reads it as before. Only the
+    // whitespace differs (one row per line), which is not part of the
+    // round-trip contract and is easier to diff besides.
+    const stream = createWriteStream(target)
+    const write = (text) =>
+        new Promise((done, failed) => {
+            if (stream.write(text)) return done()
+            stream.once("drain", done)
+            stream.once("error", failed)
+        })
+
+    const PAGE = 500
+    const captured = []
+    const skipped = []
+    let rows = 0
+
+    await write("{\n")
+    await write(`  "backupVersion": ${JSON.stringify(BACKUP_VERSION)},\n`)
+    await write(`  "createdAt": ${JSON.stringify(new Date().toISOString())},\n`)
+    await write(`  "config": ${JSON.stringify(redact(config))},\n`)
+    // restore must re-supply token_secret / api_keys / webhook secrets
+    await write(`  "secretsRedacted": true,\n`)
+    await write(`  "apps": ${JSON.stringify(appFiles)},\n`)
+    await write(`  "data": {\n`)
+
+    for (const schema of backupSchemas) {
+        const name = schema.name
+        const system = SYSTEM_ENTITIES.some((s) => s.name === name)
+        // App tables: fail loudly — ensureTables above guarantees they exist,
+        // so a read error is a real fault (permissions, I/O, corruption), not
+        // something to swallow and report as a clean, if incomplete, backup.
+        // A SYSTEM table may genuinely be absent on an instance no server has
+        // booted yet; that is tolerable, but it is NAMED rather than silently
+        // dropped while the summary counts it (SITE-COUNT-01).
+        let opened = false // has this entity's array been started?
+        let firstRow = true
+        const openEntity = async () => {
+            if (opened) return
+            await write(`${captured.length ? ",\n" : ""}    ${JSON.stringify(name)}: [`)
+            captured.push(name)
+            opened = true
+        }
+        try {
+            for (let offset = 0; ; offset += PAGE) {
+                const page = await executor.all(
+                    `SELECT * FROM ${quote(name)} ORDER BY id LIMIT ${PAGE} OFFSET ${offset}`
+                )
+                // The FIRST read is what proves the table exists, so the array
+                // is opened only after it succeeds — a missing system table
+                // must not leave a half-written key behind.
+                await openEntity()
+                if (!page.length) break
+                maskSecretColumns(name, page)
+                for (const row of page) {
+                    await write(`${firstRow ? "\n      " : ",\n      "}${JSON.stringify(row)}`)
+                    firstRow = false
+                    rows++
+                }
+                if (page.length < PAGE) break
+            }
+        } catch (error) {
+            if (!system || !isMissingTableError(error)) throw error
+            skipped.push(name)
+            continue
+        }
+        await write(firstRow ? "]" : "\n    ]")
+    }
+
+    await write("\n  },\n")
+    await write(`  "migrations": ${JSON.stringify(await appliedMigrations(executor))}\n`)
+    await write("}\n")
+    await new Promise((done, failed) => { stream.end(); stream.once("finish", done); stream.once("error", failed) })
+
+    out.print(`${out.green("✓")} Backed up ${captured.length} entities, ${rows} rows → ${out.cyan(file)}`)
+    if (skipped.length)
+        out.print(out.yellow(`  not present on this instance, so not backed up: ${skipped.join(", ")}`))
     out.print(out.yellow("  secrets redacted — token_secret, API keys and webhook signing secrets must be re-supplied after restore"))
-    out.emit({ ok: true, file, entities: backupSchemas.length, rows, secretsRedacted: true })
+    out.emit({ ok: true, file, entities: captured.length, rows, skipped, secretsRedacted: true })
     if (executor.close) executor.close()
 }
 

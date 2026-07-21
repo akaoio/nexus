@@ -86,6 +86,7 @@ import "./test/cli/cli.test.js"
 
 // CLI operations — migrate/site/app/doctor e2e (clauses OPS-*)
 import "./test/cli/ops.test.js"
+import "./test/cli/backup-stream.test.js"
 
 // CLI — the Studio as static assets for production (clauses STB-*)
 import "./test/cli/studio-build.test.js"
@@ -93,9 +94,13 @@ import "./test/cli/studio-build.test.js"
 // HTTP API — auto-generated from schemas, e2e over real HTTP (clauses API-*)
 import "./test/http/api.test.js"
 
+// HTTP — request rate limiting (clauses RATE-*, issue #9 chunk 3)
+import "./test/http/ratelimit.test.js"
+
 // Realtime event hub — SSE subscribers, permission per subscriber (clauses EVT-*)
 import "./test/http/events-hub.test.js"
 import "./test/http/event-rowgate.test.js"
+import "./test/http/event-fanout.test.js"
 
 // Realtime on the wire — GET /api/v1/_events mounted, live clauses (EVT-01/02/03/05)
 import "./test/http/events-live.test.js"
@@ -144,6 +149,7 @@ import "./test/sync/zen-transport.test.js"
 
 // Semantic — serialize/embed/search/RRF (clauses SEM-*)
 import "./test/semantic/semantic.test.js"
+import "./test/semantic/embed-cap.test.js"
 import "./test/semantic/real-embedding.test.js"
 import "./test/semantic/embeddinggemma.test.js"
 
@@ -190,6 +196,7 @@ import "./test/app/jobs.test.js"
 // App — job thread + plane pseudo-thread RPC, real worker (clauses THR-*)
 import "./test/app/jobthread.test.js"
 import "./test/app/job-timeout.test.js"
+import "./test/app/webhook-cache.test.js"
 
 // Studio — nx-schema-designer (clauses NXS-*)
 import "./test/studio/schema-designer.test.js"

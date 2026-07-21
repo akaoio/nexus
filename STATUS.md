@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 660/706 node clauses, 0 red.**
+**Green: 682/728 node clauses, 0 red.**
 (46 node "skips" are browser-only clauses plus the gated real-model suites —
 EmbeddingGemma/FunctionGemma run where `test/.engines` has the library.)
 
@@ -18,11 +18,15 @@ the time. Three chunks have landed since:
 3. **Durability & atomicity** — I6, I7, I8, I9, I11 plus the TOCTOU and
    WAL/`busy_timeout` moderates. See the **Durability & atomicity** row.
 
-What remains of #9 is one coherent chunk of **resource bounds** (rate limiting,
-connection/subscriber caps, backup streaming, SSE fan-out parallelism, `fire()`'s
-full scan per write, `search()`'s inline re-embed cap, `dev.js`'s oversize-body
-hang) and the **in-process HTTP coverage** clauses. Both are listed under
-Unfinished, not silently dropped.
+4. **Resource bounds** — rate limiting, the subscriber cap, SSE fan-out cost,
+   `fire()`'s full scan per write, `search()`'s inline re-embed cap, backup
+   memory. See the **Resource bounds** row below.
+
+What remains of #9 is the **in-process HTTP coverage** clauses for
+`server.js`/`api.js`/`start.js`, which are still exercised only as black-box
+subprocesses. Every finding it raised is otherwise closed, and each bound
+carries its blast radius under Unfinished rather than implying more than it
+delivers.
 
 **Two findings in this work were NOT in the audit**, and both are recorded
 because the way they hid is more instructive than the bugs themselves — see
@@ -57,6 +61,7 @@ because the way they hid is more instructive than the bugs themselves — see
 | **Entity identity** | **schema `icon:` (any bootstrap-icons name — vendored 1.1 MB sprite, nx-icon registry-first with sprite fallback); picker in the /entities editor** | MS-S14 |
 | **Effect engine** | **durable jobs as `nexus_job` rows (token-CAS claim, backoff, DLQ, recurring), Threads execution behind the narrow plane-RPC, webhook/mail/notification consumers as the effect app, Studio /jobs** | SYS-09, JOB-*, EXT-J1, THR-*, JOBL-*, WH-*, MAIL-*, NOTIF-* |
 | **Realtime** | **public SSE `/api/v1/_events` (auth'd incl. `?token=`, per-subscriber plane-gated, no row data on the wire, heartbeat); Studio live refresh on every list route via the public stream; dev `/__dev_events` + watcher + full module hot-swap + `"reload"` on schema hot-apply** | **EVT-U*, EVT-*, HMR-*, DEVE-*** |
+| **Resource bounds (issue #9 chunk 3)** | **nothing unbounded by a single caller: a zero-dep token bucket limits both servers, with the pre-auth tier strictly tighter (anyone can reach it and each call costs a signature check), a separate bucket per (tier, key) so ordinary API traffic cannot drain the pre-auth allowance, `X-Forwarded-For` ignored unless `trust_proxy` is declared, `/_health` exempt so a flood cannot take the instance out of rotation, and — the two that matter most — the limiter's OWN key map swept and hard-capped, failing CLOSED to the tightest tier when full rather than waving strangers through; SSE fan-out memoised per emit by authorization fingerprint (INCLUDING the user, since `$CURRENT_USER`/`ifOwner` make identical policies mean different things), so N subscribers across k contexts cost k reads not N, plus a subscriber cap; webhook dispatch reads a cache refreshed through the same after-hook mechanism `nexus_policy`/`nexus_user` already use, so twenty writes cost one read instead of twenty and a Studio write is still instantly live; `search()` embeds at most a configured cap inside a request and drains the rest in the background, so a model switch cannot put 1000 rows of ML work in one HTTP response and the corpus still completes; `nexus site backup` streams in pages of 500 and its summary now reports what it ACTUALLY captured, naming what it skipped** | **RATE-01..09, EVT-FANOUT-01..03, EVT-CAP-01, WH-CACHE-01..03, SEM-CAP-01..03, SITE-STREAM-01/02, SITE-COUNT-01** |
 | **Durability & atomicity (issue #9 chunk 2)** | **the executor has a REAL transaction seam — one connection for the whole callback, so a pooled driver can no longer scatter `BEGIN`/body/`COMMIT` across three connections (the pre-seam improvisation did, silently); `BEGIN IMMEDIATE` on sqlite/turso, capability-declared (`CAPABILITIES.transactions`, kept separate from `transactionalDDL`), no nesting (`E_NESTED_TX`), and a failed rollback never replaces the error that caused it. On top of it: a write and everything derived from it commit together, with the embedding derived BEFORE the transaction so a failed model leaves no row and inference never holds a write lock; an `after:` hook that throws no longer fails a durable write and is contained through `onHookError`; `update`/`remove` carry the permission predicate on the write STATEMENT and confirm it matched, closing the TOCTOU window; entity delete moved into core as one transaction that swallows nothing (and now actually drops the link column — see the findings section); `hotApply` runs inside a transaction where DDL can roll back and reports `atomic: false` where it cannot; `after:remove` carries the captured pre-image so a deleted row's id no longer crosses the row rule that protected it — the row DECIDES and is never SENT; a timed-out job reclaims its queue entry AND recycles the worker, and the execution timeout is derived from the lease so the two cannot be equal again; file-backed sqlite runs in WAL with a busy timeout, surfaced by `nexus doctor`** | **TXN-01..05, ADP-TXN, ADP-WAL-*, DPL-ATOMIC-*, DPL-TOCTOU-*, LIFE-TX-*, MIG-HOTTX-*, EVT-ROWGATE-*, THR-CANCEL-*, JOB-TIMEOUT-*** |
 | **Harness integrity (issue #9 follow-up)** | **a run that verifies nothing is not green — zero passes fails the run and prints why, through one exported rule (`isGreen`) both the summary and the exit code read; the Sync stub stands in only for an *absent* `src/core/Sync.js`, so a present-but-broken module surfaces its own import error instead of answering `NOT_IMPLEMENTED`; a ZSYNC harness that produced no verdict is an explicit skip carrying its spawn error as a warning, not a `{ browser: true }` no-op with the error buried in the test name** | **RUN-01, SYNCLOAD-01, ZSYNC-00** |
 | **Security hardening (issue #9 Criticals + security Importants)** | **`nexus_user.roles` behind `permlevel:1` with an admin permlevel-1 companion policy, so self-service cannot promote itself, pinned by driving the actual escalation through the plane (SYS-11 also asserts the field IS restricted, so the invariant loop cannot silently skip it on a revert); `/_auth/verify` refuses an unprovisioned pub — holding a keypair is not membership; create/update return through the actor's READ-scoped field set, not the write set; backup carries the system entities (users/roles/policies/views/webhooks/notifications), redacts config secrets AND declared row-level secret columns (webhook `secret`, job `lease_token`), and fails loudly (not silently) on an app-schema read error; `/_studio/*` — including `/_studio/session`'s own whoami body, the last surface that used to trust token claims — authorizes from ONE declared per-route table (`dev-access.js`) with an admin-only default, "any" meaning no-auth-at-all rather than a role tier, and roles resolved from the live directory everywhere, never the token; engine capabilities are declared (`CAPABILITIES`/`capabilitiesFor`, fail-closed for unknown engines) and a non-transactional-DDL dialect refuses the structural path — dry-run included — before any statement runs; roles resolve per REQUEST from the live directory for token-bearing callers, so revoking/deleting a user's row takes effect on their very next call without re-issuing the token (this does NOT cover API keys, whose roles come from `config.api_keys[].roles` and are operator-managed rather than directory-revocable, nor an already-open SSE subscription, which captures its ctx once at connect); `/_studio/users` add/role-set writes the `nexus_user` directory row (not just `nexus.config.json`), so a Studio-provisioned identity can actually complete the ZEN handshake past first boot, instead of reporting `applied: true` for an identity that cannot log in; webhooks are http(s)-only at write and dispatch time, timeout-bounded, non-redirecting, and the signing secret never enters the job ledger; both servers cap pre-auth request bodies, the challenge map is swept and capped under a flood, and production refuses to boot without a real `token_secret`** | **SYS-10/11/12/13, AUTH-STRANGER, DPL-PERMLEVEL, DPL-ASYMMETRIC, SITE-BACKUP, OPS-10, STUDIO-08/09/09a/10/11/12, ADP-CAP, MIG-NOTX, AUTH-REVOKE, AUTH-REVOKE-DELETE, WH-04/05/06/07, START-BODY/CHALLENGE/SECRET** |
@@ -100,14 +105,12 @@ one engine or the one path where it happens to hold.
 
 ## Unfinished / known drift (honest list, 2026-07-21)
 
-- **Issue #9: what is left is resource bounds and HTTP coverage.** C1–C5 and
-  I1–I5/I10 closed with the security chunk; I6, I7, I8, I9 and I11 closed with
-  the durability chunk (see its row above), along with TOCTOU and
-  WAL/`busy_timeout`. The remaining #9 items in this section — backup
-  streaming, rate limiting, SSE fan-out cost, `fire()`'s full scan,
-  `search()`'s inline re-embed cap, `dev.js`'s oversize-body hang — are one
-  coherent **resource-bounds** chunk, deliberately deferred rather than mixed
-  into the atomicity work. None is a privilege-escalation or auth-bypass path.
+- **Issue #9: what is left is HTTP coverage.** C1–C5 and I1–I5/I10 closed with
+  the security chunk; I6–I9 and I11 with the durability chunk, along with
+  TOCTOU and WAL/`busy_timeout`; the moderates with the resource-bounds chunk.
+  What remains is that `server.js`, `api.js` and `start.js` have no in-process
+  clauses — they are observed only as black-box subprocesses. The bullets
+  below record what each landed bound does NOT cover.
 - **A behaviour change, declared (N3): an `after:` hook that throws no longer
   fails the write.** It runs once the write is durable, so propagating it told
   the caller to retry a write that had already happened — which produces a
@@ -141,21 +144,36 @@ one engine or the one path where it happens to hold.
   but a concurrent write to a field the permission rule does not mention can
   make the derived embedding reflect a slightly stale row. The next write of
   that row re-derives it.
-- **Backup streaming/memory is unfixed, and now touches MORE tables**: C3
-  made backup complete (system entities are now included) and secret-safe,
-  but did not change its shape — it still `SELECT *`s an entire table into
-  one in-memory JSON document per entity, now across a strictly larger table
-  set than before. A large `nexus_job`/`nexus_notification` table makes this
-  worse, not better. Streaming is the fix; not built here.
-- **No rate limiting anywhere**: `/_auth/challenge`, `/_auth/verify`, and
-  every `/api/v1/*` route accept requests at whatever rate the network
-  allows. The body-size and challenge-map caps (START-BODY/CHALLENGE, this
-  spec) bound memory, not request rate — a client can still hammer the
-  endpoints as fast as it can open connections.
-- **SSE fan-out cost is unbounded by subscriber count**: `/api/v1/_events`
-  broadcasts every eligible event to every open subscriber with no backlog
-  cap or slow-consumer handling; a large number of idle-but-connected
-  subscribers all pay the cost of every write.
+- **The rate limiter's blast radius**: the token bucket is per PROCESS and per
+  key, in memory. Two processes behind a load balancer allow twice the
+  configured rate, and a restart forgets every bucket. It is a real bound
+  against one noisy client and it is NOT a defence against a distributed
+  flood — that belongs at the proxy or the network. `X-Forwarded-For` is
+  ignored unless `limits.trust_proxy` is set, because it is a header the
+  caller controls; behind a proxy that does NOT set it, every request keys to
+  the proxy's own address and the whole deployment shares one bucket. Turning
+  the limiter off (`limits.enabled: false`) is supported and sometimes right.
+- **Backup streams; RESTORE still does not.** Backup now writes to a stream in
+  pages of 500, so creating one is bounded by a page rather than the whole
+  database. `restore` still `JSON.parse`s the entire document, so restoring a
+  multi-gigabyte backup will still exhaust memory. The failure issue #9 named
+  was on the write side and that is what closed; the read side needs an
+  incremental JSON reader, which is a genuinely larger piece of work and was
+  not smuggled in. Stated here rather than left as a half-fixed round trip
+  nobody wrote down.
+- **The SSE subscriber cap bounds sockets, not bandwidth**: `maxSubscribers`
+  refuses new connections past the cap and the per-emit memo means N
+  subscribers sharing an authorization context cost one visibility read rather
+  than N. Neither bounds how much a single slow consumer can make the process
+  buffer — there is still no backlog cap or slow-consumer eviction.
+- **Embedding backfill is best-effort and in-process**: `search()` embeds at
+  most `semantic.max_inline_embed` (default 64) documents inside a request and
+  drains the rest in the background on the main process. A restart mid-drain
+  loses the remainder until the next search over that corpus re-schedules it,
+  and the work competes with request handling. It does NOT ride the job queue:
+  the job thread's plane RPC is deliberately four ops and cannot write the
+  embedding tables, and widening that seam would trade a performance bound for
+  a security surface.
 - **The harness-integrity chunk of the follow-up is done, and it moved one
   number**: the `Test.js` all-skipped-reports-green hazard is fixed (see the
   **Harness integrity** row). Two consequences worth stating plainly. First,
