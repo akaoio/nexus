@@ -18,6 +18,11 @@
  * seam, and the seam is narrow on purpose (THR-04).
  */
 
+import { spawnSync } from "child_process"
+import { mkdtempSync, rmSync, writeFileSync } from "fs"
+import { tmpdir } from "os"
+import { join } from "path"
+import { fileURLToPath } from "url"
 import { DatabaseSync } from "node:sqlite"
 import Test, { assert } from "../../src/core/Test.js"
 import { DataPlane } from "../../src/core/Data.js"
@@ -111,6 +116,53 @@ Test.describe("Inline embedding is capped (SEM-CAP)", () => {
 
         await plane.embeddingBackfill // the drain this search scheduled
         assert.equal(storedCount(plane), 30, "and afterwards the whole corpus is embedded under the current model")
+    })
+
+    Test.it("SEM-CAP-04 the drain runs on an OTHERWISE IDLE process — in a child, so nothing else can keep the loop alive for it", () => {
+        // The regression this exists for: the drain's timer was unref'd, on the
+        // reasoning that "a pending drain should never hold a CLI process open".
+        // An unref'd timer does not keep the event loop alive, so on an idle
+        // process the drain NEVER RAN and embeddingBackfill never settled —
+        // leaving the corpus permanently half-embedded, the exact failure the
+        // cap was made honest to avoid. SEM-CAP-02 passed throughout, because
+        // inside a full suite run there is always other pending work masking it.
+        //
+        // So this clause spawns a CHILD whose loop contains nothing but the
+        // drain. That is the only arrangement in which the property is real.
+        const dir = mkdtempSync(join(tmpdir(), "nexus-drain-"))
+        const src = (rel) => fileURLToPath(new URL(rel, import.meta.url)).replace(/\\/g, "/")
+        const script = join(dir, "drain.mjs")
+        writeFileSync(script, `
+import { DatabaseSync } from "node:sqlite"
+import { DataPlane } from "${src("../../src/core/Data.js")}"
+import { tableDDL } from "${src("../../src/core/Data/ddl.js")}"
+import { createCompiler } from "${src("../../src/core/Data/kysely.js")}"
+import { handleTransaction } from "${src("../../src/core/Data/transaction.js")}"
+
+const NOTE = ${JSON.stringify(NOTE)}
+const CTX = ${JSON.stringify(CTX)}
+const db = new DatabaseSync(":memory:")
+const k = createCompiler("sqlite")
+for (const b of tableDDL(k, NOTE)) db.exec(b.compile().sql)
+const run = (s, p = []) => void db.prepare(s).run(...p)
+const all = (s, p = []) => db.prepare(s).all(...p)
+const mk = (n) => ({ name: n, version: 1, embed: async (t) => t.map(() => [1, 0, 0]) })
+
+const plane = new DataPlane({ executor: { run, all, transaction: handleTransaction(run, all, "BEGIN IMMEDIATE") },
+    schemas: [NOTE], dialect: "sqlite", embedder: mk("m1"), maxInlineEmbed: 2, now: () => "2026-07-21T00:00:00.000Z" })
+for (let i = 0; i < 10; i++) await plane.create("note", { title: "n" + i }, CTX)
+plane.embedder = mk("m2")
+await plane.search("note", { query: "n", mode: "vector", k: 3 }, CTX)
+await plane.embeddingBackfill
+const n = all("SELECT COUNT(*) AS n FROM _nexus_embeddings WHERE model = ?", ["m2@1"])[0].n
+console.log("EMBEDDED=" + n)
+`)
+        const r = spawnSync(process.execPath, [script], { encoding: "utf8", timeout: 30000 })
+        rmSync(dir, { recursive: true, force: true })
+
+        // Exit 13 is Node's "unsettled top-level await" — the shape this bug had.
+        assert.equal(r.status, 0, `the drain must settle on an idle loop, got exit ${r.status}: ${r.stderr}`)
+        assert.truthy(r.stdout.includes("EMBEDDED=10"), `and the whole corpus must be embedded: ${r.stdout.trim()}`)
     })
 
     Test.it("SEM-CAP-03 with everything already embedded, a search does no document embedding at all", async () => {
