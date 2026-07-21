@@ -31,6 +31,18 @@ import { findBrowsers, launch } from "./browser.js"
 const ROOT = fileURLToPath(new URL("..", import.meta.url))
 const BIN = join(ROOT, "bin", "nexus.js")
 
+// A hard ceiling on the whole run. Every wait inside has its own timeout, but
+// a browser that never announces DevTools, or a dev server that never prints
+// its URL, would hang before any of them applies — and a hung CI job is worse
+// than a failing one, because nothing tells you it is stuck. Observed once: one
+// matrix leg finished in two minutes while the other sat for twenty.
+const GLOBAL_TIMEOUT_MS = Number(process.env.NEXUS_E2E_TIMEOUT_MS ?? 8 * 60 * 1000)
+const guard = setTimeout(() => {
+    console.error(`\nEnd-to-end: aborted after ${Math.round(GLOBAL_TIMEOUT_MS / 1000)}s — the run hung rather than failed.`)
+    process.exit(1)
+}, GLOBAL_TIMEOUT_MS)
+guard.unref?.() // it must not itself keep the process alive once work is done
+
 const results = []
 const record = (name, error) => {
     results.push({ name, error: error ?? null })
@@ -239,5 +251,6 @@ try {
 
 const failed = results.filter((r) => r.error)
 console.log(`\nEnd-to-end: ${results.length - failed.length}/${results.length} clauses green${failed.length ? ` — ${failed.length} RED` : ""}`)
+clearTimeout(guard)
 // A run that verified nothing is not success (RUN-01's rule, one runner out).
 process.exit(failed.length === 0 && results.length > 0 ? 0 : 1)
