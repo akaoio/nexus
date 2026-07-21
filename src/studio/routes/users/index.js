@@ -5,11 +5,15 @@
  *  self-service, the admin bundle for everyone) — nothing here branches
  *  on a role name. */
 
-import { mountTemplate, button, toast, confirmDialog, subscribe, onUnmount } from "../../kit/index.js"
+import { mountTemplate, button, toast, confirmDialog, subscribe, onUnmount , buildForm, interfaces, parseTags } from "../../kit/index.js"
 import "../../components/identicon/index.js"
 import { usersTemplate } from "./template.js"
 
-const parseRoles = (row) => (row.roles ? JSON.parse(row.roles) : [])
+// One reader for a stored tag list, shared with the registry's `tags`
+// interface. This used to be a bare JSON.parse: a roles value written by hand
+// or by an older build threw inside load() and took the whole page down, where
+// the honest answer is "no roles yet".
+const parseRoles = (row) => parseTags(row.roles)
 
 export function render(ctx) {
     const c = {}
@@ -41,58 +45,49 @@ export function render(ctx) {
         setTimeout(() => location.reload(), 1200)
     }
 
-    /** The edit drawer: profile fields + the multi-role checklist. */
+    /**
+     * The edit drawer, GENERATED from the nexus_user schema (§7.1: "sinh UI từ
+     * schema"). This used to hand-build the whole form — a name/email/bio loop
+     * plus a roles checklist — about twenty createElement calls of UI that no
+     * other entity could reach and that the field registry could not see.
+     *
+     * `roles` is the one field the type registry cannot answer for: it is a
+     * `text` column holding JSON, and Model Schema v1 is frozen (N4), so
+     * "give it its own field type" is a format version rather than an
+     * afternoon. The override seam points that ONE field at the registered
+     * `tags` interface, so the widget stays reusable instead of inlined here.
+     */
     function editUser(row) {
-        const wrap = document.createElement("div")
-        wrap.className = "nx-form"
-        const values = { name: row.name ?? "", email: row.email ?? "", bio: row.bio ?? "" }
-        for (const key of ["name", "email", "bio"]) {
-            const field = document.createElement("div")
-            field.className = "nx-field"
-            const label = document.createElement("label")
-            label.className = "nx-label"
-            label.textContent = key
-            const input = document.createElement("input")
-            input.className = "nx-input"
-            input.value = values[key]
-            input.addEventListener("input", () => (values[key] = input.value))
-            field.append(label, input)
-            wrap.append(field)
-        }
-        const rolesWrap = document.createElement("div")
-        rolesWrap.className = "nx-field"
-        const rolesLabel = document.createElement("label")
-        rolesLabel.className = "nx-label"
-        rolesLabel.textContent = "roles — many per user"
-        const grid = document.createElement("div")
-        grid.className = "nx-options"
-        const held = new Set(parseRoles(row))
-        const boxFor = (name) => {
-            const label = document.createElement("label")
-            label.className = "nx-check"
-            const box = document.createElement("input")
-            box.type = "checkbox"
-            box.checked = held.has(name)
-            box.addEventListener("change", () => (box.checked ? held.add(name) : held.delete(name)))
-            label.append(box, name)
-            return label
-        }
-        for (const name of roleNames) grid.append(boxFor(name))
-        const extra = document.createElement("input")
-        extra.className = "nx-input"
-        extra.placeholder = "new role name — Enter adds it"
-        extra.addEventListener("keydown", (e) => {
-            if (e.key !== "Enter" || !extra.value.trim()) return
-            const name = extra.value.trim()
-            held.add(name)
-            grid.append(boxFor(name))
-            grid.lastElementChild.querySelector("input").checked = true
-            extra.value = ""
+        const schema = ctx.schemas?.find((s) => s.name === "nexus_user")
+        if (!schema) return toast("nexus_user schema unavailable", "err")
+
+        const form = buildForm(schema, {
+            data: row,
+            submitLabel: "Save",
+            // Only the fields a human edits here. `pub` is the identity itself
+            // and changing it would mean a different person.
+            fields: ["name", "email", "bio", "roles"],
+            interfaces: { roles: (f, v, on) => interfaces.tags({ ...f, options: roleNames }, v, on) },
+            onSubmit: async (values) => {
+                // roles sits behind permlevel 1 (C1) — a non-admin sending it
+                // at all throws E_FIELD_FORBIDDEN and takes the WHOLE save down
+                // with it, even for an ordinary name/bio/email edit. This route
+                // has no roles of its own to check (ctx carries no session), so
+                // it asks the one place that already knows.
+                const session = await ctx.api.session()
+                const isAdmin = session.ok && (session.data.roles || []).includes("admin")
+                const patch = { ...values }
+                if (!isAdmin) delete patch.roles
+                const r = await ctx.api.update("nexus_user", row.id, patch)
+                toast(r.ok ? "Saved — live" : r.error.code + ": " + (r.error.message || ""), r.ok ? "ok" : "err")
+                ctx.closeDrawer()
+                load()
+            }
         })
-        rolesWrap.append(rolesLabel, grid, extra)
+
         const actions = document.createElement("div")
         actions.className = "nx-actions"
-        const remove = button({
+        actions.append(button({
             variant: "danger",
             onclick: async () => {
                 if (!(await confirmDialog("Remove " + (row.name || row.pub) + "?"))) return
@@ -101,31 +96,10 @@ export function render(ctx) {
                 ctx.closeDrawer()
                 load()
             }
-        }, ["Remove"])
-        const spread = document.createElement("span")
-        spread.className = "nx-spacer"
-        const save = button({
-            variant: "primary",
-            onclick: async () => {
-                // roles sits behind permlevel 1 (C1) — a non-admin sending it at
-                // all throws E_FIELD_FORBIDDEN and takes the WHOLE save down with
-                // it, even for an ordinary name/bio/email edit. This route has no
-                // roles of its own to check (ctx carries no session), so it asks
-                // the one place that already knows: /api/v1/_session. Only an
-                // admin's patch ever carries the key.
-                const session = await ctx.api.session()
-                const isAdmin = session.ok && (session.data.roles || []).includes("admin")
-                const patch = { ...values }
-                if (isAdmin) patch.roles = JSON.stringify([...held])
-                const r = await ctx.api.update("nexus_user", row.id, patch)
-                toast(r.ok ? "Saved — live" : r.error.code + ": " + (r.error.message || ""), r.ok ? "ok" : "err")
-                ctx.closeDrawer()
-                load()
-            }
-        }, ["Save"])
-        actions.append(remove, spread, save)
-        wrap.append(rolesWrap, actions)
-        ctx.drawer(row.name || row.pub, wrap)
+        }, ["Remove"]))
+        form.prepend(actions)
+
+        ctx.drawer(row.name || row.pub, form)
     }
 
     async function load() {
