@@ -11,6 +11,9 @@
 
 import Test from "./src/core/Test.js"
 
+// Core — the test runner's own verdict rule (clause RUN-01, issue #9 H1)
+import "./test/core/test-runner.test.js"
+
 // Conformance — Query AST v1 (clauses AST-S/O/V/P/I/N/Q)
 import "./test/conformance/ast/structure.test.js"
 import "./test/conformance/ast/operators.test.js"
@@ -112,6 +115,10 @@ import "./test/http/models.test.js"
 
 // Config control-plane — nexus config get/set/unset (clauses CONFIG-*)
 import "./test/http/config.test.js"
+
+// Sync — stub load integrity: the NOT_IMPLEMENTED shim stands in only for
+// an absent module, never a broken one (clause SYNCLOAD-01, issue #9 H2)
+import "./test/sync/load-integrity.test.js"
 
 // Sync — event log → SQL projection (clauses SYNC-*)
 import "./test/sync/sync.test.js"

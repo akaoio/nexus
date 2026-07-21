@@ -36,8 +36,19 @@ try {
 }
 
 if (!verdict) {
+    // The harness legitimately cannot run everywhere (no network, sandboxed
+    // CI) — that is a defensible skip. This is NOT a browser concern: the
+    // harness is Node-only (child_process + real sockets), so `{ browser:
+    // true }` would silently no-op here regardless of whether the process
+    // crashed or the environment just lacks the mesh, hiding a real bug
+    // behind an environment-flavoured skip. Use the runner's explicit,
+    // environment-independent skip instead, with a fixed test name and the
+    // real reason surfaced via a warning, not interpolated into the name.
+    // (A harness that DID run and returned `verdict.error` is a different
+    // path — the `else` branch below — and fails ZSYNC-00 for real.)
+    console.warn(`ZSYNC-00 the mesh harness did not run: ${spawnError}`)
     Test.describe("Sync over ZEN mesh (ZSYNC, harness unavailable)", () => {
-        Test.it(`ZSYNC-00 skipped — mesh harness did not run: ${spawnError}`, () => {}, { browser: true })
+        Test.it("ZSYNC-00 the mesh harness did not run", () => {}, { interactive: true })
     })
 } else {
     Test.describe("Sync over ZEN mesh (ZSYNC) — real peer-to-peer transport", () => {
