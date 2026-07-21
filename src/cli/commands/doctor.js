@@ -38,7 +38,7 @@ function installChecks(check) {
     }
     const channel = manifest?.channel
         ?? (NEXUS_ROOT.includes("node_modules") ? "npm" : existsSync(join(NEXUS_ROOT, ".git")) ? "git" : "tarball")
-    check("install", true, `${channel} · ${NEXUS_ROOT}`)
+    check("install", true, `${channel} · ${manifest?.commit ? manifest.commit.slice(0, 12) + " · " : ""}${NEXUS_ROOT}`)
     check("install manifest", Boolean(manifest),
         manifest ? `${manifest.shims.length} shim(s) recorded` : "absent — uninstall falls back to the default locations")
 

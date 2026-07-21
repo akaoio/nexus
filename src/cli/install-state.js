@@ -63,12 +63,17 @@ export const readManifest = (home) => readJson(manifestPath(home), "E_MANIFEST",
  * change. `manifestVersion` for the same reason the other three formats carry
  * one (N4): the next version has to be able to read this one.
  */
-export function writeManifest(home, { channel = "git", shims = [], pathEntries = [], units = [], cronMarkers = [] } = {}) {
+export function writeManifest(home, { channel = "git", commit = null, shims = [], pathEntries = [], units = [], cronMarkers = [] } = {}) {
     ensureState(home)
     const manifest = {
         manifestVersion: MANIFEST_VERSION,
         installedAt: new Date().toISOString(),
         channel,
+        // Which tree this install IS. Written by both installers; a tarball
+        // install could not say before (issue #8 answer 8). Carried through
+        // every rewrite — dropping it on a later `service install` would make
+        // the manifest quietly forget what it knew.
+        commit,
         home,
         shims,
         pathEntries,
