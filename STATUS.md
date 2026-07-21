@@ -502,6 +502,18 @@ places nobody thought to check are where these live.
 - **The browser suite is green here, and that is a per-machine claim**: it needs a real Chromium
   and runs over CDP. It is green on this Linux box; an environment without a browser exits 3 (no
   browser found) rather than pretending.
+- **ZSYNC is FLAKY in CI, and that is a hazard rather than a footnote.** The ZEN
+  mesh suite needs real local sockets and a convergence window, and on a loaded
+  GitHub runner it can miss it: ZSYNC-01/03/04/05 failed on one push and the
+  SAME commit passed on a re-run and on the pull_request run. It was re-run
+  once, deliberately not until green — re-running until green is the "light
+  wired to nothing" pattern these chunks exist to remove. What this costs is
+  precise: a flaky clause inside a merge gate teaches people to re-run rather
+  than to read, which erodes the trust the gate was built for. The fix is to
+  make convergence wait on an observable condition rather than elapsed time, or
+  to declare the suite unavailable when it cannot converge instead of failing —
+  not to loosen what it asserts. Owed, and named here so a future red ZSYNC is
+  read as "check this" rather than "re-run it".
 - **CI exists (`.github/workflows/conformance.yml`) and has now RUN — and caught a real defect on
   its first attempt.** On Node 24 it failed with an unsettled top-level await (exit 13): the
   background embedding drain's timer was unref'd, so on an otherwise-idle process the drain never
