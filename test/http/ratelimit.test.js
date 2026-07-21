@@ -134,6 +134,44 @@ Test.describe("Request rate limiting (RATE)", () => {
         assert.equal(tierFor("/_studio/model"), "api")
     })
 
+    Test.it("RATE-10 a Studio boot is not throttled — the api tier once made the page fail to load at all", () => {
+        // The regression this exists for: every path that was not /_auth/ took
+        // the api tier, including the framework source in dev and the built
+        // assets in production. A Studio boot pulls four hundred-odd ES modules
+        // in one burst, so the module graph became a wall of 429s and the page
+        // never rendered. Caught by the first end-to-end run; no earlier suite
+        // loaded the Studio's real module graph against a real server.
+        assert.equal(tierFor("/_nexus/src/studio/app.js"), "asset")
+        assert.equal(tierFor("/studio/src/studio/kit/index.js"), "asset")
+        assert.equal(tierFor("/favicon.ico"), "asset")
+        // The surfaces worth protecting keep their tiers.
+        assert.equal(tierFor("/api/v1/task"), "api")
+        assert.equal(tierFor("/_studio/model"), "api")
+        assert.equal(tierFor("/api/v1/_auth/verify"), "auth")
+
+        // And a burst the size of a real boot passes.
+        const limiter = createLimiter({ now: () => 0 })
+        let allowed = 0
+        for (let i = 0; i < 420; i++) if (limiter.check("1.2.3.4", tierFor("/_nexus/src/studio/app.js")).allowed) allowed++
+        assert.equal(allowed, 420, "a page load must never be the thing that trips the limiter")
+    })
+
+    Test.it("RATE-11 INVARIANT: every declared tier reaches the built limiter, and every tierFor answer is one of them", () => {
+        // How this was found: `asset` was added to TIERS but limiterFor listed
+        // its tiers by hand, so check() never saw the name — and check() falls
+        // back to the TIGHTEST tier for a name it does not know. The most
+        // generous tier silently became the strictest, throttling the Studio's
+        // own module loads to twenty and leaving the page unable to boot.
+        // Fail-closed is the right default; a tier that can be FORGOTTEN is not.
+        const limiter = limiterFor({})
+        for (const name of Object.keys(TIERS))
+            assert.truthy(limiter.tiers[name], `tier "${name}" is declared but never reaches the limiter`)
+
+        // And every answer tierFor can give must be a tier that exists.
+        for (const path of ["/api/v1/_auth/verify", "/api/v1/task", "/_studio/model", "/_nexus/src/studio/app.js", "/anything"])
+            assert.truthy(limiter.tiers[tierFor(path)], `tierFor("${path}") names a tier the limiter does not have`)
+    })
+
     Test.it("RATE-07 an operator can turn it OFF — an instance behind a proxy that already limits does not need a second limiter", () => {
         assert.equal(limiterFor({ limits: { enabled: false } }), null)
         assert.truthy(limiterFor({}), "and it is on by default")
