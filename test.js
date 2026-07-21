@@ -148,6 +148,7 @@ import "./test/sync/zen-transport.test.js"
 
 // Semantic — serialize/embed/search/RRF (clauses SEM-*)
 import "./test/semantic/semantic.test.js"
+import "./test/semantic/embed-cap.test.js"
 import "./test/semantic/real-embedding.test.js"
 import "./test/semantic/embeddinggemma.test.js"
 

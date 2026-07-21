@@ -51,6 +51,9 @@ export class DataPlane {
     /** The hard ceiling on any list/search result set (SEC-05, DoS bound). */
     static MAX_LIMIT = 1000
 
+    /** Documents search() may embed inside one request (SEM-CAP-01). */
+    static MAX_INLINE_EMBED = 64
+
     /**
      * @param {Object} config
      * @param {{run: Function, all: Function}} config.executor - Engine executor
@@ -61,7 +64,7 @@ export class DataPlane {
     #embeddingsReady = false
     #vecReady = new Set()
 
-    constructor({ executor, schemas = [], dialect = "sqlite", now, hooks = null, embedder = null, onHookError } = {}) {
+    constructor({ executor, schemas = [], dialect = "sqlite", now, hooks = null, embedder = null, onHookError, maxInlineEmbed } = {}) {
         if (!executor) throw err("E_EXECUTOR", "an executor { run, all } is required")
         this.executor = executor
         // One transaction per write (I7): the row and its derived state commit
@@ -74,6 +77,14 @@ export class DataPlane {
         // worse. Loud in the operator's log, invisible to the caller.
         this.onHookError = onHookError ?? (({ entity, event, error }) =>
             console.error(`[nexus] ${event} hook failed on ${entity}: ${error?.message ?? error}`))
+        // How many documents search() may embed INSIDE a request. A model
+        // switch makes every stored vector stale at once, and without a cap
+        // the first search afterwards does up to MAX_LIMIT rows of synchronous
+        // ML work in one HTTP request. The remainder is drained in the
+        // background — see #currentVectors.
+        this.maxInlineEmbed = Number.isInteger(maxInlineEmbed) && maxInlineEmbed > 0 ? maxInlineEmbed : DataPlane.MAX_INLINE_EMBED
+        /** The in-flight background embedding drain, or null. */
+        this.embeddingBackfill = null
         this.dialect = dialect
         this.family = dialect === "turso" ? "sqlite" : dialect
         this.kysely = createCompiler(dialect)
@@ -520,16 +531,67 @@ export class DataPlane {
         )
         const vectors = new Map(stored.map((r) => [r.row_id, JSON.parse(r.vector)]))
         const missing = rows.filter((row) => !vectors.has(row.id))
+
+        // BOUNDED inline (SEM-CAP-01): a model switch invalidates every stored
+        // vector at once, so without this the first search afterwards embeds
+        // the whole candidate set — up to MAX_LIMIT rows of synchronous ML work
+        // inside one request.
+        const inline = missing.slice(0, this.maxInlineEmbed)
+        await this.#embedInto(entity, schema, inline, vectors)
+
+        // …and the rest is drained in the background (SEM-CAP-02). The cap
+        // alone would leave the corpus permanently half-embedded, ranking
+        // against it quietly and forever — worse than the unbounded version,
+        // because nothing would ever say so. Finishing the work is what makes
+        // the cap honest.
+        //
+        // Background rather than a job: the job thread reaches data through a
+        // deliberately narrow 4-op plane RPC that cannot write the embedding
+        // tables, and widening that seam to carry this would trade a
+        // performance bound for a security surface (THR-04).
+        const rest = missing.slice(this.maxInlineEmbed)
+        if (rest.length) this.#scheduleBackfill(entity, schema, rest)
+
+        return vectors
+    }
+
+    /** Embed `rows` in batches, storing each vector and filling `into`. */
+    async #embedInto(entity, schema, rows, into = null) {
         const BATCH = 32
-        for (let start = 0; start < missing.length; start += BATCH) {
-            const batch = missing.slice(start, start + BATCH)
+        for (let start = 0; start < rows.length; start += BATCH) {
+            const batch = rows.slice(start, start + BATCH)
             const embedded = await this.embedder.embed(batch.map((row) => serializeRow(schema, row)))
             for (let i = 0; i < batch.length; i++) {
-                vectors.set(batch[i].id, embedded[i])
+                into?.set(batch[i].id, embedded[i])
                 await this.#storeEmbedding(entity, batch[i].id, embedded[i])
             }
         }
-        return vectors
+    }
+
+    /**
+     * Finish embedding `rows` after the request has been answered.
+     *
+     * Chained rather than concurrent: one drain at a time, so a burst of
+     * searches during a model switch cannot start a dozen overlapping backfills
+     * and turn a bound into a stampede. A failure is contained the same way an
+     * after-hook failure is — reported, never surfaced to a caller whose
+     * request already succeeded.
+     */
+    #scheduleBackfill(entity, schema, rows) {
+        const previous = this.embeddingBackfill ?? Promise.resolve()
+        this.embeddingBackfill = previous
+            .then(
+                () =>
+                    // A MACROTASK, not a microtask: a microtask would interleave
+                    // with the very request that scheduled it, so the work would
+                    // still land inside the response the cap exists to bound.
+                    // unref'd so a pending drain never holds a CLI process open.
+                    new Promise((done) => {
+                        const timer = setTimeout(() => this.#embedInto(entity, schema, rows).then(done, done), 0)
+                        timer.unref?.()
+                    })
+            )
+            .catch((error) => this.onHookError({ entity, event: "embedding:backfill", error, ctx: null }))
     }
 
     async #dropEmbedding(entity, id, conn = this.executor) {
