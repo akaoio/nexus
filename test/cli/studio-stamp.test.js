@@ -251,7 +251,10 @@ Test.describe("Studio build lifecycle (STAMP)", () => {
             const path = join(scratch, "shop", ".gitignore")
             assert.truthy(existsSync(path), "a .gitignore must be generated")
             const lines = readFileSync(path, "utf8").split("\n").map((l) => l.trim())
-            for (const entry of ["public/studio/", "node_modules/", ".certs/"])
+            // `.nexus/` is where the sqlite database actually lives — the first
+            // draft of this list said `.data/`, which covers nothing, and only
+            // reading a real instance directory caught it.
+            for (const entry of ["public/studio/", ".nexus/", "node_modules/", ".certs/"])
                 assert.truthy(lines.includes(entry), `.gitignore must cover ${entry}: ${lines.join(" · ")}`)
         } finally {
             rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })

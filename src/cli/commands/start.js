@@ -64,9 +64,9 @@ export async function start(args, flags, out) {
     const { config, schemas, apps, policies: appPolicies } = loadInstance(root)
 
     // Shared wiring in production mode — refuses the DEV identity loudly.
-    let api, authState, challenges, engine, authMode, effects
+    let api, authState, challenges, engine, authMode, effects, close
     try {
-        ;({ api, authState, challenges, engine, authMode, effects } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "production" }))
+        ;({ api, authState, challenges, engine, authMode, effects, close } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "production" }))
     } catch (error) {
         if (error.code === "E_NO_AUTH") {
             out.error(error.message, { code: "E_NO_AUTH" })
@@ -264,7 +264,20 @@ export async function start(args, flags, out) {
         out.print(`          ${out.dim("rebuild with `nexus studio build`")}`)
     }
 
-    const shutdown = () => { effects.stop().finally(() => server.close(() => process.exit(0))) }
+    // Both signals were already handled here — but only the server was closed.
+    // The database handle was not, so a `systemctl stop` left the write-ahead
+    // log un-checkpointed exactly as dev did: the same gap, in production, in
+    // the path a service manager takes every time it restarts the unit
+    // (STARTDOWN-01). `stopping` guards the double-signal case.
+    let stopping = false
+    const shutdown = async () => {
+        if (stopping) return
+        stopping = true
+        try { await effects.stop() } catch { /* nothing to stop */ }
+        try { await close?.() } catch { /* already closed */ }
+        server.close(() => process.exit(0))
+        setTimeout(() => process.exit(0), 2000).unref() // a keep-alive socket must not hold the unit open
+    }
     process.on("SIGINT", shutdown)
     process.on("SIGTERM", shutdown)
 

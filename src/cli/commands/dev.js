@@ -75,30 +75,52 @@ export async function dev(args, flags, out) {
     i18n.locales = coveredLocales(i18n.dict)
     // Data Plane + auth + API through the shared wiring. Dev mode falls back to
     // the loud DEV identity when no auth is configured (production refuses that).
-    let { api, plane, authState, challenges, engine, authMode, embedderInfo, effects } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" })
+    let { api, plane, authState, challenges, engine, authMode, embedderInfo, effects, close } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" })
 
     // ── hot reload — entity writes NEVER require a dev restart ──────────────
     // Reloading swaps the whole instance surface (schemas, plane, API) in
     // place; every request closure reads these let-bindings, so the very next
-    // request runs on the new shape. The old sqlite handle is left to the GC —
-    // a dev-only cost, taken deliberately for restartless entity CRUD.
+    // request runs on the new shape.
+    //
+    // BUILD FIRST, RELEASE SECOND. This used to stop the old effects before
+    // loading, which had two costs. The old instance's database handle was
+    // never closed at all — the comment here claimed it was "left to the GC",
+    // but nothing outside buildInstanceApi ever held it, so it was retained
+    // and unreachable, and five reloads took this process from 3 to 17
+    // descriptors on the same file. And a rebuild that THREW — a malformed
+    // model file dropped into apps/ is enough — left dev serving from the old
+    // plane with its job runner already stopped, saying nothing.
+    //
+    // In this order a failed rebuild touches nothing: the old bundle is still
+    // bound, still running its effects, still holding its handle. Two sqlite
+    // connections exist for the length of the rebuild, which is what WAL is
+    // for (DEVFD-01/02).
     async function reloadInstance() {
-        await effects.stop() // stop the old interval + job thread before the rebuild replaces the plane
         const fresh = loadInstance(root)
+        const previous = { effects, close }
+
+        // `appPolicies` is refilled IN PLACE, never replaced: the array's
+        // identity is the contract — buildInstanceApi's policyLayers() closes
+        // over it so a hot policy write is visible on the very next call. A
+        // fresh array here would quietly sever that.
+        appPolicies.length = 0
+        appPolicies.push(...fresh.policies)
+        const built = await buildInstanceApi({ root, config: fresh.config, schemas: fresh.schemas, apps: fresh.apps, appPolicies, mode: "dev" })
+
+        // Past this line the rebuild has SUCCEEDED, so the swap cannot leave a
+        // half-replaced instance behind, and only now is the old one released.
         config = fresh.config
         schemas = fresh.schemas
         apps = fresh.apps
         schemaFiles = fresh.files
-        appPolicies.length = 0
-        appPolicies.push(...fresh.policies)
-        ;({ api, plane, authState, challenges, engine, authMode, embedderInfo, effects } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" }))
+        ;({ api, plane, authState, challenges, engine, authMode, embedderInfo, effects, close } = built)
+
+        await previous.effects.stop()
+        await previous.close()
     }
 
     // ── dev tooling stream (design 2026-07-20 §3): the server half of the
     // shipped akao HMR client. Dev-only; `nexus start` never mounts this.
-    // No SIGINT/SIGTERM teardown exists in dev.js today (unlike start.js) —
-    // the watcher's lifetime is the process's; the spawned dev process is
-    // SIGKILLed by callers/tests, which reaps it along with everything else.
     const devSubscribers = new Set()
     const devBroadcast = (message) => {
         const data = typeof message === "string" ? message : JSON.stringify(message)
@@ -591,6 +613,38 @@ export async function dev(args, flags, out) {
         out.print(`  ${out.dim("data")}   engine ${engine}${engine === "sqlite" ? " · .nexus/data.db" : ""}`)
         out.print(`  ${out.dim("embed")}  ${embedderInfo.mode}${embedderInfo.name ? ` · ${embedderInfo.name}` : ""}`)
     }
+    // ── teardown ───────────────────────────────────────────────────────────
+    // This used to say a signal handler was unnecessary because "the spawned
+    // dev process is SIGKILLed by callers/tests, which reaps it along with
+    // everything else". That describes the test harness, not the developer
+    // pressing Ctrl+C — who got a process that died by SIGTERM with no exit
+    // code and its write-ahead log still on disk, uncheckpointed. Closing the
+    // last sqlite connection is what checkpoints it; abandoning the process
+    // never does (DEVDOWN-01/02).
+    //
+    // Ordered outside-in: stop accepting work, release what holds clients
+    // open, then close what holds the disk open. `stopping` makes it
+    // idempotent — an impatient second Ctrl+C during shutdown must not start a
+    // second teardown (DEVDOWN-03).
+    let stopping = false
+    const shutdown = async () => {
+        if (stopping) return
+        stopping = true
+        try { watcher.stop() } catch { /* already stopped */ }
+        try { await effects.stop() } catch { /* nothing to stop */ }
+        // A dev EventSource left hanging makes the browser reconnect to a port
+        // that is going away; ending it tells the client this was deliberate.
+        for (const res of [...devSubscribers]) try { res.end() } catch { /* already gone */ }
+        devSubscribers.clear()
+        try { await close() } catch { /* already closed */ }
+        server.close(() => process.exit(0))
+        // A client holding a keep-alive socket would otherwise keep the
+        // process alive past the point where it can serve anything.
+        setTimeout(() => process.exit(0), 2000).unref()
+    }
+    process.on("SIGINT", shutdown)
+    process.on("SIGTERM", shutdown)
+
     out.emit({ ok: true, url, port: actual, entities: schemas.map((s) => s.name) })
     return server
 }

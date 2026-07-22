@@ -113,6 +113,14 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
     // No-op until the runner starts below (schemas.length === 0 boots no
     // plane at all) — dev.js's hot-reload path can always call effects.stop().
     let effects = { stop: async () => {} }
+    // The DESTRUCTOR this constructor never had. `openInstanceData` opens the
+    // database INSIDE this function and nothing outside ever saw the handle,
+    // so a caller that rebuilt an instance — dev's hot reload does, on every
+    // schema write — had no way to release the one it replaced. It was not
+    // "left to the GC": the closure holding it stays alive as long as the
+    // plane built from it, so it was retained and unreachable. Measured at
+    // 3 → 17 descriptors over five reloads before this existed.
+    let close = async () => {}
 
     if (schemas.length) {
         // System entities join the SAME pipeline as app entities — user, role,
@@ -122,6 +130,16 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         const data = await openInstanceData(root, config)
         engine = data.engine
         const { executor, kysely } = data
+        // Idempotent: teardown paths overlap (a reload racing a signal, a
+        // second Ctrl+C), and the second close must be a no-op rather than a
+        // throw from inside a shutdown handler.
+        let closed = false
+        close = async () => {
+            if (closed) return
+            closed = true
+            try { await kysely?.destroy?.() } catch {}
+            try { await executor.close?.() } catch {}
+        }
         await ensureTables(executor, kysely, allSchemas, executor.dialect)
 
         // Embeddings (§4.6b). Honest, opt-in, and lazy:
@@ -445,7 +463,7 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         effects = { stop: async () => { eventHub.stop(); clearInterval(poller); await jobThread.stop() } }
     }
 
-    return { api, plane, authState, challenges, engine, authMode, extensions, embedderInfo, effects }
+    return { api, plane, authState, challenges, engine, authMode, extensions, embedderInfo, effects, close }
 }
 
 export default { buildInstanceApi }
