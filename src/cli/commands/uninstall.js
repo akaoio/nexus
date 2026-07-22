@@ -39,7 +39,7 @@ export function plan(root = NEXUS_ROOT) {
     return {
         source: "defaults",
         root,
-        shims: [join(homedir(), ".local", "bin", "nexus"), join(root, "shims", "nexus.cmd")].filter(existsSync),
+        shims: [join(homedir(), ".local", "bin", "nexus")].filter(existsSync),
         pathEntries: [],
         units: [],
         cronMarkers: []

@@ -44,7 +44,7 @@ function installChecks(check) {
 
     // A shim that exists but whose directory is not on PATH is the failure an
     // operator meets as "command not found" and has no way to diagnose.
-    const pathDirs = (process.env.PATH ?? "").split(process.platform === "win32" ? ";" : ":")
+    const pathDirs = (process.env.PATH ?? "").split(":")
     for (const shim of manifest?.shims ?? []) {
         const there = existsSync(shim)
         const onPath = pathDirs.includes(dirname(shim))

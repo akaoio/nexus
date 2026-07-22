@@ -127,8 +127,7 @@ export function status(config, root) {
 /** Install transformers.js into the instance (real npm install). Node-only. */
 export function installLib(root) {
     const { spawnSync } = process.getBuiltinModule("child_process")
-    // on Windows npm is npm.cmd — spawning it requires a shell (Node refuses .cmd without one)
-    const result = spawnSync("npm", ["install", LIB], { cwd: root, encoding: "utf8", stdio: "pipe", shell: process.platform === "win32" })
+    const result = spawnSync("npm", ["install", LIB], { cwd: root, encoding: "utf8", stdio: "pipe" })
     if (result.error) throw err("E_INSTALL", result.error.message)
     if (result.status !== 0) throw err("E_INSTALL", (result.stderr || result.stdout || "npm install failed").trim().split("\n").pop())
     return true

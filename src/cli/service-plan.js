@@ -59,8 +59,12 @@ export function servicePlan({ instanceRoot, platform, home, nexusRoot, node, has
     // claimed. Same treatment — refuse, and say what to do instead.
     if (platform === "darwin")
         return refuse("E_SERVICE_PLATFORM", "macOS service supervision is not supported yet (launchd is untested here) — run `nexus start` under your own supervisor, or a launchd plist you control.")
+    // Nexus is POSIX-only; there is no Windows installer to reach this. The
+    // guard stays as a GUARD, not a support claim — someone running from a
+    // clone on Windows gets a sentence rather than a systemd unit written into
+    // a directory that means nothing there.
     if (platform === "win32")
-        return refuse("E_SERVICE_PLATFORM", "Windows service supervision is not supported yet — run `nexus start` under your own supervisor, or a Scheduled Task you control.")
+        return refuse("E_SERVICE_PLATFORM", "Nexus is POSIX-only — Windows is not a supported platform.")
 
     // A unit pointing at a directory that is not an instance would start,
     // fail, and restart forever. Refuse instead.

@@ -12,7 +12,7 @@ Tài liệu này là bản thiết kế nền tảng, viết **trước khi có 
 
 Frappe là meta-framework mạnh nhất hiện nay ở tổ hợp: DocType (model định nghĩa bằng JSON), Form Builder, Report Builder, permission sâu, app system. Nhưng:
 
-- **Cài đặt địa ngục**: `bench start` kéo theo Gunicorn + 3 instance Redis riêng + Node socketio + MariaDB ≥10.6.6 (không phải MySQL bất kỳ) + NGINX + Supervisor + wkhtmltopdf bản Qt-patched. Không có Windows native — mọi hướng dẫn đều đi qua WSL/Docker.
+- **Cài đặt địa ngục**: `bench start` kéo theo Gunicorn + 3 instance Redis riêng + Node socketio + MariaDB ≥10.6.6 (không phải MySQL bất kỳ) + NGINX + Supervisor + wkhtmltopdf bản Qt-patched.
 - **Chậm**: Python WSGI đa tiến trình, kiến trúc nhiều tầng phục vụ.
 - **Khoá vào một DB**: MariaDB (Postgres hỗ trợ hạng hai).
 
@@ -285,7 +285,15 @@ Không tool nào hiện có spec serialization schema-aware kiểu này (NocoDB/
    không NGINX, không Redis, không Supervisor)        ZEN sync P2P giữa các peer
 ```
 
-- **Cài đặt = một lệnh** trên mọi OS có Node ≥18 (kể cả Windows native — akao đã kiểm tra `process.platform === "win32"`). Đây là đòn trực diện vào điểm yếu nhất của Frappe.
+- **Cài đặt = một lệnh, trên POSIX** (Linux, macOS) với Node ≥22. Một script `sh`, không sudo, không NGINX/Redis/Supervisor — đó vẫn là đòn vào điểm yếu cài đặt của Frappe, chỉ là không còn kèm lời hứa Windows (xem ghi chú bên dưới).
+
+> **Sửa phạm vi nền tảng (2026-07-22) — POSIX-only.** Bản trước của §1.1 và §5 tính "Windows native" là một khác biệt đối đầu Frappe, và repo ship kèm `install.ps1`.
+>
+> **Đổi gì:** `install.ps1` bị xoá; Windows không còn là nền tảng được hỗ trợ. Linux là đích production; macOS được hỗ trợ cho phát triển (không có supervisor — xem issue #8 answer 10).
+>
+> **Vì sao:** lời hứa đó chưa từng được kiểm chứng. `install.ps1` chưa một lần chạy trên Windows. Khi cuối cùng nó được chạy dưới PowerShell trên Linux, lỗi lộ ra trong vài phút: `git fetch` và `git reset --hard` cùng thất bại mà script vẫn in "Nexus installed.", ghi shim, và ghi manifest khai `channel: git` với **commit cục bộ** — tức manifest nói dối đúng cái điều nó sinh ra để ngăn. Và bản sửa **không thể kiểm chứng** trên nền tảng thật. Một bề mặt không kiểm chứng được, ship như thể ngang hàng, chính là thứ mà STATUS gọi tên ở mọi chỗ khác (tiền lệ MySQL: pinned by contract, **declared unproven**).
+>
+> **Ảnh hưởng N1–N6:** N3 chịu tác động và được trả giá tường minh — đây là một khả năng **đã tuyên bố** bị rút, nên nó nằm ở đây chứ không lặng lẽ biến mất. N2 được lợi: một đường cài đặt ít hơn để nuôi. N6 là lý do trực tiếp — cái gì không chạy được thì không có clause nào giữ được nó đúng. Xử lý đường dẫn theo nền tảng trong kernel FS (`WIN` trong `environment.js`, kế thừa từ akao) **giữ nguyên**: đó là plumbing khả chuyển, không phải lời hứa hỗ trợ.
 - **HTTP API tự sinh từ schema** (ngang hàng Frappe/Strapi/Directus): server mode tự expose CRUD + `search()` + một endpoint nhận **Query AST** cho mọi Entity, permission enforce sẵn ở Data Plane nên transport không có logic riêng. Hợp đồng API thuộc App API v1 (chịu N3, versioned trong URL). App nội bộ và client ngoài (mobile, integration) dùng **cùng một hợp đồng** — không có API "nội bộ nhanh hơn". Realtime subscription đi qua ZEN (thay socketio + Redis của Frappe).
 - **Trust boundary phải nói thẳng**: local mode không có trọng tài — DB nằm trong máy user. Permission ở local mode chỉ có nghĩa với dữ liệu cá nhân; dữ liệu multi-party cần điểm authoritative: hoặc một server mode instance, hoặc enforce bằng PEN tại điểm nhận write P2P (§6).
 - **Công thức trung thực của topo Nexus: server TUỲ CHỌN cho *state*, BẮT BUỘC cho *effect*.** CRDT hội tụ được state — mọi thứ tự đến đều ra cùng một bảng. Nhưng CRDT **không hội tụ được side-effect**: "gửi email cho khách" replay hai lần là gửi hai lần. Điều phối effect (đúng một worker nhận việc, ack khi xong, retry khi hỏng) cần một điểm sở hữu hàng đợi — nên `nexus_job`/`nexus_webhook` là entity **server-only, không sync** (§ effect engine). Vì vậy claim của dự án không phải "không cần server" mà là: dữ liệu sống được không cần server, còn *hành động ra thế giới bên ngoài* thì cần.

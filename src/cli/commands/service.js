@@ -20,7 +20,7 @@ import { servicePlan, renderUnit } from "../service-plan.js"
 import { readManifest, writeManifest } from "../install-state.js"
 
 const NEXUS_ROOT = fileURLToPath(new URL("../../..", import.meta.url))
-const has = (cmd) => spawnSync(process.platform === "win32" ? "where" : "which", [cmd], { stdio: "ignore" }).status === 0
+const has = (cmd) => spawnSync("which", [cmd], { stdio: "ignore" }).status === 0
 
 /** Everything the plan depends on, read from the real world once. */
 const environment = (instanceRoot) => ({

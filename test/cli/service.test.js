@@ -63,10 +63,20 @@ Test.describe("Service plan (SVC)", () => {
                 const plan = servicePlan({ ...LINUX, platform, instanceRoot: root })
                 assert.equal(plan.supported, false, platform)
                 assert.equal(plan.code, "E_SERVICE_PLATFORM")
-                assert.truthy(/nexus start/.test(plan.reason), `it says what to do instead: ${plan.reason}`)
                 assert.deepEqual(plan.writes, [], "and writes nothing at all")
                 assert.deepEqual(plan.commands, [])
             }
+
+            // The two refusals differ, and should. macOS IS a supported dev
+            // platform without a supervisor story, so it points at what to do
+            // instead. Windows is not a supported platform at all since the
+            // POSIX-only change, so there is nothing to point at — saying
+            // "run nexus start yourself" there would imply a support it does
+            // not have.
+            const darwin = servicePlan({ ...LINUX, platform: "darwin", instanceRoot: root })
+            assert.truthy(/nexus start/.test(darwin.reason), `macOS is told what to do instead: ${darwin.reason}`)
+            const win = servicePlan({ ...LINUX, platform: "win32", instanceRoot: root })
+            assert.truthy(/POSIX-only|not a supported platform/.test(win.reason), `Windows is told it is unsupported: ${win.reason}`)
         } finally {
             rmSync(box, { recursive: true, force: true })
         }
