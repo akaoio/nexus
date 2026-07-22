@@ -166,7 +166,29 @@ export default ({ hook, endpoint, command }) => {
     })
 }
 `,
-        "README.md": `# ${site}\n\nA [Nexus](https://github.com/akaoio/nexus) instance.\n\n- \`nexus dev\` — serve locally\n- \`nexus test\` — validate schemas\n`
+        "README.md": `# ${site}\n\nA [Nexus](https://github.com/akaoio/nexus) instance.\n\n- \`nexus dev\` — serve locally\n- \`nexus test\` — validate schemas\n`,
+
+        // Generated files, and only generated files. public/studio/ is the
+        // built Studio this command is about to write — four hundred-odd
+        // copied modules that are reproducible from `nexus studio build` and
+        // have no business in a diff. It is listed here BECAUSE we build it:
+        // the alternative was dropping that many artefacts into a directory
+        // the user is about to `git init`.
+        ".gitignore": [
+            "# generated — reproducible with `nexus studio build`",
+            "public/studio/",
+            "",
+            "# runtime",
+            ".nexus/",
+            "*.db",
+            "*.db-wal",
+            "*.db-shm",
+            ".certs/",
+            "",
+            "# dependencies",
+            "node_modules/",
+            ""
+        ].join("\n")
     }
 
     const created = []
@@ -205,5 +227,13 @@ export default ({ hook, endpoint, command }) => {
     if (aiModel || nlModel) out.print(`  nexus model pull   ${out.dim(`install + download ${[aiModel, nlModel].filter(Boolean).join(" + ")}`)}`)
     out.print(`  nexus test    ${out.dim("validate the starter schemas")}`)
     out.print(`  nexus dev     ${out.dim("serve the instance")}`)
+    // NOT built for you, and not an oversight. `nexus start` serves the built
+    // Studio at the SITE ROOT, before login, with every schema document baked
+    // into its shell — field names, types, permlevels. That is a reconnaissance
+    // surface worth having when you want an admin UI in production, and worth
+    // NOT having by default. So it stays a decision, and this is the line that
+    // makes the decision visible instead of leaving `nexus start` to 404 every
+    // Studio route at someone who has no reason to know the command exists.
+    out.print(`  nexus studio build   ${out.dim("optional · an admin UI under `nexus start` (dev already has one)")}`)
     out.emit({ ok: true, site, dir, engine, model: aiModel, nlModel, created })
 }

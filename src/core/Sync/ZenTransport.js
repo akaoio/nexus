@@ -29,21 +29,50 @@
 const err = (code, detail) => new Error(detail ? `${code}: ${detail}` : code)
 
 /**
+ * The options this transport hands to `ZEN.graph.create`.
+ *
+ * MULTICAST IS OFF UNLESS ASKED FOR, and that is the whole reason this is a
+ * function rather than an inline object literal.
+ *
+ * ZEN joins a LAN multicast group by default, so a transport told to talk to
+ * `peers: ["http://relay/zen"]` ALSO gossiped every event to anything on the
+ * local network that speaks the protocol and knows the channel name. Nobody
+ * asked for that: the caller declared its peers, and the peer list is the peer
+ * list. On a laptop in a café or an office LAN, "sync with my relay" quietly
+ * meant "and broadcast to the room".
+ *
+ * It was also breaking convergence outright. With both paths live, roughly half
+ * of two-peer runs on the development machine LOST an event permanently — not
+ * delayed: a peer waited 150 SECONDS, seven times the harness's window, and the
+ * event never arrived, while nothing sat in quarantine and no gate had rejected
+ * it. It was simply never delivered. CI never saw it because a CI container has
+ * no LAN peers to discover, so only the relay path ever existed there — the
+ * failure needed a real network to appear on.
+ *
+ * LAN discovery is a legitimate thing to want for a local-first mesh, so it
+ * stays available. It just has to be asked for (SYNCNET-01).
+ */
+export function graphOptions({ peers = [], file, multicast = false } = {}) {
+    return { peers, file, localStorage: false, multicast: multicast === true ? undefined : false }
+}
+
+/**
  * Open a ZEN mesh transport.
  * @param {Object} config
  * @param {string[]} [config.peers] - relay/peer URLs, e.g. ["http://host:PORT/zen"]
  * @param {string} [config.file] - local store path (distinct per peer)
  * @param {string} [config.channel="nexus"] - graph namespace for the roster
  * @param {string} [config.self] - this peer's stable outbox id (default random)
+ * @param {boolean} [config.multicast=false] - opt IN to LAN peer discovery; off by default (see graphOptions)
  * @param {Object} [config.graph] - an existing ZEN graph to reuse (tests/embed)
  * @returns {Promise<{zen, channel, self, attach(engine), publish(event), close()}>}
  */
-export async function createZenTransport({ peers = [], file, channel = "nexus", self, graph } = {}) {
+export async function createZenTransport({ peers = [], file, channel = "nexus", self, graph, multicast = false } = {}) {
     let zen = graph
     if (!zen) {
         const ZEN = (await import("../../../vendor/zen/index.js")).default
         if (typeof ZEN.graph?.create !== "function") throw err("E_ZEN", "vendored ZEN has no graph.create (need the Node mesh entry)")
-        zen = ZEN.graph.create({ peers, file, localStorage: false })
+        zen = ZEN.graph.create(graphOptions({ peers, file, multicast }))
     }
     const selfId = self ?? "peer-" + Math.random().toString(36).slice(2, 12)
     const out = zen.get(channel).get("out")
@@ -119,4 +148,4 @@ export async function createZenTransport({ peers = [], file, channel = "nexus", 
     }
 }
 
-export default { createZenTransport }
+export default { createZenTransport, graphOptions }

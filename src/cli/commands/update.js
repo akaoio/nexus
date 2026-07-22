@@ -113,7 +113,24 @@ export async function update(args, flags, out) {
             else out.print(`  ${unit}: not restarted (${(r.stderr || "systemctl unavailable").trim()})`)
         }
 
-        out.emit({ ok: true, managed: "git", before, after, root: NEXUS_ROOT, restarted: units })
+        // WHAT THIS JUST INVALIDATED. A built Studio (public/studio/) is a
+        // COPY of this framework's src/studio/**, frozen when it was built —
+        // so a framework that moved leaves every instance in the world serving
+        // old Studio code against a new server. `update` cannot fix that: it
+        // updates the installation the binary belongs to and holds no register
+        // of the instances running against it, so there is no list to walk.
+        // Saying so is the smallest honest thing it can do, and it is strictly
+        // better than the silence it replaces. `nexus start` and `nexus doctor`
+        // detect the same drift per instance, from the build stamp.
+        if (after !== before) {
+            out.print("")
+            out.print("Instances with a BUILT Studio (public/studio/) now carry the old one —")
+            out.print("this command cannot reach them. In each such instance:")
+            out.print("    nexus studio build")
+            out.print(`  ${out.dim("`nexus start` and `nexus doctor` report the drift too. `nexus dev` serves from source and needs nothing.")}`)
+        }
+
+        out.emit({ ok: true, managed: "git", before, after, root: NEXUS_ROOT, restarted: units, studioStale: after !== before })
     } finally {
         lock.release()
     }

@@ -19,6 +19,7 @@
 import { fileURLToPath } from "url"
 import { spawnSync } from "child_process"
 import Test, { assert } from "../../src/core/Test.js"
+import { graphOptions } from "../../src/core/Sync/ZenTransport.js"
 
 const HARNESS = fileURLToPath(new URL("./zen-mesh-harness.mjs", import.meta.url))
 
@@ -52,6 +53,35 @@ if (!verdict) {
     })
 } else {
     Test.describe("Sync over ZEN mesh (ZSYNC) — real peer-to-peer transport", () => {
+        Test.it("SYNCNET-01 the peer list IS the peer list — LAN multicast is opt-in, never a default", () => {
+            // ZEN joins a LAN multicast group by default, so a transport told to
+            // talk to `peers: ["http://relay/zen"]` ALSO gossiped every event to
+            // anything on the local network that speaks the protocol and knows
+            // the channel name. Nobody asked for that.
+            //
+            // It was breaking convergence too, and that is how it was found:
+            // roughly half of two-peer runs on the development machine lost an
+            // event PERMANENTLY — a peer waited 150 seconds, seven times the
+            // harness's own window, with nothing in quarantine and no gate
+            // having rejected it. Never delivered. CI never saw it because a CI
+            // container has no LAN peers to discover, so only the relay path
+            // ever existed there; the failure needed a real network to appear
+            // on, and a green CI was the reason it went unexamined.
+            assert.equal(graphOptions({ peers: ["http://r/zen"], file: "f" }).multicast, false)
+            assert.deepEqual(graphOptions({ peers: ["http://r/zen"], file: "f" }).peers, ["http://r/zen"])
+
+            // Local-first LAN discovery is a legitimate thing to want. It just
+            // has to be asked for — and `undefined` is how ZEN is told to use
+            // its own default, which is what "on" means here.
+            assert.equal(graphOptions({ peers: [], file: "f", multicast: true }).multicast, undefined)
+
+            // Anything short of an explicit true stays off: a truthy config
+            // value read from JSON must not switch a network surface on.
+            for (const value of ["true", 1, {}, "yes"])
+                assert.equal(graphOptions({ file: "f", multicast: value }).multicast, false, `multicast: ${JSON.stringify(value)} must not enable it`)
+        })
+
+
         Test.it("ZSYNC-00 the harness completed without error", () => {
             assert.equal(verdict.error, undefined, verdict.error ? `harness error: ${verdict.error}` : "")
         })
