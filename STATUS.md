@@ -502,18 +502,22 @@ places nobody thought to check are where these live.
 - **The browser suite is green here, and that is a per-machine claim**: it needs a real Chromium
   and runs over CDP. It is green on this Linux box; an environment without a browser exits 3 (no
   browser found) rather than pretending.
-- **ZSYNC is FLAKY in CI, and that is a hazard rather than a footnote.** The ZEN
-  mesh suite needs real local sockets and a convergence window, and on a loaded
-  GitHub runner it can miss it: ZSYNC-01/03/04/05 failed on one push and the
-  SAME commit passed on a re-run and on the pull_request run. It was re-run
-  once, deliberately not until green — re-running until green is the "light
-  wired to nothing" pattern these chunks exist to remove. What this costs is
-  precise: a flaky clause inside a merge gate teaches people to re-run rather
-  than to read, which erodes the trust the gate was built for. The fix is to
-  make convergence wait on an observable condition rather than elapsed time, or
-  to declare the suite unavailable when it cannot converge instead of failing —
-  not to loosen what it asserts. Owed, and named here so a future red ZSYNC is
-  read as "check this" rather than "re-run it".
+- **ZSYNC's CI flakiness is FIXED, and the cause was not "timing" in general.**
+  The harness slept a fixed 3s to "let the WS wire meet the relay" and then
+  appended. On a loaded runner that was not always enough, and an event appended
+  before the wire carried anything went nowhere and was never re-sent — so the
+  FIRST assertion failed permanently while later ones passed. The CI signature
+  was unmistakable once read: ZSYNC-01 red, 02 green, 03/04/05 red because they
+  depend on r1. It now waits on an OBSERVABLE condition: a probe event
+  converging is what "the peers have met" means, and if it never does the
+  harness says exactly that instead of leaving four assertion failures to
+  interpret. Verified by three consecutive runs under deliberate CPU load.
+  The two negative assertions (idempotence, tamper rejection) also stopped
+  resting on a sleep — a forgery that was never delivered is not a forgery that
+  was rejected, so each now waits for a sentinel published after it to land
+  before concluding the row is unchanged. And the relay retries its BIND on a
+  fresh port, never an assertion: a port collision says nothing about the code,
+  while re-running an assertion is precisely the habit this suite was teaching.
 - **CI exists (`.github/workflows/conformance.yml`) and has now RUN — and caught a real defect on
   its first attempt.** On Node 24 it failed with an unsettled top-level await (exit 13): the
   background embedding drain's timer was unref'd, so on an otherwise-idle process the drain never
