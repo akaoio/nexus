@@ -31,12 +31,11 @@ export async function update(args, flags, out) {
     if (!existsSync(gitDir)) {
         out.print("This Nexus was installed from a tarball (no .git). Refresh it by re-running the installer:")
         out.print("  curl -fsSL https://raw.githubusercontent.com/akaoio/nexus/main/install.sh | sh")
-        out.print("  (Windows)  irm https://raw.githubusercontent.com/akaoio/nexus/main/install.ps1 | iex")
         out.emit({ ok: true, managed: "tarball", root: NEXUS_ROOT })
         return
     }
 
-    const git = (...argv) => spawnSync("git", ["-C", NEXUS_ROOT, ...argv], { encoding: "utf8", stdio: "pipe", shell: process.platform === "win32" })
+    const git = (...argv) => spawnSync("git", ["-C", NEXUS_ROOT, ...argv], { encoding: "utf8", stdio: "pipe" })
 
     // NEVER DESTROY UNEXAMINED WORK. `update` is not cwd-scoped — it hard-resets
     // the installation this binary belongs to, wherever that is. A developer

@@ -11,13 +11,7 @@ Like Frappe, but: installs in one command, runs natively on every OS, has zero r
 ## Install (one line, GitHub is the source of truth)
 
 ```sh
-# Linux / macOS (POSIX)
 curl -fsSL https://raw.githubusercontent.com/akaoio/nexus/main/install.sh | sh
-```
-
-```powershell
-# Windows (PowerShell)
-irm https://raw.githubusercontent.com/akaoio/nexus/main/install.ps1 | iex
 ```
 
 Needs only Node >= 22. GitHub first, tarball fallback when git is missing —

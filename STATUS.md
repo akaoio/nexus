@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 738/788 node clauses, 0 red** (`node test.js`)
+**Green: 741/791 node clauses, 0 red** (`node test.js`)
 **Green: 50/50 browser clauses, 0 red** (`npm run test:browser`, real headless Chromium)
 **Green: 9/9 end-to-end clauses, 0 red** (`npm run test:e2e`, real browser driving a real `nexus dev`)
 
@@ -70,7 +70,7 @@ because the way they hid is more instructive than the bugs themselves — see
 | **Production server** | **`nexus start` — refuses god-mode (E_NO_AUTH), TLS-required (E_NO_TLS/--insecure), auth-enforced, no Studio/framework exposure, self-served HTTPS** | **START-*** |
 | **Studio in production (issue #10)** | **the Studio's whole data plane now runs under `nexus start`: shipped as static assets (`nexus studio build` → `public/studio/`, served through the existing static boundary — zero new server surface); login is the ZEN challenge/verify handshake (`POST /api/v1/_auth/challenge` + `POST /api/v1/_auth/verify`), whoami is `GET /api/v1/_session` (read-only, no POST); the read-only policy baseline layers via `GET /api/v1/_policy-layers`; data, users, roles, permissions, jobs, search, and settings (locales/themes) all work end to end; nav is derived from the boot `mode`, so a production build's sidebar never offers a page it can't serve. Schema editing (`/_studio/model`, entity-delete) and config writing (`/_studio/config`, `/_studio/ai`) stay dev-only — see Unfinished** | **STUDIO-13, START-SESSION, STUDIO-09b, POLWIN-03, POLWIN-04, VND-07, STB-01, STB-02, STB-03, STB-03a, STB-03b, STB-04, START-STUDIO, START-STUDIO-ABSENT, PROD-01, PROD-02, PROD-03, ROUTES-*** |
 | Security | pentest findings pinned as clauses (info-disclosure, oracle, static-serve) | SEC-* |
-| **Install/lifecycle** | **one-line installers (install.sh / install.ps1, GitHub-first, tarball fallback, npm never required); `nexus update` (git fetch+hard-reset, the access pattern) and `nexus uninstall --yes`** | CLI-* (help pin) |
+| **Install/lifecycle** | **one-line POSIX installer (install.sh — GitHub-first, tarball fallback, npm never required); `nexus update` (git fetch+hard-reset, the access pattern) and `nexus uninstall --yes`. Verified end to end on a clean machine** | CLI-* (help pin), INST-*, POSIX-* |
 | **Entity identity** | **schema `icon:` (any bootstrap-icons name — vendored 1.1 MB sprite, nx-icon registry-first with sprite fallback); picker in the /entities editor** | MS-S14 |
 | **Effect engine** | **durable jobs as `nexus_job` rows (token-CAS claim, backoff, DLQ, recurring), Threads execution behind the narrow plane-RPC, webhook/mail/notification consumers as the effect app, Studio /jobs** | SYS-09, JOB-*, EXT-J1, THR-*, JOBL-*, WH-*, MAIL-*, NOTIF-* |
 | **Realtime** | **public SSE `/api/v1/_events` (auth'd incl. `?token=`, per-subscriber plane-gated, no row data on the wire, heartbeat); Studio live refresh on every list route via the public stream; dev `/__dev_events` + watcher + full module hot-swap + `"reload"` on schema hot-apply** | **EVT-U*, EVT-*, HMR-*, DEVE-*** |
@@ -591,12 +591,19 @@ places nobody thought to check are where these live.
   requests would yield a tree that is not the one recorded. It does nothing
   against a compromised GitHub, and nothing against a malicious mirror that
   serves a consistent lie.
-- **`install.ps1`'s changes are declared, not executed**: there is no PowerShell
-  on the machine this was written on, so the Windows dirty-check and the
-  commit-pinned zip download are reviewed and bracket-balanced but have not been
-  run. The POSIX side is exercised by INST-08 and INST-10..13 against the real
-  `install.sh`. This joins the existing "installers are untested on clean
-  machines" entry below rather than being claimed as done.
+- **Nexus is POSIX-only as of 2026-07-22; `install.ps1` was withdrawn.** It had
+  never run on Windows. Executed for the first time under PowerShell on Linux, a
+  real defect appeared within minutes: `git fetch` and `git reset --hard` both
+  failed and it still printed "Nexus installed.", wrote a shim, and recorded a
+  manifest claiming `channel: git` with the LOCAL commit — a manifest asserting
+  precisely what manifests exist to prevent. `$ErrorActionPreference = "Stop"`
+  does not stop on failing NATIVE commands, and Windows PowerShell 5.1 (what
+  `irm | iex` hits) cannot be told to. The fix was writable but NOT verifiable
+  here, so the capability was withdrawn rather than shipped as an unverifiable
+  claim — the judgement STATUS already applies to MySQL. ARCHITECTURE §1.1/§5
+  carry the change with its N3 cost stated; POSIX-01/02/03 keep it from drifting
+  back. Kernel path portability (`WIN` in environment.js) stays: the withdrawal
+  was of the installer and the promise, not of separator handling.
 - **The Windows PATH entry is NAMED, not yet undone**: `uninstall` reports the
   PATH entry the manifest records and tells the operator to remove it. Rewriting
   a user's persistent PATH during an uninstall is a bigger decision than this
@@ -608,8 +615,8 @@ places nobody thought to check are where these live.
   and the full lifecycle after it — `create`, `migrate --apply`, `doctor`
   healthy, `update` correctly telling a tarball install how to refresh, and
   `uninstall --yes` removing exactly what the manifest named while leaving the
-  instance directory alone. **install.ps1 remains unrun** — that needs Windows,
-  and no amount of Linux gets there.
+  instance directory alone. There is no longer a Windows installer to leave
+  unrun (see the POSIX-only entry above).
 - **Debian stable ships Node 20, below the floor Nexus requires.** On trixie
   `apt install nodejs` gives 20.x, and the installer then correctly refuses with
   "Nexus needs Node >= 22 (node:sqlite)". That is the right refusal, but it means
