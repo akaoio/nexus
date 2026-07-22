@@ -97,8 +97,9 @@ Test.describe("dev teardown & reload hygiene (DEVFD/DEVDOWN)", () => {
             // What fluctuates below it is the WAL/shm pair itself, which sqlite
             // opens and closes as the table set changes and which reads
             // differently depending on when in that cycle the sample lands.
-            // Pinning +1 made the clause fail on a loaded machine while the
-            // property it cares about held perfectly.
+            // Pinning +1 made the clause fail on a loaded machine — and on CI,
+            // on all four jobs at 4 → 7 — while the property it cares about
+            // held perfectly.
             assert.truthy(
                 later - warm <= 6,
                 `descriptors kept growing across reloads: ${warm} after 3 → ${later} after 9 (a leak costs a whole connection each time; this is +${later - warm})`
