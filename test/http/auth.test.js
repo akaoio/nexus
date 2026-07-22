@@ -296,3 +296,26 @@ Test.describe("AuthN — assignment helpers (AUTH)", () => {
         }
     })
 })
+
+Test.describe("The CLI does not pay for ZEN it never uses (AUTH-LAZY)", () => {
+    Test.it("AUTH-LAZY-01 auth.js loads ZEN lazily — a command that never authenticates never touches pen.wasm", async () => {
+        // Found on a clean machine, not by reading: `nexus uninstall --yes`
+        // printed "Nexus removed." and then died with ENOENT on
+        // vendor/zen/pen.wasm, exit 1 — a successful uninstall that any script
+        // checking the exit code reads as a failure.
+        //
+        // The cause was a top-level `await import()` of ZEN here. src/cli/main.js
+        // imports every command module eagerly, so EVERY nexus invocation
+        // started ZEN's wasm read; uninstall then deleted the tree out from
+        // under a read still in flight.
+        const { readFileSync } = await import("fs")
+        const { fileURLToPath } = await import("url")
+        const src = readFileSync(fileURLToPath(new URL("../../src/core/App/auth.js", import.meta.url)), "utf8")
+
+        assert.falsy(/^const ZEN = \(await import/m.test(src), "ZEN must not load merely because this module was imported")
+        assert.truthy(/_zen \?\?=/.test(src), "it is memoised, so authenticating repeatedly still loads it once")
+
+        // And it still works when auth IS used — the point is deferral, not removal.
+        assert.equal(await verifyChallenge("not-a-pub", "nonce", "not-a-signature"), false)
+    })
+})
