@@ -309,6 +309,53 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.equal(accessFor("/_studio/session"), "admin")
     })
 
+    Test.it("STUDIO-14 the Studio gate closes the MOMENT auth turns on — not at the next restart", async () => {
+        // The window this closes: a dev server booted with no auth kept
+        // /_studio/* wide open until it was restarted, even after the first
+        // admin flipped the DATA API closed. /_studio/config writes arbitrary
+        // dot-paths into nexus.config.json INCLUDING token_secret, so on a
+        // LAN-reachable dev box that window was forge-tokens-forever.
+        //
+        // Its own instance and its own server: this one must BOOT OPEN, which
+        // the authInstance above cannot do.
+        const box = mkdtempSync(join(tmpdir(), "nexus-studio-gate-"))
+        spawnSync(process.execPath, [BIN, "create", "shop"], { cwd: box })
+        const instance = join(box, "shop")
+        const cfgPath = join(instance, "nexus.config.json")
+        const cfg = JSON.parse(readFileSync(cfgPath, "utf8"))
+        cfg.token_secret = "fixed-gate-secret" // a secret, but still NO identities → boots open
+        writeFileSync(cfgPath, JSON.stringify(cfg, null, 4))
+
+        const proc = spawn(process.execPath, [BIN, "dev", "--port", "0", "--json"], { cwd: instance })
+        try {
+            const base = await new Promise((resolve, reject) => {
+                const timer = setTimeout(() => reject(new Error("dev did not start")), 8000)
+                let buf = ""
+                proc.stdout.on("data", (c) => { buf += c; try { clearTimeout(timer); resolve(JSON.parse(buf).url) } catch {} })
+                proc.on("exit", () => reject(new Error("dev exited early")))
+            })
+
+            const config = () => fetch(base + "/_studio/config").then((r) => r.status)
+            assert.equal(await config(), 200, "with no auth configured the Studio is open — that is dev mode")
+
+            // Provision the first admin through the ordinary plane, exactly as
+            // the Studio's own users page does.
+            const pair = await ZEN.pair(null, { seed: "studio-gate-admin" })
+            const made = await fetch(base + "/api/v1/nexus_user", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ pub: pair.pub, name: "gate-admin", roles: JSON.stringify(["admin"]) })
+            })
+            assert.equal(made.status, 201, await made.text())
+
+            // NO RESTART. The very next request must be refused.
+            assert.equal(await config(), 401, "the gate must close live, not at the next boot")
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(box, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
     Test.it("STUDIO-99 cleanup", async () => {
         if (server) await new Promise((resolve) => { server.once("exit", resolve); server.kill("SIGKILL") })
         rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })

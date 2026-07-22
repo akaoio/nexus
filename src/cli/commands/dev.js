@@ -76,7 +76,6 @@ export async function dev(args, flags, out) {
     // Data Plane + auth + API through the shared wiring. Dev mode falls back to
     // the loud DEV identity when no auth is configured (production refuses that).
     let { api, plane, authState, challenges, engine, authMode, embedderInfo, effects } = await buildInstanceApi({ root, config, schemas, apps, appPolicies, mode: "dev" })
-    const studioAuthAtBoot = authState.required
 
     // ── hot reload — entity writes NEVER require a dev restart ──────────────
     // Reloading swaps the whole instance surface (schemas, plane, API) in
@@ -276,11 +275,25 @@ export async function dev(args, flags, out) {
         // "is auth on?" in BOTH modes, not just dev). ONE source of truth: this
         // hardcoded `&& url.pathname !== "/_studio/" + someNewPath` here would make
         // that route fully UNAUTHENTICATED, not merely open-to-any-role; the
-        // exemption belongs ONLY in dev-access.js's declared table. A session
-        // that booted open stays open until restart (adding identities flips
-        // the DATA API live, but not the studio surface you are configuring
-        // it from).
-        if (url.pathname.startsWith("/_studio/") && studioAuthAtBoot && accessFor(url.pathname) !== "any") {
+        // exemption belongs ONLY in dev-access.js's declared table.
+        //
+        // `authState.required` is read LIVE, not snapshotted at boot. It used to
+        // be a boot-time constant, on the reasoning that a session which booted
+        // open should stay usable while you configure auth from it. The cost of
+        // that was a real window: between adding the first admin — which flips
+        // the DATA API closed immediately — and the next dev restart,
+        // /_studio/config stayed wide open, and it writes arbitrary dot-paths
+        // into nexus.config.json INCLUDING token_secret. On a dev server
+        // reachable from a LAN, that is forge-tokens-forever.
+        //
+        // The window it protected is about a second wide: the users page
+        // reloads itself into the login gate after provisioning, and signing in
+        // with the same passphrase hands you the admin token the gate now wants.
+        // The genuine lockout — mistyping the passphrase you just chose — is
+        // recoverable on a LOCAL instance whose config file and database are
+        // sitting right there, which a writable token_secret on the network is
+        // not (STUDIO-14).
+        if (url.pathname.startsWith("/_studio/") && authState.required && accessFor(url.pathname) !== "any") {
             const authz = req.headers["authorization"] ?? ""
             const claims = authz.startsWith("Bearer ") ? verifyToken(authz.slice(7), authState.secret) : null
             if (!claims) return json(res, 401, { ok: false, error: { code: "E_AUTH", message: "sign in to use the Studio" } })
