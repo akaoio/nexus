@@ -24,6 +24,11 @@ import { createServer as createHttps } from "https"
 import { existsSync, readFileSync, statSync } from "fs"
 import { join, resolve, extname, sep } from "path"
 import { loadInstance } from "../instance.js"
+import { studioBuildStatus } from "../studio-stamp.js"
+import { fileURLToPath } from "url"
+
+/** The framework installation this binary belongs to — what a built Studio was copied FROM. */
+const NEXUS_ROOT = fileURLToPath(new URL("../../../", import.meta.url))
 import { buildInstanceApi } from "../../core/HTTP/server.js"
 import { verifyChallenge, issueToken } from "../../core/App/auth.js"
 import { studioRouteMatches } from "../../studio/routes.js"
@@ -234,11 +239,36 @@ export async function start(args, flags, out) {
     out.print(`  ${out.dim("data")}  engine ${engine}`)
     if (!haveCerts) out.print(`  ${out.yellow("insecure")} serving plain HTTP — terminate TLS upstream or restart with certificates`)
 
+    // The built Studio is a SNAPSHOT of (framework source × schemas) taken
+    // when someone ran `nexus studio build`. Both move afterwards — `nexus
+    // update` replaces the framework, editing a model replaces the schemas —
+    // and the built tree cannot notice either on its own. So it is checked
+    // here, at the one moment an operator is looking.
+    //
+    // WARN, never refuse. The data plane does not read the built Studio at
+    // all; refusing to serve an API because an admin UI is stale would be a
+    // worse failure than the staleness. And say nothing when there is no build
+    // — an instance that never wanted a production Studio is not misconfigured
+    // (START-STUDIO-ABSENT keeps that a plain 404).
+    const studio = studioBuildStatus({ instanceRoot: root, frameworkRoot: NEXUS_ROOT, schemas })
+    if (!studio.built) {
+        // NOT a misconfiguration — an instance is entitled to have no admin UI
+        // in production, and this one has chosen it by default. But the way
+        // that used to present itself was a bare 404 on every Studio route,
+        // with nothing anywhere connecting it to a build step. Say it once,
+        // where an operator is already reading.
+        out.print(`  ${out.dim("studio")}  none built ${out.dim("· `nexus studio build` adds one (serves at / , pre-login, with schemas baked in)")}`)
+    } else if (studio.stale) {
+        out.print(`  ${out.yellow("studio")} the built Studio is STALE — it is served, but it no longer matches this instance:`)
+        for (const reason of studio.reasons) out.print(`          ${out.dim(reason)}`)
+        out.print(`          ${out.dim("rebuild with `nexus studio build`")}`)
+    }
+
     const shutdown = () => { effects.stop().finally(() => server.close(() => process.exit(0))) }
     process.on("SIGINT", shutdown)
     process.on("SIGTERM", shutdown)
 
-    out.emit({ ok: true, url, port: actual, tls: haveCerts, engine, entities: schemas.map((s) => s.name) })
+    out.emit({ ok: true, url, port: actual, tls: haveCerts, engine, entities: schemas.map((s) => s.name), studio })
     return server
 }
 

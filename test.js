@@ -97,6 +97,7 @@ import "./test/cli/backup-stream.test.js"
 
 // CLI — the Studio as static assets for production (clauses STB-*)
 import "./test/cli/studio-build.test.js"
+import "./test/cli/studio-stamp.test.js"
 
 // HTTP — the auth seam and transport contract, in process (clauses HTTPX-*)
 import "./test/http/in-process.test.js"
