@@ -14,13 +14,12 @@ import { createServer } from "http"
 import { existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from "fs"
 import { join, resolve, extname, sep } from "path"
 import { loadInstance } from "../instance.js"
-import { buildInstanceApi, NEXUS_CTX_POLICIES } from "../../core/HTTP/server.js"
+import { buildInstanceApi } from "../../core/HTTP/server.js"
 import { studioIndex } from "../../studio/layouts/studio/shell.js"
 import { studioRouteMatches } from "../../studio/routes.js"
 import { validate } from "../../core/Model.js"
 import { loadDictionary, mergeDictionaries, coveredLocales } from "../../i18n/i18n.js"
 import { verifyChallenge, issueToken, verifyToken } from "../../core/App/auth.js"
-import { listUsers, addUser, removeUser, setRoles } from "../../core/App/users.js"
 import { MODELS, NL_MODELS, status as modelStatus, withModel, withNlModel, currentModel, currentNlModel } from "../../core/App/models.js"
 import { redact, setPath, unsetPath } from "../../core/App/config.js"
 import { randomBytes } from "crypto"
@@ -178,14 +177,6 @@ export async function dev(args, flags, out) {
 
     // internal plane context for _studio reads/executions (dev-only surface)
     const nexusCtx = (entity, actions) => ({ user: "nexus", roles: [], shares: [], policies: [{ entity, actions, rule: null, permlevel: 0, ifOwner: false }] })
-    // internal plane context for DIRECTORY writes specifically (item 2, issue
-    // #9 final review): /_studio/users provisions through nexus.config.json
-    // AND the nexus_user row now that the row is the truth past first boot —
-    // it needs the SAME permlevel-1 grant on nexus_user.roles the admin
-    // bundle carries (C1, SYS-10), so it reuses the exact policy set the
-    // server's own internal directory actor uses (NEXUS_CTX_POLICIES),
-    // rather than hand-rolling a parallel one that can drift from it.
-    const nexusUserCtx = { user: "nexus", roles: [], shares: [], policies: NEXUS_CTX_POLICIES }
 
     const json = (res, code, obj) => {
         res.writeHead(code, { "content-type": "application/json; charset=utf-8" })
@@ -459,69 +450,6 @@ export async function dev(args, flags, out) {
         // /_studio gate check. This dev-only address is gone; it falls
         // through to the "no other /_studio surface exists" 404 below like
         // any other dead path.
-
-        // Studio session (whoami) MOVED to GET /api/v1/_session (Task 2, issue
-        // #10) — one login contract in both dev and production. This dev-only
-        // address is gone; it falls through to the "no other /_studio surface
-        // exists" 404 below like any other dead path.
-        // Studio user management (DEV-ONLY) — add/remove/role identities in
-        // nexus.config.json AND (add/role) the nexus_user directory row that
-        // actually grants login past first boot (issue #9 final review, item
-        // 2). Adding the first identity turns required auth ON immediately.
-        if (url.pathname === "/_studio/users" && req.method === "GET") {
-            const cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
-            return json(res, 200, { ok: true, data: { identities: listUsers(cfg), authRequired: authState.required } })
-        }
-        if (url.pathname === "/_studio/users" && req.method === "POST") {
-            const body = await readJson(req)
-            if (body === Symbol.for("E_BODY_SIZE")) {
-                json(res, 413, { ok: false, error: { code: "E_BODY_SIZE" } })
-                req.destroy()
-                return
-            }
-            if (!body || typeof body.action !== "string") return json(res, 400, { ok: false, error: { code: "E_REQUEST" } })
-            try {
-                const cfg = JSON.parse(readFileSync(join(root, "nexus.config.json"), "utf8"))
-                let next = listUsers(cfg)
-                // The DIRECTORY (nexus_user rows) is the truth past first boot
-                // (issue #9 I4): knownPub/rolesForPub consult config identities
-                // ONLY while the directory is still empty. Writing
-                // nexus.config.json alone therefore provisions an identity
-                // that CANNOT log in on any instance past that point — yet the
-                // old code returned applied: true regardless. "add"/"role" now
-                // mirror the write into the plane too, through the same
-                // internal ctx the server's own directory actor uses
-                // (nexusUserCtx/NEXUS_CTX_POLICIES) — the config array stays
-                // CLI-facing bookkeeping; the row is what actually grants login.
-                const findRow = async (pub) => {
-                    const rows = await plane.list("nexus_user", { filter: { astVersion: 1, root: { field: "pub", operator: "eq", value: pub } } }, nexusUserCtx)
-                    return rows[0] ?? null
-                }
-                if (body.action === "add") {
-                    next = addUser(next, { pub: body.pub, name: body.name, roles: body.roles ?? [] })
-                    // guard against a row already existing outside config (e.g.
-                    // created directly through /api/v1/nexus_user) — create only
-                    // when the directory doesn't already know this pub
-                    if (!(await findRow(body.pub)))
-                        await plane.create("nexus_user", { pub: body.pub, name: body.name || body.pub, roles: JSON.stringify(body.roles ?? []) }, nexusUserCtx)
-                } else if (body.action === "remove") next = removeUser(next, body.pub)
-                else if (body.action === "role") {
-                    next = setRoles(next, body.pub, body.roles ?? [])
-                    const row = await findRow(body.pub)
-                    if (row) await plane.update("nexus_user", row.id, { roles: JSON.stringify(body.roles ?? []) }, nexusUserCtx)
-                } else return json(res, 400, { ok: false, error: { code: "E_ACTION" } })
-                writeFileSync(join(root, "nexus.config.json"), JSON.stringify({ ...cfg, identities: next }, null, 4) + "\n")
-                // hot-apply: the auth layer reads this live array per request —
-                // adding the first identity turns required auth ON immediately
-                if (authState.identities) {
-                    authState.identities.length = 0
-                    authState.identities.push(...next)
-                }
-                return json(res, 200, { ok: true, data: { identities: next, applied: true, authRequired: authState.required } })
-            } catch (error) {
-                return json(res, 400, { ok: false, error: { code: error.message.split(":")[0], message: error.message } })
-            }
-        }
 
         // Studio AI panel (DEV-ONLY): the site's embedding model status, and
         // switching it. Weights are pulled from the terminal (`nexus model
