@@ -454,16 +454,19 @@ places nobody thought to check are where these live.
   honest reason it exists at all: `nexus_user.roles` is a `text` column holding JSON and
   Model Schema v1 is frozen (N4), so giving it a real field type is a format version, not
   an afternoon.
-- **Studio auth gate is boot-time** (`studioAuthAtBoot`): flipping auth ON live protects
-  the data API immediately, but `/_studio/*` write endpoints only start demanding a token
-  after the next dev restart.
+- **CLOSED — the Studio auth gate reads live** (STUDIO-14). It used to check a boot-time
+  snapshot, so `/_studio/*` stayed open until the next dev restart while the data API locked
+  immediately — and `/_studio/config` writes `token_secret`.
+- **CLOSED — a hot reload releases the instance it replaced** (DEVFD-01/02), and **`nexus dev`
+  has a real teardown** (DEVDOWN-01..03). The leak was measured at 3 → 17 descriptors over five
+  reloads; SIGTERM exits 0 and checkpoints the WAL instead of abandoning it.
 - **CLOSED — a hot reload leaks nothing, and the job runner survives it** (issue #36).
   Two instances are live at once by design during a rebuild; the shared thread-registry
   names meant the second inherited the first's worker and then lost it, and the
-  route-plus-watcher double reload raced and dropped a whole connection per save.
-- **`nexus dev` has no graceful teardown** (pre-existing): the file watcher and dev-events
-  subscribers die with the process rather than unsubscribing cleanly on Ctrl-C. Harmless for
-  a dev-only surface; a real teardown path is owed if dev ever holds anything that must be flushed.
+  route-plus-watcher double reload raced and dropped a whole connection per save. Both were
+  found while closing the two entries above, and both were CAUSED by the reordering that
+  closed them — the first fix attempt traded a dead runner for a descriptor leak and was
+  withdrawn before the real one (a thread namespace per instance) landed.
 - **FunctionGemma zero-shot quality is weak** for the recursive filter grammar
   (Vietnamese asks often refuse; compound English often malforms — safely rejected by
   translate() and covered by the tier chain). Fine-tuning on the filter dialect is the
@@ -562,6 +565,18 @@ places nobody thought to check are where these live.
   before concluding the row is unchanged. And the relay retries its BIND on a
   fresh port, never an assertion: a port collision says nothing about the code,
   while re-running an assertion is precisely the habit this suite was teaching.
+
+  **That was half the cause, and this entry claimed the whole of it.** The
+  harness fix above is real and stayed. But the suite went on failing about half
+  the time on the development machine while passing in CI, and that was written
+  off as environmental for weeks. It was not: a peer was losing an event
+  PERMANENTLY — 150 seconds of waiting, seven times the harness's own window,
+  nothing in quarantine, no gate rejection. The cause was ZEN joining a LAN
+  multicast group by default, so a transport declared with an explicit relay
+  also gossiped to the whole local network, and the two live paths dropped
+  messages between them. CI never saw it because a container has no LAN peers to
+  discover — and a green CI is exactly why nobody looked at the machine that
+  did. Closed by SYNCNET-01: multicast is opt-in.
 - **CI exists (`.github/workflows/conformance.yml`) and has now RUN — and caught a real defect on
   its first attempt.** On Node 24 it failed with an unsettled top-level await (exit 13): the
   background embedding drain's timer was unref'd, so on an otherwise-idle process the drain never
