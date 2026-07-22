@@ -55,8 +55,10 @@ Test.describe("Job thread + plane pseudo-thread RPC (THR-*)", () => {
 `
         )
         const plane = makePlane()
-        bindPlaneRpc(plane, JOB_CTX)
-        const jobRig = await startJobThread({ root: scratch, apps: [{ dir: "fx" }], config: {} })
+        // The name comes FROM the binding and is handed to the thread. Two
+        // independent defaults would have to agree; this one cannot disagree.
+        const { planeName } = bindPlaneRpc(plane, JOB_CTX)
+        const jobRig = await startJobThread({ root: scratch, apps: [{ dir: "fx" }], config: {}, planeName })
         return { ...jobRig, plane, scratch }
     }
 
