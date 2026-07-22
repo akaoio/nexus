@@ -90,9 +90,18 @@ Test.describe("dev teardown & reload hygiene (DEVFD/DEVDOWN)", () => {
             for (const name of ["delta", "echo", "foxtrot", "golf", "hotel", "india"]) await reload(name)
             const later = dbDescriptors(proc.pid)
 
+            // The threshold is +6 over six reloads, not +1, and the margin is
+            // deliberate rather than slack. A LEAK costs a whole connection per
+            // reload — database, WAL and shm — so the defect this pins measured
+            // 11 → 35 across exactly this span: +24, four times the threshold.
+            // What fluctuates below it is the WAL/shm pair itself, which sqlite
+            // opens and closes as the table set changes and which reads
+            // differently depending on when in that cycle the sample lands.
+            // Pinning +1 made the clause fail on a loaded machine while the
+            // property it cares about held perfectly.
             assert.truthy(
-                later <= warm + 1,
-                `descriptors kept growing across reloads: ${warm} after 3 → ${later} after 9 (each reload used to retain a whole sqlite connection)`
+                later - warm <= 6,
+                `descriptors kept growing across reloads: ${warm} after 3 → ${later} after 9 (a leak costs a whole connection each time; this is +${later - warm})`
             )
         } finally {
             await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })

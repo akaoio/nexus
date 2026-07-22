@@ -13,7 +13,7 @@
  */
 
 import { spawnSync } from "child_process"
-import { mkdtempSync, rmSync, readFileSync, readdirSync, writeFileSync } from "fs"
+import { mkdtempSync, rmSync, readFileSync, readdirSync, writeFileSync, openSync, writeSync, closeSync, statSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { fileURLToPath } from "url"
@@ -127,6 +127,50 @@ Test.describe("Backup streams (SITE-STREAM)", () => {
             assert.equal(report.inserted.task, 120, "every streamed row must land at the destination")
         } finally {
             if (target) rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
+    Test.it("SITE-STREAM-03 restore never holds the whole document — an 80MB backup restores under a 96MB heap", () => {
+        // The decisive measurement, not a proxy for one. `readFileSync` +
+        // `JSON.parse` costs the document TWICE — once as a UTF-8 string, once
+        // as the parsed graph — so a document this size cannot fit in a heap
+        // this size. If the command succeeds, it did not hold the document.
+        //
+        // Verified both ways on exactly this file and heap: the old approach
+        // dies with V8's heap-limit trace; the streaming one restores all 200
+        // rows in about four seconds.
+        //
+        // Few rows, LARGE rows: the peak is one row plus a read chunk either
+        // way, and 200 rows keeps the per-row existence query from turning this
+        // clause into a measurement of SQL throughput instead of memory.
+        const scratch = mkdtempSync(join(tmpdir(), "nexus-bigrestore-"))
+        try {
+            spawnSync(process.execPath, [BIN, "create", "shop"], { cwd: scratch })
+            const instance = join(scratch, "shop")
+            const backupPath = join(instance, "big.json")
+
+            const ROWS = 200
+            const FILL = "x".repeat(400 * 1024) // ~400KB per row → ~80MB
+            const handle = openSync(backupPath, "w")
+            writeSync(handle, '{\n  "backupVersion": 1,\n  "secretsRedacted": false,\n  "apps": {},\n  "data": {\n    "task": [')
+            for (let i = 0; i < ROWS; i++)
+                writeSync(handle, `${i ? "," : ""}\n      ${JSON.stringify({ id: `row-${i}`, title: FILL, done: 0 })}`)
+            writeSync(handle, '\n    ]\n  },\n  "migrations": []\n}\n')
+            closeSync(handle)
+            const megabytes = statSync(backupPath).size / (1024 * 1024)
+            assert.truthy(megabytes > 70, `the backup must be large enough to matter: ${megabytes.toFixed(1)}MB`)
+
+            const r = spawnSync(process.execPath, ["--max-old-space-size=96", BIN, "site", "restore", "big.json", "--apply", "--json"], {
+                cwd: instance,
+                encoding: "utf8",
+                maxBuffer: 16 * 1024 * 1024
+            })
+            assert.equal(r.status, 0, `restore must survive a heap smaller than the backup: ${r.stdout}${r.stderr}`)
+            const report = JSON.parse(r.stdout)
+            assert.equal(report.ok, true)
+            assert.equal(report.inserted.task, ROWS, `every row must be seen: ${JSON.stringify(report.inserted)}`)
+        } finally {
             rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
         }
     })

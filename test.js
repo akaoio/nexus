@@ -99,6 +99,7 @@ import "./test/cli/backup-stream.test.js"
 import "./test/cli/studio-build.test.js"
 import "./test/cli/studio-stamp.test.js"
 import "./test/cli/dev-teardown.test.js"
+import "./test/app/backup-read.test.js"
 
 // HTTP — the auth seam and transport contract, in process (clauses HTTPX-*)
 import "./test/http/in-process.test.js"
