@@ -144,6 +144,74 @@ Test.describe("dev teardown & reload hygiene (DEVFD/DEVDOWN)", () => {
         }
     })
 
+    Test.it("DEVFD-03 the JOB RUNNER survives a hot reload — measured by running a job on the other side of one", async () => {
+        // `Threads` is a module-level registry keyed by NAME, and register() is
+        // a get-or-create. The reload above deliberately keeps the old instance
+        // alive until the new one is built, so a constant "job" meant the new
+        // instance was handed the OLD worker — old apps, old config — and lost
+        // it entirely when the old instance was released. Every reload,
+        // silently: a job enqueued afterwards sits in `running` forever and
+        // nothing anywhere says the runner is gone.
+        //
+        // Driven end to end because that is the only way it shows: a runner is
+        // not something a status endpoint reports on, so the observable has to
+        // be a job that actually completes.
+        const scratch = mkdtempSync(join(tmpdir(), "nexus-devjob-"))
+        spawnSync(process.execPath, [BIN, "create", "shop"], { cwd: scratch })
+        const instance = join(scratch, "shop")
+        const hooks = join(instance, "apps", "starter", "hooks.js")
+        writeFileSync(
+            hooks,
+            readFileSync(hooks, "utf8").replace(
+                "export default ({ hook, endpoint, command }) => {",
+                `export default ({ hook, endpoint, command, job, enqueue }) => {
+    job("probe.mark", { run: async ({ payload }) => ({ marked: payload.n }) })
+    endpoint("POST", "fire", async () => { await enqueue("probe.mark", { n: 1 }); return { queued: true } })`
+            )
+        )
+
+        const proc = spawn(process.execPath, [BIN, "dev", "--port", "0", "--json"], { cwd: instance })
+        try {
+            const base = await new Promise((resolve, reject) => {
+                const timer = setTimeout(() => reject(new Error("dev did not start")), 12000)
+                let buf = ""
+                proc.stdout.on("data", (c) => { buf += c; try { clearTimeout(timer); resolve(JSON.parse(buf).url) } catch {} })
+                proc.on("exit", () => reject(new Error("dev exited early")))
+            })
+
+            const doneCount = async () => {
+                const r = await (await fetch(base + "/api/v1/nexus_job")).json()
+                return (r.ok ? r.data : []).filter((row) => row.status === "done").length
+            }
+            const runsAJob = async () => {
+                const was = await doneCount()
+                await fetch(base + "/api/v1/_/fire", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
+                for (let i = 0; i < 40; i++) {
+                    if ((await doneCount()) > was) return true
+                    await new Promise((r) => setTimeout(r, 500))
+                }
+                return false
+            }
+
+            assert.equal(await runsAJob(), true, "the runner must work BEFORE a reload for this clause to mean anything")
+
+            // A hot reload the ordinary way — a model saved through the Studio's
+            // own route, which is what an operator does.
+            const reloaded = await fetch(base + "/_studio/model", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ name: "extra", fields: [{ name: "title", type: "text" }] })
+            })
+            assert.equal(reloaded.status, 200, await reloaded.text())
+            await new Promise((r) => setTimeout(r, 2000))
+
+            assert.equal(await runsAJob(), true, "a hot reload left the job runner dead — jobs stick in `running` forever")
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
+    })
+
     Test.it("DEVDOWN-01/02 SIGTERM exits `nexus dev` cleanly and CHECKPOINTS the write-ahead log", async () => {
         // Measured before the fix: signal=SIGTERM, no exit code, and
         // data.db-wal + data.db-shm still on disk. A developer pressing Ctrl+C

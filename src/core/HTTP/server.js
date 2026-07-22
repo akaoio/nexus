@@ -137,8 +137,9 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
         close = async () => {
             if (closed) return
             closed = true
-            try { await kysely?.destroy?.() } catch {}
-            try { await executor.close?.() } catch {}
+            console.error("CLOSE called")
+            try { await kysely?.destroy?.() } catch (e) { console.error("CLOSE kysely FAILED:", String(e?.message ?? e)) }
+            try { await executor.close?.() } catch (e) { console.error("CLOSE executor FAILED:", String(e?.message ?? e)) }
         }
         await ensureTables(executor, kysely, allSchemas, executor.dialect)
 
@@ -440,13 +441,17 @@ export async function buildInstanceApi({ root, config, schemas, apps, appPolicie
             ]
         }
         extensions.enqueue = (name, payload, opts) => enqueue(plane, JOB_CTX, name, payload, opts)
-        bindPlaneRpc(plane, JOB_CTX)
+        // The plane names itself and the job thread is told which one to talk
+        // to — see jobthread.js. Two instances are live at once during every
+        // hot reload, and constants for these two names meant the second
+        // silently took over the first's worker and binding.
+        const { planeName } = bindPlaneRpc(plane, JOB_CTX)
         // The effect app (design §5): registers webhook/notify handlers AND (main
         // only, plane provided) the per-schema hooks that read nexus_webhook rows
         // and enqueue deliveries. Loaded again below inside the job thread —
         // handlers only, no plane, so its emitter half is a no-op there.
         effectsApp(extensions.registrar(), { schemas: allSchemas, plane, ctx: JOB_CTX, config, root })
-        const jobThread = await startJobThread({ root, apps, config, builtins: [new URL("../App/effects.js", import.meta.url).href] })
+        const jobThread = await startJobThread({ root, apps, config, planeName, builtins: [new URL("../App/effects.js", import.meta.url).href] })
         let draining = false
         const tick = async () => {
             if (draining) return

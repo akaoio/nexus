@@ -95,7 +95,21 @@ export async function dev(args, flags, out) {
     // bound, still running its effects, still holding its handle. Two sqlite
     // connections exist for the length of the rebuild, which is what WAL is
     // for (DEVFD-01/02).
-    async function reloadInstance() {
+    // ONE AT A TIME. Saving a model through the Studio reloads TWICE — once
+    // from the /_studio/model route directly, and once from the watcher
+    // noticing the very file the server just wrote — and those two ran
+    // concurrently. Both captured the same `previous`, both swapped, and the
+    // bundle that lost the race was left unreferenced with nobody to close it:
+    // one whole sqlite connection leaked per save, invisibly, because the
+    // instance that leaked it was no longer reachable to be blamed.
+    //
+    // Chained rather than dropped: the second reload has a real reason to run
+    // (the file on disk may differ from what the route wrote), and skipping it
+    // would trade a leak for a staleness.
+    let reloadChain = Promise.resolve()
+    const reloadInstance = () => (reloadChain = reloadChain.then(doReload, doReload))
+
+    async function doReload() {
         const fresh = loadInstance(root)
         const previous = { effects, close }
 
