@@ -229,9 +229,30 @@ export async function dev(args, flags, out) {
 
         // Rate limiting (RATE-*). Before any work, and after the log line so a
         // refusal is still visible. Dev shares production's tiers and its
-        // exemptions: /_health so a probe is never starved, and the dev event
-        // stream so HMR cannot throttle itself during a burst of file saves.
-        if (limiter && url.pathname !== "/_health" && url.pathname !== "/__dev_events") {
+        // exemptions: /_health so a probe is never starved, the dev event
+        // stream so HMR cannot throttle itself during a burst of file saves,
+        // and — the third, added after this cost a second outage — the
+        // framework-source route.
+        //
+        // /_nexus/* serves files off local disk to the developer's own browser,
+        // and a Studio boot pulls FOUR HUNDRED-ODD of them at once. The asset
+        // tier was created because the api tier's budget made the Studio
+        // unbootable; a big enough burst then made it bootable ONCE, which is
+        // not the same thing. A page that reloads several times in quick
+        // succession — the end-to-end run does, and so does anyone iterating on
+        // a component — drains any fixed budget, and the failure is silent: a
+        // 429 on one module breaks the graph, nothing mounts, and the page is
+        // blank with no error anywhere. It reproduced on CI precisely BECAUSE
+        // CI is faster than the development machine, so less refill lands
+        // between boots (verified by shrinking the budget locally: the same
+        // three clauses go red, the same way).
+        //
+        // A limiter here protects nothing. This route exists only in dev, reads
+        // only files already on the developer's disk, and costs a file read —
+        // the DoS it would guard against is `ls`. Production has no such route
+        // at all (START-03), and its `/studio/*` assets stay bounded.
+        const frameworkSource = url.pathname.startsWith("/_nexus/")
+        if (limiter && !frameworkSource && url.pathname !== "/_health" && url.pathname !== "/__dev_events") {
             const verdict = limiter.check(clientKey(req, { trustProxy }), tierFor(url.pathname))
             if (!verdict.allowed) {
                 res.setHeader?.("retry-after", String(verdict.retryAfter))
