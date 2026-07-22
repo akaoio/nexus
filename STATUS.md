@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 741/791 node clauses, 0 red** (`node test.js`)
+**Green: 742/792 node clauses, 0 red** (`node test.js`)
 **Green: 50/50 browser clauses, 0 red** (`npm run test:browser`, real headless Chromium)
 **Green: 9/9 end-to-end clauses, 0 red** (`npm run test:e2e`, real browser driving a real `nexus dev`)
 
@@ -128,6 +128,24 @@ the normal outcome. `entityDeletePlan` now names the index (the plan is the dry
 run an operator approves, and it was describing work that could not be
 performed), and `applyEntityDelete` drops it first (LIFE-TX-\*).
 
+**10. The Studio's auth gate read a boot-time snapshot, so turning auth ON left
+it open until the next restart.** `/_studio/*` checked a `studioAuthAtBoot`
+constant captured once at startup, and a comment explained the reasoning: a
+session that booted open should stay usable while you configure authentication
+from it. That reasoning was written down, deliberate, and wrong — because
+`/_studio/config` writes arbitrary dot-paths into `nexus.config.json`,
+`token_secret` included. So on a dev server anyone on the LAN could reach, the
+gap between adding the first admin (which locks the DATA API immediately) and
+the next restart was a window in which a stranger could rewrite the signing
+secret and mint whatever tokens they liked. The window it was protecting turns
+out to be about a second wide: the users page reloads itself into the login
+gate, and the passphrase you just chose is the one that opens it. The gate now
+reads `authState.required` live (STUDIO-14, verified by restoring the snapshot
+and watching the clause go red). USER-03 changed shape with it — provisioning
+through the legacy `/_studio/users` endpoint now locks that endpoint behind the
+identity it just created, so the clause holds a REAL keypair and signs in to
+carry on, which is also the recovery path an operator would walk.
+
 **9. `nexus dev` never noticed a model file added by hand.** `assetKind()`
 returned null for `.json` — the format the Studio itself writes — so a schema
 file appearing in `apps/` was the one change the watcher ignored completely.
@@ -197,22 +215,30 @@ not make the report honest, and a backup that overstates itself is discovered at
 the worst possible moment. The count is now what the file actually holds, and
 anything left out is NAMED (SITE-COUNT-01).
 
-**What the nine share.** Every one is a guarantee stated in a comment, a header,
+**What the ten share.** Every one is a guarantee stated in a comment, a header,
 or a clause — and exercised only on the engine, the path, the route, the runner,
-or the moment where it happened to hold. Three levels are worth telling apart,
+or the moment where it happened to hold. Four levels are worth telling apart,
 because each needed a different instrument to see: a claim never checked
 anywhere (1–4), a whole suite never run (5), and a clause that was green **for
 the wrong reason** (6) — that last one only visible by giving it a process whose
-event loop contained nothing else. (7) is the one that bit hardest: it was found
+event loop contained nothing else. (10) is a fourth and the least comfortable:
+a guarantee that was never claimed, because the comment accurately described a
+gap someone had decided to accept. No clause could catch that one, since no
+clause was being contradicted — it needed the trade-off re-weighed against what
+the open surface could actually write. (7) is the one that bit hardest: it was found
 by a test destroying real work, which is the most expensive way to learn that a
-guard belonged on two paths and had been written for one. None was found by reading the code with suspicion — the audit
-did that thoroughly and missed all four. Each was found by writing a clause that
-asserted the stated guarantee somewhere it had never been asserted before. That
+guard belonged on two paths and had been written for one. Nine of the ten were
+NOT found by reading the code with suspicion — the audit did that thoroughly and
+missed every one. They were found by writing a clause that asserted the stated
+guarantee somewhere it had never been asserted before. (10) is the exception,
+and it is worth being precise about why: reading found it only because the
+comment was honest about the gap, so the question left to ask was not "is this
+true?" but "is this trade still worth making?" That
 is the argument for spec-first stated more precisely than "tests are good": a
 clause is worth writing exactly where a claim has never been checked, and the
 places nobody thought to check are where these live.
 
-## Unfinished / known drift (honest list, 2026-07-21)
+## Unfinished / known drift (honest list, 2026-07-22)
 
 - **Issue #9 is closed; `update.js`/`uninstall.js` coverage is owed to #8.**
   C1–C5 and I1–I5/I10 closed with the security chunk; I6–I9 and I11 with the
