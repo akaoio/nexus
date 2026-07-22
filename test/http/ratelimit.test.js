@@ -16,6 +16,11 @@
  * unlimited hands an attacker the switch that turns it off.
  */
 
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "fs"
+import { tmpdir } from "os"
+import { join } from "path"
+import { fileURLToPath } from "url"
+import { spawnSync, spawn } from "child_process"
 import Test, { assert } from "../../src/core/Test.js"
 import { createLimiter, TIERS, tierFor, clientKey, limiterFor } from "../../src/core/HTTP/ratelimit.js"
 
@@ -179,6 +184,60 @@ Test.describe("Request rate limiting (RATE)", () => {
         // set absurd numbers to approximate "off".
         const tuned = limiterFor({ limits: { auth: { burst: 3 } } })
         assert.equal(tuned.tightest.burst, 3)
+    })
+
+    Test.it("RATE-12 dev's FRAMEWORK-SOURCE route is exempt — a boot cannot throttle itself however often it reloads", async () => {
+        // The second outage from the same cause. RATE-10 records the first: the
+        // api tier's budget made the Studio unbootable, and a dedicated `asset`
+        // tier with a big burst fixed it. A big burst makes the Studio bootable
+        // ONCE, which is not the same thing — a page that reloads several times
+        // in quick succession drains any FIXED budget, and the failure is
+        // silent: one 429 on one module breaks the graph, nothing mounts, and
+        // the page is blank with no error anywhere to say why.
+        //
+        // It surfaced on CI and not here, precisely BECAUSE CI is faster: less
+        // refill lands between boots. Reproduced deliberately by shrinking the
+        // budget on the development machine, where three end-to-end clauses
+        // then went red the same way; with the exemption they pass at the same
+        // shrunken budget, which is what proves the exemption carries it.
+        //
+        // A limiter on this route protects nothing: it exists only in dev,
+        // reads only files already on the developer's own disk, and the flood
+        // it would guard against is `ls`. Production has no such route at all.
+        const BIN = fileURLToPath(new URL("../../bin/nexus.js", import.meta.url))
+        const scratch = mkdtempSync(join(tmpdir(), "nexus-rate12-"))
+        spawnSync(process.execPath, [BIN, "create", "shop"], { cwd: scratch })
+        const instance = join(scratch, "shop")
+        const cfgPath = join(instance, "nexus.config.json")
+        const cfg = JSON.parse(readFileSync(cfgPath, "utf8"))
+        // A budget small enough that ANY fixed allowance would be exhausted.
+        cfg.limits = { asset: { burst: 5, perMs: 100000 }, api: { burst: 5, perMs: 100000 } }
+        writeFileSync(cfgPath, JSON.stringify(cfg, null, 4))
+
+        const proc = spawn(process.execPath, [BIN, "dev", "--port", "0", "--json"], { cwd: instance })
+        try {
+            const base = await new Promise((resolve, reject) => {
+                const timer = setTimeout(() => reject(new Error("dev did not start")), 10000)
+                let buf = ""
+                proc.stdout.on("data", (c) => { buf += c; try { clearTimeout(timer); resolve(JSON.parse(buf).url) } catch {} })
+                proc.on("exit", () => reject(new Error("dev exited early")))
+            })
+
+            // Far more framework-source reads than any budget above allows.
+            const statuses = []
+            for (let i = 0; i < 40; i++) statuses.push((await fetch(base + "/_nexus/src/studio/app.js")).status)
+            assert.equal(statuses.filter((s) => s === 429).length, 0, `the module graph must never be throttled: ${statuses.join(",")}`)
+            assert.equal(statuses.every((s) => s === 200), true, "…and must actually be served")
+
+            // …while the limiter IS on. Without this half the clause would pass
+            // just as well on a server with no limiter at all.
+            let throttled = false
+            for (let i = 0; i < 40 && !throttled; i++) throttled = (await fetch(base + "/api/v1/task")).status === 429
+            assert.equal(throttled, true, "the exemption must be a hole in a live limiter, not the absence of one")
+        } finally {
+            await new Promise((resolve) => { proc.once("exit", resolve); proc.kill("SIGKILL") })
+            rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        }
     })
 })
 
