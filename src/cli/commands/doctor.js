@@ -23,6 +23,7 @@ import { loadExtensions } from "../../core/App/extensions.js"
 import { openInstanceData } from "../data.js"
 import { appliedMigrations } from "../../core/Data/migrate.js"
 import { readManifest, readUpdateRecord } from "../install-state.js"
+import { studioBuildStatus } from "../studio-stamp.js"
 import { fileURLToPath } from "url"
 import { dirname } from "path"
 
@@ -124,6 +125,20 @@ export async function doctor(args, flags, out) {
                       })
                     : []
                 check("migrations", pending.length === 0, pending.length ? `${pending.length} pending — review then nexus migrate --apply` : "ledger clean")
+
+                // The built Studio, if there is one. A built tree is a copy of
+                // the framework's src/studio/** with this instance's schemas
+                // baked into its shell, and both move underneath it — `nexus
+                // update` replaces the framework, editing a model replaces the
+                // schemas. Neither is visible from the built tree itself, which
+                // is exactly the kind of question doctor exists to answer.
+                //
+                // Not a FINDING when absent: an instance is entitled to have no
+                // admin UI in production, and most should not (the shell serves
+                // at the site root, pre-login, with schemas baked in).
+                const studio = studioBuildStatus({ instanceRoot: root, frameworkRoot: NEXUS_ROOT, schemas: instance.schemas })
+                if (!studio.built) check("studio build", true, "none — `nexus studio build` adds an admin UI under `nexus start`")
+                else check("studio build", !studio.stale, studio.stale ? studio.reasons.join(" · ") + " — rebuild with `nexus studio build`" : "matches this instance")
                 if (executor.close) executor.close()
             } catch (error) {
                 check("database", false, error.message)

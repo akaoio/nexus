@@ -25,6 +25,7 @@ import { fileURLToPath } from "url"
 import { randomBytes } from "crypto"
 import { spawnSync } from "child_process"
 import { tmpdir } from "os"
+import { frameworkStamp, schemaFingerprint, STAMP_FILE } from "../studio-stamp.js"
 
 const NEXUS_ROOT = fileURLToPath(new URL("../../../", import.meta.url))
 
@@ -412,6 +413,20 @@ export async function buildStudio({ root = NEXUS_ROOT, out, mount = "./", config
         const html = studioIndex(config, schemas, { ...meta, mode: "production" }).replaceAll("/_nexus/", mount)
         writeFileSync(join(staging, "index.html"), html)
 
+        // What this build was built FROM. Without it a built Studio is a
+        // snapshot of (framework source × instance schemas) that records
+        // neither, so nothing downstream can tell whether it is still true —
+        // `nexus update` moves the framework under every build in the world,
+        // and editing a model moves the schemas, both in silence. Written
+        // INSIDE the staging tree so it is committed by the same atomic
+        // rename as the files it describes: a stamp that could land without
+        // its build, or a build without its stamp, would be a worse lie than
+        // no stamp at all.
+        writeFileSync(
+            join(staging, STAMP_FILE),
+            JSON.stringify({ builtAt: new Date().toISOString(), framework: frameworkStamp(root), schemas: schemaFingerprint(schemas) }, null, 4) + "\n"
+        )
+
         // Invariant: nothing in the built tree may still point at the dev-only
         // module route. If anything does, production would 404 it.
         const survivors = []
@@ -438,7 +453,7 @@ export async function buildStudio({ root = NEXUS_ROOT, out, mount = "./", config
         }
         if (backup) rmSync(backup, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 
-        return { out: outAbs, files: files.length + 2 } // + studio.css + index.html
+        return { out: outAbs, files: files.length + 3 } // + studio.css + index.html + build.json
     } catch (error) {
         rmSync(staging, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
         throw error
