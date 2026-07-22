@@ -92,7 +92,17 @@ export async function startJobThread({
         })
         confirmed = true
     }
-    await ensureReady()
+    // A CONSTRUCTOR THAT THROWS MUST NOT LEAVE ITS RESOURCE BEHIND. The worker
+    // is already spawned by this point, and on failure no rig is returned — so
+    // nothing else could ever stop it. A live worker thread keeps the whole
+    // Node process alive, which turns "startup failed" into "the process never
+    // exits": the suite hung in CI rather than reporting anything.
+    try {
+        await ensureReady()
+    } catch (error) {
+        await threads.terminate(jobName)
+        throw error
+    }
 
     const execute = async ({ id, name, payload }) => {
         // A worker still importing its module graph is not the job's fault, and

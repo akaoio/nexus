@@ -108,10 +108,17 @@ Test.describe("Job execution timeout (JOB-TIMEOUT)", () => {
         mkdirSync(join(scratch, "apps", "fx"), { recursive: true })
         writeFileSync(join(scratch, "apps", "fx", "hooks.js"), `export default ({ job }) => { job("fx.echo", { run: async () => ({ ok: true }) }) }\n`)
         try {
+            const before = Object.keys(threads.threads).length
             await assert.rejects(
                 startJobThread({ root: scratch, apps: [{ dir: "fx" }], config: {}, timeoutMs: 5000, startupMs: 1 }),
                 "E_THREAD_START"
             )
+            // …and it takes its worker with it. No rig is returned on failure,
+            // so nothing else COULD stop it — and a live worker thread keeps the
+            // whole Node process alive, which turns "startup failed" into "the
+            // run never ends". That is how this was found: the suite hung in CI
+            // instead of reporting anything.
+            assert.equal(Object.keys(threads.threads).length, before, "a failed start left its worker running")
         } finally {
             rmSync(scratch, { recursive: true, force: true })
         }
