@@ -68,8 +68,20 @@ const results = {}
 let relay = null
 try {
     // ── a real ZEN relay in its own process on an ephemeral-ish port ──────────
-    const port = 39200 + Math.floor(Math.random() * 400)
-    relay = await startRelay(port, scratch)
+    // Retry the BIND, never an assertion. A port already in use is an
+    // environmental collision that says nothing about the code, and letting it
+    // paint the run red is how a suite teaches people to re-run instead of
+    // read. Re-running a failed ASSERTION would be the opposite — that is the
+    // habit this harness's flakiness was creating in the first place.
+    let port = 0
+    for (let attempt = 0; attempt < 4 && !relay; attempt++) {
+        port = 39000 + Math.floor(Math.random() * 2000)
+        try {
+            relay = await startRelay(port, scratch)
+        } catch (error) {
+            if (attempt === 3) throw new Error(`no free port for the relay after 4 tries: ${error.message}`)
+        }
+    }
     const url = `http://127.0.0.1:${port}/zen`
 
     // A fresh channel per run keeps a persistent relay store from replaying a
@@ -85,10 +97,25 @@ try {
     const tB = await createZenTransport({ peers: [url], file: join(scratch, "b"), channel })
     tA.attach(A)
     tB.attach(B)
-    await new Promise((r) => setTimeout(r, 3000)) // let the WS wire meet the relay
-
     const pairA = await ZEN.pair()
     const pairB = await ZEN.pair()
+
+    // WAIT FOR THE MESH, DO NOT GUESS AT IT. This was a fixed 3s sleep, and on
+    // a loaded runner it was not always enough — an event appended before the
+    // WebSocket carried anything went nowhere and was never re-sent, so the
+    // FIRST assertion failed permanently while the later ones (published once
+    // the wire was up) passed. The CI signature was unmistakable once seen:
+    // ZSYNC-01 red, 02 green, 03/04/05 red because they depend on r1.
+    //
+    // A probe converging is the observable condition that "the peers have met",
+    // and it costs nothing when the handshake is fast. Its row id is its own, so
+    // it disturbs none of the assertions below.
+    const probeId = "probe-" + Date.now().toString(36)
+    await A.append({ op: "create", entity: "task", rowId: probeId, data: { title: "probe", done: false } }, pairA)
+    if (!(await until(() => rowOf(B, probeId), 40000))) {
+        // A clear cause beats four confusing assertion failures.
+        throw new Error("the mesh never carried a probe event — the peers never met, so nothing below could have converged")
+    }
 
     // ZSYNC-01 — a create on A projects onto B over the real mesh
     await A.append({ op: "create", entity: "task", rowId: "r1", data: { title: "from A", done: false } }, pairA)
@@ -110,13 +137,25 @@ try {
     const r1create = JSON.parse(A.executor.all(`SELECT payload FROM _nexus_events WHERE row_id = ? AND entity = 'task' ORDER BY millis LIMIT 1`, ["r1"])[0].payload)
     tA.publish(r1create)
     tA.publish(r1create)
-    await new Promise((r) => setTimeout(r, 1200))
+    // A NEGATIVE assertion after a fixed sleep can pass simply because nothing
+    // arrived yet — it would "prove" idempotence on a mesh that delivered
+    // neither copy. Publishing a sentinel and waiting for THAT to land shows
+    // the channel actually carried traffic after the duplicates, so "still one
+    // row" means deduplicated rather than merely not-yet-delivered.
+    const sentinel1 = "sentinel-" + Date.now().toString(36)
+    await A.append({ op: "create", entity: "task", rowId: sentinel1, data: { title: "s1", done: false } }, pairA)
+    await until(() => rowOf(B, sentinel1), 20000)
     results.idempotent = B.executor.all(`SELECT COUNT(*) AS n FROM task WHERE id = ?`, ["r1"])[0].n === 1
 
     // ZSYNC-05 — SECURITY: a tampered event on the wire is rejected (gate 1/2)
     const forged = { ...r1create, data: { ...r1create.data, title: "HIJACKED" } } // same id+sig, mutated content
     tA.publish(forged) // content address / signature no longer matches → must not apply
-    await new Promise((r) => setTimeout(r, 1500))
+    // Same reasoning as above: a forgery that was never delivered is not a
+    // forgery that was rejected. The sentinel proves the wire carried traffic
+    // after it, so an unchanged row means the gates refused it.
+    const sentinel2 = "sentinel2-" + Date.now().toString(36)
+    await A.append({ op: "create", entity: "task", rowId: sentinel2, data: { title: "s2", done: false } }, pairA)
+    await until(() => rowOf(B, sentinel2), 20000)
     results.tamper_rejected = rowOf(B, "r1")?.title === "from A" // unchanged, forgery ignored
 
     tA.close()
