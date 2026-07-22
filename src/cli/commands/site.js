@@ -13,7 +13,7 @@
  * (v1 restores into the same engine family — raw storage values copy as-is.)
  */
 
-import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, createWriteStream } from "fs"
+import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, createWriteStream, createReadStream } from "fs"
 import { join, dirname } from "path"
 import { loadInstance } from "../instance.js"
 import { openInstanceData, ensureTables } from "../data.js"
@@ -21,6 +21,7 @@ import { appliedMigrations, ensureLedger } from "../../core/Data/migrate.js"
 import { restorableRow } from "../../core/Model.js"
 import { SYSTEM_ENTITIES } from "../../core/App/system.js"
 import { redact } from "../../core/App/config.js"
+import { createBackupScanner } from "../../core/App/backup-read.js"
 
 const BACKUP_VERSION = 1
 const quote = (name) => `"${String(name).replace(/"/g, '""')}"` // SEC: double embedded quotes
@@ -172,75 +173,140 @@ async function restore(args, flags, out, root) {
         process.exitCode = 2
         return
     }
-    const document = JSON.parse(readFileSync(join(root, file), "utf8"))
-    if (document.backupVersion !== BACKUP_VERSION) {
-        out.error(`Unknown backupVersion ${document.backupVersion}`, { code: "E_VERSION_UNKNOWN" })
-        process.exitCode = 1
-        return
-    }
     const apply = flags.apply === true
     const report = { appsWritten: [], appsSkipped: [], inserted: {}, skipped: {}, rejected: {}, ledger: 0 }
 
-    // App files — only where the app directory does not exist (never overwrite)
-    for (const [dir, files] of Object.entries(document.apps ?? {})) {
-        if (existsSync(join(root, "apps", dir))) {
-            report.appsSkipped.push(dir)
-            continue
-        }
-        report.appsWritten.push(dir)
-        if (apply)
-            for (const [relative, content] of Object.entries(files)) {
-                const path = join(root, "apps", dir, relative)
-                mkdirSync(dirname(path), { recursive: true })
-                writeFileSync(path, content)
-            }
-    }
-
-    // Rows — additive by id; the ledger merges the same way
-    const { config, schemas } = apply ? loadInstance(root) : loadInstance(root)
-    const { executor, kysely, dialect } = await openInstanceData(root, config)
-    await ensureLedger(executor)
-    if (apply) await ensureTables(executor, kysely, schemas, dialect)
-
-    for (const [entity, rows] of Object.entries(document.data ?? {})) {
-        report.inserted[entity] = 0
-        report.skipped[entity] = 0
-        report.rejected[entity] = 0
-        const schema = schemas.find((s) => s.name === entity)
-        for (const row of rows) {
-            if (!schema) {
-                report.skipped[entity]++ // the entity itself is gone from this instance
+    // INCREMENTALLY, not JSON.parse over the whole file. Backup writes in pages
+    // of 500 so creating one costs a page; this used to read the entire
+    // document into memory TWICE (a UTF-8 buffer, then the parsed graph), so a
+    // backup big enough to be worth having was exactly the one that could not
+    // be restored. `data.<entity>[]` is the only unbounded region — the header
+    // is scalars, `apps` is the instance's own source and `migrations` is one
+    // entry per applied migration — so rows stream and the rest arrives whole
+    // (SITE-STREAM-03).
+    /** App files — only where the app directory does not exist (never overwrite). */
+    const restoreApps = (apps) => {
+        for (const [dir, files] of Object.entries(apps ?? {})) {
+            if (existsSync(join(root, "apps", dir))) {
+                report.appsSkipped.push(dir)
                 continue
             }
-            // Fit the row to the DESTINATION schema — dropped columns fall
-            // away, required-without-default gaps reject; a backup from before
-            // a schema change restores what it can, additively, never crashing.
-            const fitted = restorableRow(schema, row)
-            if (!fitted.valid) {
-                report.rejected[entity]++
-                continue
-            }
-            const existing = await executor.all(`SELECT id FROM ${quote(entity)} WHERE id = ?`, [row.id])
-            if (existing.length) {
-                report.skipped[entity]++
-                continue
-            }
-            report.inserted[entity]++
-            if (apply) {
-                const compiled = kysely.insertInto(entity).values(fitted.row).compile()
-                await executor.run(compiled.sql, [...compiled.parameters])
-            }
-        }
-    }
-    const done = new Set((await appliedMigrations(executor)).map((m) => m.id))
-    for (const entry of document.migrations ?? [])
-        if (!done.has(entry.id)) {
-            report.ledger++
+            report.appsWritten.push(dir)
             if (apply)
-                await executor.run(`INSERT INTO _nexus_migrations (id, entity, checksum, applied_at) VALUES (?, ?, ?, ?)`, [
-                    entry.id, entry.entity, entry.checksum, entry.applied_at
-                ])
+                for (const [relative, content] of Object.entries(files)) {
+                    const path = join(root, "apps", dir, relative)
+                    mkdirSync(dirname(path), { recursive: true })
+                    writeFileSync(path, content)
+                }
         }
+    }
+
+    // OPENED LAZILY, and the laziness is the point. The instance must be read
+    // AFTER the backup's apps/ have been written, or an app restored from the
+    // backup contributes no schemas — so `ensureTables` creates nothing, every
+    // row is fitted against an entity that does not exist, and a restore into
+    // a genuinely fresh instance inserts zero rows while reporting success.
+    // Reading the whole document first used to make the ordering invisible;
+    // streaming makes it a real constraint, and `apps` precedes `data` in every
+    // document `backup` writes (OPS-05/06).
+    let db = null
+    let schemas = []
+    let ledgerDone = null
+    const ensureDb = async () => {
+        if (db) return db
+        const instance = loadInstance(root)
+        schemas = instance.schemas
+        db = await openInstanceData(root, instance.config)
+        await ensureLedger(db.executor)
+        if (apply) await ensureTables(db.executor, db.kysely, schemas, db.dialect)
+        ledgerDone = new Set((await appliedMigrations(db.executor)).map((m) => m.id))
+        return db
+    }
+
+    const restoreMigrations = async (entries) => {
+        if (!entries?.length) return
+        const { executor } = await ensureDb()
+        for (const entry of entries)
+            if (!ledgerDone.has(entry.id)) {
+                report.ledger++
+                if (apply)
+                    await executor.run(`INSERT INTO _nexus_migrations (id, entity, checksum, applied_at) VALUES (?, ?, ?, ?)`, [
+                        entry.id, entry.entity, entry.checksum, entry.applied_at
+                    ])
+            }
+    }
+
+    let secretsRedacted = false
+    let versionChecked = false
+    let schemaFor = null
+
+    const handle = async (event) => {
+        if (event.type === "header") {
+            if (event.key === "backupVersion") {
+                if (event.value !== BACKUP_VERSION) throw Object.assign(new Error(`Unknown backupVersion ${event.value}`), { code: "E_VERSION_UNKNOWN" })
+                versionChecked = true
+            }
+            if (event.key === "secretsRedacted") secretsRedacted = event.value === true
+            if (event.key === "apps") restoreApps(event.value)
+            if (event.key === "migrations") await restoreMigrations(event.value)
+            return
+        }
+        if (event.type === "entity") {
+            await ensureDb()
+            report.inserted[event.name] = 0
+            report.skipped[event.name] = 0
+            report.rejected[event.name] = 0
+            // Resolved ONCE per entity rather than per row — the lookup was
+            // inside the row loop before, and streaming makes that cost visible.
+            schemaFor = schemas.find((s) => s.name === event.name) ?? null
+            return
+        }
+        if (event.type !== "row") return
+
+        const entity = event.entity
+        if (!schemaFor) {
+            report.skipped[entity]++ // the entity itself is gone from this instance
+            return
+        }
+        // Fit the row to the DESTINATION schema — dropped columns fall away,
+        // required-without-default gaps reject; a backup from before a schema
+        // change restores what it can, additively, never crashing.
+        const fitted = restorableRow(schemaFor, event.row)
+        if (!fitted.valid) {
+            report.rejected[entity]++
+            return
+        }
+        const { executor, kysely } = db
+        const existing = await executor.all(`SELECT id FROM ${quote(entity)} WHERE id = ?`, [event.row.id])
+        if (existing.length) {
+            report.skipped[entity]++
+            return
+        }
+        report.inserted[entity]++
+        if (apply) {
+            const compiled = kysely.insertInto(entity).values(fitted.row).compile()
+            await executor.run(compiled.sql, [...compiled.parameters])
+        }
+    }
+
+    const scanner = createBackupScanner()
+    try {
+        const stream = createReadStream(join(root, file), { encoding: "utf8" })
+        for await (const chunk of stream) for (const event of scanner.write(chunk)) await handle(event)
+        for (const event of scanner.end()) await handle(event)
+    } catch (error) {
+        db?.executor?.close?.()
+        out.error(error.message, { code: error.code ?? "E_BACKUP_READ" })
+        process.exitCode = 1
+        return
+    }
+    if (!versionChecked) {
+        db?.executor?.close?.()
+        out.error("this file declares no backupVersion — it is not a Nexus backup", { code: "E_VERSION_UNKNOWN" })
+        process.exitCode = 1
+        return
+    }
+    const document = { secretsRedacted }
 
     const total = Object.values(report.inserted).reduce((a, b) => a + b, 0)
     const skipped = Object.values(report.skipped).reduce((a, b) => a + b, 0)
@@ -255,7 +321,7 @@ async function restore(args, flags, out, root) {
     if (document.secretsRedacted)
         out.print(out.yellow("  ⚠ this backup's secrets were redacted — re-supply token_secret and api_keys[].key (nexus config set …), and nexus_webhook.secret for each webhook, before this instance can serve"))
     out.emit({ ok: true, apply, secretsRedacted: document.secretsRedacted === true, ...report })
-    if (executor.close) executor.close()
+    db?.executor?.close?.()
 }
 
 export async function site(args, flags, out) {

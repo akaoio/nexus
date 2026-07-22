@@ -27,7 +27,7 @@ import { join } from "path"
 import Test, { assert } from "../../src/core/Test.js"
 import { onUnmount, unmountCurrent, commitMount, mountedCount } from "../../src/studio/kit/lifecycle.js"
 import { nextIndex } from "../../src/studio/components/search/index.js"
-import { subscribe, unionKey, subscriberCount } from "../../src/studio/kit/events.js"
+import { subscribe, unionKey, subscriberCount, createLinkState, notifyResync } from "../../src/studio/kit/events.js"
 
 const ROUTES_DIR = fileURLToPath(new URL("../../src/studio/routes", import.meta.url))
 
@@ -135,6 +135,133 @@ Test.describe("Shared event connection narrows too (EVT-UNION)", () => {
         off()
         assert.equal(subscriberCount(), 0, "no subscribers means no connection to keep open")
         assert.equal(unionKey(), "", "and nothing to reconnect for")
+    })
+})
+
+Test.describe("Realtime recovery after a dropped link (EVTSYNC)", () => {
+    // STATUS listed `Last-Event-ID` replay as deferred work. Reading what the
+    // stream carries withdraws it instead: the wire holds {entity,event,id,ts}
+    // and NEVER row data, so an event is a notification to refetch — and a
+    // refetch already supersedes any replay of them, with the current truth
+    // rather than a history of intermediate states. Replay would cost
+    // retention the hub deliberately does not have, plus a decision about
+    // whose visibility applies to historical events, which is the exact shape
+    // of I11, the after:remove id leak this project already closed.
+    //
+    // What deserved to exist is the recovery replay was standing in for.
+    // STATUS says a client "recovers by refetching"; nothing made it refetch.
+    // A route subscribed across a network blip showed stale data indefinitely
+    // — silently, because the page looks fine and is wrong.
+
+    Test.it("EVTSYNC-01 a link that DROPPED and reopened resyncs; one replaced deliberately does not", () => {
+        // The distinction has to be exact. A connection replaced because the
+        // entity union changed (a route mounted or unmounted) is not a gap in
+        // coverage; only a connection that was LOST leaves a hole. Resyncing on
+        // every union change would reload every list on every navigation.
+        const link = createLinkState()
+
+        assert.equal(link.open(), false, "the very first connect has missed nothing")
+
+        link.drop()
+        assert.equal(link.open(), true, "a reconnect after a drop must resync")
+
+        // A replacement with no drop behind it covers nothing and must stay quiet.
+        link.replace()
+        assert.equal(link.open(), false, "a deliberate replacement is not a gap")
+    })
+
+    Test.it("EVTSYNC-02 ONE resync per drop, however many opens follow", () => {
+        const link = createLinkState()
+        link.drop()
+        assert.equal(link.open(), true)
+        assert.equal(link.open(), false, "the gap was already covered by the first refetch")
+        assert.equal(link.open(), false)
+
+        // A drop while already dropped (retry failed, retried again) is still
+        // one gap, not two.
+        link.drop()
+        link.drop()
+        assert.equal(link.open(), true)
+        assert.equal(link.open(), false)
+
+        // The one that is easy to get backwards: a deliberate replacement
+        // DURING an outstanding drop must NOT erase the gap. A route mounting
+        // mid-outage changes the entity union and replaces the connection, but
+        // the events missed while it was down are still missed — swallowing
+        // that would leave exactly the stale page this whole clause is about.
+        link.drop()
+        link.replace()
+        assert.equal(link.open(), true, "a union change during an outage must not swallow the gap")
+    })
+
+    Test.it("EVTSYNC-03 a resync reaches EVERY subscriber, past the entity filter and past the dedupe set", () => {
+        // A resync carries no entity/id/ts, so the dedupe key would collapse
+        // every one of them into a single swallowed event; and "you may have
+        // missed something" is not about any one entity, so an entity filter
+        // must not hold it back either.
+        const seen = []
+        const offA = subscribe(["task"], (e) => seen.push(["A", e.type]))
+        const offB = subscribe(["note"], (e) => seen.push(["B", e.type]))
+        try {
+            notifyResync()
+            notifyResync()
+            assert.deepEqual(seen, [["A", "resync"], ["B", "resync"], ["A", "resync"], ["B", "resync"]])
+        } finally {
+            offA()
+            offB()
+        }
+    })
+
+    Test.it("EVTSYNC-04 the WIRING: a dropped EventSource that reconnects makes every subscriber refetch", () => {
+        // What is faked here is the BROWSER's retry machinery — reconnecting
+        // after a drop is the browser's job and not ours to re-implement — and
+        // what is under test is our reaction to it. No server can be asked to
+        // drop a connection on cue from inside a page, so this fake is the
+        // instrument in a browser run too; Node is simply the cheaper host.
+        const created = []
+        class FakeEventSource {
+            static CLOSED = 2
+            static CONNECTING = 0
+            constructor(url) {
+                this.url = url
+                this.readyState = FakeEventSource.CONNECTING
+                created.push(this)
+            }
+            close() { this.readyState = FakeEventSource.CLOSED }
+        }
+        const had = Object.getOwnPropertyDescriptor(globalThis, "EventSource")
+        globalThis.EventSource = FakeEventSource
+        const reloads = []
+        let off = null
+        try {
+            off = subscribe(["task"], (e) => reloads.push(e.type ?? e.event))
+            const es = created.at(-1)
+            assert.truthy(es, "subscribing must open a connection")
+
+            // The first connect has missed nothing.
+            es.onopen?.()
+            assert.deepEqual(reloads, [], "the first connect must not trigger a refetch")
+
+            // The link drops. The browser will retry on its own — readyState
+            // CONNECTING is exactly that signal — and whatever is emitted in
+            // the meantime is lost.
+            es.readyState = FakeEventSource.CONNECTING
+            es.onerror?.()
+            assert.deepEqual(reloads, [], "a drop alone refetches nothing — there is nowhere to fetch from yet")
+
+            // …and comes back. THIS is the moment the route was never told
+            // about, and why a network blip left a page stale indefinitely.
+            es.onopen?.()
+            assert.deepEqual(reloads, ["resync"], "a reconnect after a drop must make the route refetch")
+
+            // Steady state again: further opens cover nothing new.
+            es.onopen?.()
+            assert.deepEqual(reloads, ["resync"])
+        } finally {
+            off?.()
+            if (had) Object.defineProperty(globalThis, "EventSource", had)
+            else delete globalThis.EventSource
+        }
     })
 })
 
