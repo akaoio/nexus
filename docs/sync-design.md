@@ -187,3 +187,16 @@ Phác thảo danh mục, đánh số chi tiết khi viết suite:
 ---
 
 *Tài liệu này là con của ARCHITECTURE.md và chịu N1–N6. Event v1, khoá thứ tự §4.1, và ngữ nghĩa fold §4.2 là hợp đồng công khai sau khi suite SYNC-* xanh — từ đó trở đi chỉ tiến hoá bằng eventVersion mới.*
+
+
+---
+
+## Phụ lục (2026-07-22) — danh sách peer là danh sách peer
+
+`ZEN.graph.create` mặc định tham gia một nhóm **multicast LAN**. Nghĩa là một transport được khai báo `peers: ["http://relay/zen"]` vẫn **đồng thời phát mọi event ra toàn mạng nội bộ** cho bất cứ thứ gì nói cùng giao thức và biết tên channel. Không ai yêu cầu điều đó: người gọi đã khai báo peer của mình, và danh sách peer là danh sách peer.
+
+Nó còn phá luôn tính hội tụ, và đó là cách phát hiện ra. Khoảng một nửa số lần chạy hai-peer trên máy phát triển **mất hẳn một event**. Không phải chậm: peer chờ **150 giây** — gấp bảy lần cửa sổ của harness — trong khi `_nexus_quarantine` rỗng và không gate nào từ chối nó. Đơn giản là chưa bao giờ được giao.
+
+CI không bao giờ thấy, vì container CI không có peer LAN nào để khám phá, nên ở đó chỉ tồn tại đường relay. Và chính CI xanh là lý do chuyện này nằm im lâu đến vậy: bộ test trông như "flaky trên một máy" thay vì "sai ở mọi nơi".
+
+Multicast giờ là **opt-in** (`createZenTransport({ multicast: true })`), đặt sau một hàm thuần `graphOptions()` để mọi trường hợp đều lái được bằng clause — và không giá trị truthy nào ngoài `true` được phép bật một bề mặt mạng lên (SYNCNET-01).
