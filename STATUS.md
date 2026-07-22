@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 737/787 node clauses, 0 red** (`node test.js`)
+**Green: 738/788 node clauses, 0 red** (`node test.js`)
 **Green: 50/50 browser clauses, 0 red** (`npm run test:browser`, real headless Chromium)
 **Green: 9/9 end-to-end clauses, 0 red** (`npm run test:e2e`, real browser driving a real `nexus dev`)
 
@@ -601,10 +601,27 @@ places nobody thought to check are where these live.
   PATH entry the manifest records and tells the operator to remove it. Rewriting
   a user's persistent PATH during an uninstall is a bigger decision than this
   chunk should make silently, so it names and defers rather than acting.
-- **Installers are untested on clean machines**: install.sh/install.ps1 follow the
-  access pattern and `nexus update`/`uninstall` are exercised only on this dev box
-  (git-install path). A fresh-VM pass (POSIX + Windows), and a decision on npm
-  publishing (name "nexus" is generic), are owed.
+- **install.sh IS now verified on a clean machine** — a minimal Debian trixie
+  rootfs (debootstrap + systemd-nspawn) with no Node and no git. All four
+  prerequisite branches ran for the first time: refusal with no Node, refusal on
+  Node 20, the tarball fallback (git absent) resolving and pinning a real commit,
+  and the full lifecycle after it — `create`, `migrate --apply`, `doctor`
+  healthy, `update` correctly telling a tarball install how to refresh, and
+  `uninstall --yes` removing exactly what the manifest named while leaving the
+  instance directory alone. **install.ps1 remains unrun** — that needs Windows,
+  and no amount of Linux gets there.
+- **Debian stable ships Node 20, below the floor Nexus requires.** On trixie
+  `apt install nodejs` gives 20.x, and the installer then correctly refuses with
+  "Nexus needs Node >= 22 (node:sqlite)". That is the right refusal, but it means
+  the most obvious install path on the most common server distro does not work
+  without adding a Node source first — worth a line in the README that is not
+  there today.
+- **Node 22 prints an ExperimentalWarning on every CLI command** (`SQLite is an
+  experimental feature`), because node:sqlite is only unflagged-stable later. 22
+  is the DECLARED floor, so the minimum supported configuration is also the
+  noisiest one. Not fixed here; suppressing warnings wholesale would hide real
+  ones, and a targeted filter is a decision worth making deliberately.
+- **A decision on npm publishing** (the name "nexus" is generic) is still owed.
 - **bootstrap-icons sprite is vendored whole (~1.1 MB)** and fetched per icon page
   load; fine for the Studio, but a build step could subset it.
 

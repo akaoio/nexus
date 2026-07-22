@@ -13,7 +13,21 @@
  * so this module never breaks a browser import). ZEN is vendored.
  */
 
-const ZEN = (await import("../../../vendor/zen/zen.js")).default
+// LAZY, not top-level. This used to be `const ZEN = (await import(…)).default`
+// at module scope, and src/cli/main.js imports every command module eagerly —
+// so EVERY `nexus` invocation loaded ZEN and started its pen.wasm read, even
+// `nexus uninstall`, which needs neither.
+//
+// That was not merely wasteful. `nexus uninstall --yes` removes the install
+// tree while that read is still in flight, so it printed "Nexus removed." and
+// then died with ENOENT on vendor/zen/pen.wasm and exit 1 — a successful
+// uninstall that any script checking the exit code reads as a failure. Found by
+// running it on a genuinely clean machine for the first time.
+//
+// ZEN is only ever needed inside verifyChallenge, so it loads when auth is
+// actually used and never merely because a module was imported.
+let _zen = null
+const zen = async () => (_zen ??= (await import("../../../vendor/zen/zen.js")).default)
 
 const b64url = (buf) => Buffer.from(buf).toString("base64url")
 const fromB64url = (s) => Buffer.from(s, "base64url")
@@ -35,6 +49,7 @@ function safeEqual(a, b) {
 export async function verifyChallenge(pub, nonce, signature) {
     if (typeof pub !== "string" || typeof signature !== "string") return false
     try {
+        const ZEN = await zen()
         if ((await ZEN.recover(signature)) !== pub) return false
         return (await ZEN.verify(signature, pub)) === nonce
     } catch {
