@@ -259,19 +259,33 @@ try {
         await until(page, "!!document.querySelector('main')", { label: "the users page renders" })
 
         const PASS = "correct-horse-battery-staple"
-        const pub = await page.evaluate(`(async () => {
-            const ZEN = (await import("/_nexus/vendor/zen/zen.js")).default
-            const pair = await ZEN.pair(null, { seed: ${JSON.stringify(PASS)} })
-            const r = await fetch("/api/v1/nexus_user", {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ pub: pair.pub, name: "e2e-admin", roles: JSON.stringify(["admin"]) })
-            }).then((res) => res.json())
-            return r.ok ? pair.pub : "PROVISION FAILED: " + JSON.stringify(r.error)
-        })()`)
-        if (String(pub).startsWith("PROVISION")) throw new Error(String(pub))
 
-        // One directory row means auth is required from the next request on.
+        // Provisioned through the STUDIO'S OWN BUTTON, not the API. Two earlier
+        // attempts concluded this could not be driven; both were wrong, and
+        // wrong in the same way. The button works — `prompt()` stubs fine, the
+        // row is written immediately — but the assertion counted
+        // `(json.data || []).length` on the response to an UNAUTHENTICATED read
+        // of nexus_user, which is 401 the instant the first admin exists.
+        // Zero rows was the auth gate closing, i.e. the flow SUCCEEDING, read
+        // as the flow failing.
+        //
+        // So the signal to wait for is the one a person would notice: the API
+        // starts refusing anonymous reads.
+        await page.evaluate(`(() => { window.prompt = () => ${JSON.stringify(PASS)}; return true })()`)
+        const clicked = await page.evaluate(`(() => {
+            const b = [...document.querySelectorAll("nx-button")].find((x) => (x.textContent || "").includes("Add me as admin"))
+            if (!b) return false
+            b.click()
+            return true
+        })()`)
+        if (!clicked) throw new Error('the "Add me as admin" button is not on the page')
+
+        await until(page, "fetch('/api/v1/nexus_user').then(r => r.status === 401)",
+            { timeoutMs: 30000, label: "adding the first admin turns authentication ON" })
+        record("E2E-08 adding the first admin through the Studio turns authentication on", null)
+
+        // The route reloads itself on success; navigate anyway so the gate is
+        // reached deterministically rather than by catching that reload.
         await page.navigate(live.url + "/users")
         await until(page, "!!document.querySelector('#nx-pass') && !document.querySelector('#nx-login').hidden",
             { timeoutMs: 30000, label: "the login gate appears once a user exists" })
