@@ -97,7 +97,24 @@ export async function dev(args, flags, out) {
     // for (DEVFD-01/02).
     async function reloadInstance() {
         const fresh = loadInstance(root)
-        const previous = { effects, close }
+        const previous = { close }
+
+        // THE OLD EFFECT RUNNER GOES FIRST, and only it. `Threads` is a
+        // module-level registry keyed by name, and `register()` returns the
+        // EXISTING thread for a name it already holds — so building the new
+        // instance while the old runner is still registered handed the new
+        // instance the OLD worker, carrying the old apps and config, and then
+        // took it away entirely when the old instance was released. Measured:
+        // a job enqueued before a hot reload completes; the next one after it
+        // sticks in `running` forever. Every reload, silently.
+        //
+        // Everything else still follows the build-first order below: the API,
+        // the plane and the database handle stay live until the new instance
+        // exists, so a rebuild that throws leaves the server answering. What a
+        // failed rebuild does cost is the job runner, which is stopped by the
+        // time we find out — the honest half of this trade, and the reason
+        // DEVFD-02 claims a serving instance rather than a fully running one.
+        await effects.stop()
 
         // `appPolicies` is refilled IN PLACE, never replaced: the array's
         // identity is the contract — buildInstanceApi's policyLayers() closes
@@ -115,7 +132,6 @@ export async function dev(args, flags, out) {
         schemaFiles = fresh.files
         ;({ api, plane, authState, challenges, engine, authMode, embedderInfo, effects, close } = built)
 
-        await previous.effects.stop()
         await previous.close()
     }
 
