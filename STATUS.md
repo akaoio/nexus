@@ -365,16 +365,14 @@ places nobody thought to check are where these live.
   (job enqueue → webhook fire → notification row) are proven on the real infrastructure
   (JOBL-01/WH-02/03/NOTIF-01), but browser-side navigation and form validation are NOT yet
   pinned in CI (joins the E2E debt alongside login/cascade/hot-reload/accent clauses).
-- **`/_studio/users` endpoints are legacy, but no longer inert**: the /users page
-  itself CRUDs `nexus_user` rows directly; the old config-identities endpoints
-  remain in dev.js for CLI parity, and as of the final review's item 2 their
-  `add`/`role` actions ALSO write the `nexus_user` directory row (through the
-  same internal ctx the server's own directory actor uses), so an identity
-  provisioned this way can actually log in past first boot. `remove` still
-  touches only `nexus.config.json` — revocation is the directory's job
-  (`/api/v1/nexus_user`, AUTH-REVOKE-DELETE), not this endpoint's. Deciding
-  these endpoints' longer-term fate (keep as bootstrap tooling vs delete) is
-  still open.
+- **CLOSED — the `/_studio/users` config-identity endpoints are WITHDRAWN** (STUDIO-12).
+  This entry used to leave their fate open. They had no caller: the Studio's own /users page
+  CRUDs `nexus_user` through the plane, and `nexus user` edits `nexus.config.json` directly
+  without HTTP — so the endpoints existed only to be tested. What they did have was a
+  `remove` action that did NOT revoke: it edited the config array and left the directory row
+  that actually grants login past first boot. An endpoint whose remove does not remove is a
+  trap. Deleting it also took a permlevel-1 write context (`nexusUserCtx`) out of dev.js,
+  where nothing else could reach it.
 - **Studio schema editing and config writing stay dev-only in production, deliberately**
   (issue #10, `docs/superpowers/specs/2026-07-20-studio-in-production-design.md` §5):
   `/_studio/model` (schema create/edit/delete) and entity-delete need hot-reload-under-load

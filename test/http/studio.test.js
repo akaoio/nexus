@@ -274,22 +274,33 @@ Test.describe("Studio write endpoints (STUDIO)", () => {
         assert.deepEqual(session.body.data.roles, [], "the SAME token now reports the live (empty) roles, not its stale claims")
     })
 
-    Test.it("STUDIO-12 /_studio/users add provisions an identity that can actually log in (issue #9 final review, item 2)", async () => {
-        // Before the fix, POST /_studio/users {action: "add"} wrote ONLY to
-        // nexus.config.json. Past first boot (this instance already has
-        // admin+viewer in the directory) that config identity is INERT:
-        // knownPub/rolesForPub only fall back to config while the directory
-        // is empty — so the new identity's handshake would 401 E_AUTH even
-        // though the route answered applied: true. Prove the opposite: add
-        // through the Studio, then complete the REAL ZEN handshake as that
-        // brand-new identity and confirm it receives a working token.
+    Test.it("STUDIO-12 the config-identity write path is DEAD — /_studio/users 404s both ways, and the PLANE provisions a working identity", async () => {
+        // Withdrawn, not merely deprecated. It had no caller: the Studio's own
+        // /users page CRUDs nexus_user through the plane, and `nexus user`
+        // edits nexus.config.json directly without HTTP. What it did have was a
+        // `remove` action that did NOT revoke — it edited the config array
+        // while leaving the directory row that actually grants login past first
+        // boot. An endpoint whose remove does not remove is a trap, and this
+        // one existed only to be tested.
+        //
+        // Deleting it also took a permlevel-1 write context out of dev.js:
+        // `nexusUserCtx` was reachable from nowhere else.
+        assert.equal((await callAs(ADMIN, "GET", "/_studio/users")).status, 404)
+        assert.equal((await callAs(ADMIN, "POST", "/_studio/users", { action: "add", pub: "PUBX" })).status, 404)
+
+        // What it was FOR still works, through the one path that was always the
+        // truth: a row created on the plane can complete the real ZEN handshake
+        // and carries the role it was granted, live.
         const freshPair = await ZEN.pair(null, { seed: "studio-auth-provisioned" })
-        const added = await callAs(ADMIN, "POST", "/_studio/users", { action: "add", pub: freshPair.pub, name: "fresh", roles: ["viewer"] })
-        assert.equal(added.status, 200)
-        assert.equal(added.body.data.applied, true)
+        const created = await callAs(ADMIN, "POST", "/api/v1/nexus_user", {
+            pub: freshPair.pub,
+            name: "fresh",
+            roles: JSON.stringify(["viewer"])
+        })
+        assert.equal(created.status, 201, JSON.stringify(created.body))
+
         const token = await loginAs(freshPair)
-        assert.equal(typeof token, "string")
-        assert.truthy(token.length > 0, "the freshly provisioned identity received a real session token")
+        assert.truthy(typeof token === "string" && token.length > 0, "the freshly provisioned identity received a real session token")
         tokenCache.set(freshPair, token) // reuse the handshake above instead of logging in twice
         const whoami = await callAs(freshPair, "GET", "/api/v1/_session")
         assert.equal(whoami.status, 200)
