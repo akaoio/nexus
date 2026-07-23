@@ -84,7 +84,7 @@ async function liveInstance() {
 }
 
 /** Poll an expression until it is truthy, or give up. */
-async function until(page, expression, { timeoutMs = 15000, label = expression } = {}) {
+async function until(page, expression, { timeoutMs = 15000, label = expression, diagnose = null } = {}) {
     const deadline = Date.now() + timeoutMs
     let lastError = null
     while (Date.now() < deadline) {
@@ -100,7 +100,15 @@ async function until(page, expression, { timeoutMs = 15000, label = expression }
         }
         await new Promise((r) => setTimeout(r, 150))
     }
-    throw new Error(`timed out waiting for: ${label}${lastError ? ` (last error: ${lastError})` : ""}`)
+    // A timeout on a condition that never threw tells you nothing about WHY.
+    // An optional probe captures the page's state at the moment of giving up,
+    // so a CI-only failure that cannot be reproduced locally still leaves
+    // evidence in the log rather than a bare "timed out".
+    let state = ""
+    if (diagnose) {
+        try { state = " · state=" + JSON.stringify(await page.evaluate(diagnose)) } catch (e) { state = " · diagnose threw: " + e.message }
+    }
+    throw new Error(`timed out waiting for: ${label}${lastError ? ` (last error: ${lastError})` : ""}${state}`)
 }
 
 /**
@@ -288,7 +296,20 @@ try {
         // reached deterministically rather than by catching that reload.
         await page.navigate(live.url + "/users")
         await until(page, "!!document.querySelector('#nx-pass') && !document.querySelector('#nx-login').hidden",
-            { timeoutMs: 30000, label: "the login gate appears once a user exists" })
+            { timeoutMs: 30000, label: "the login gate appears once a user exists",
+              diagnose: `(async () => {
+                  const login = document.querySelector('#nx-login')
+                  let session = null
+                  try { const r = await fetch('/api/v1/_session'); session = { status: r.status, body: await r.text() } } catch (e) { session = { error: String(e) } }
+                  return {
+                      readyState: document.readyState,
+                      hasApp: !!document.querySelector('main'),
+                      hasLogin: !!login, loginHidden: login ? login.hidden : null,
+                      hasPass: !!document.querySelector('#nx-pass'),
+                      url: location.href,
+                      session
+                  }
+              })()` })
 
         // A WRONG passphrase derives a different key, so the server must refuse
         // it — otherwise "the passphrase is the key" would be decoration.
