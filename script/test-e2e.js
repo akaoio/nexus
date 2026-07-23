@@ -295,6 +295,9 @@ try {
         // The route reloads itself on success; navigate anyway so the gate is
         // reached deterministically rather than by catching that reload.
         await page.navigate(live.url + "/users")
+        // Trap any load-time error so the diagnostic can tell "app.js threw"
+        // apart from "the navigation was interrupted and nothing ran".
+        try { await page.evaluate(`window.addEventListener('error', (e) => { window.__e2eError = String(e.message || e.error || e) }); window.addEventListener('unhandledrejection', (e) => { window.__e2eError = 'reject: ' + String(e.reason) }); true`) } catch {}
         await until(page, "!!document.querySelector('#nx-pass') && !document.querySelector('#nx-login').hidden",
             { timeoutMs: 30000, label: "the login gate appears once a user exists",
               diagnose: `(async () => {
@@ -307,6 +310,11 @@ try {
                       hasLogin: !!login, loginHidden: login ? login.hidden : null,
                       hasPass: !!document.querySelector('#nx-pass'),
                       url: location.href,
+                      // did app.js's module tag even make it into the document?
+                      scripts: [...document.querySelectorAll('script')].map((x) => x.src || (x.textContent || '').slice(0, 40)),
+                      bodyChildren: document.body ? document.body.children.length : -1,
+                      navEntries: (performance.getEntriesByType('navigation') || []).length,
+                      lastError: window.__e2eError || null,
                       session
                   }
               })()` })
