@@ -309,6 +309,21 @@ try {
                   // miss a throw that already happened.
                   let appImport = null
                   try { await import('/_nexus/src/studio/app.js?probe=' + Date.now()); appImport = 'loaded' } catch (e) { appImport = 'THREW: ' + String(e && e.stack || e).slice(0, 300) }
+                  // Walk two levels of app.js's import graph and report any URL
+                  // that is not 200 — the browser names only the entry, never
+                  // the sub-module that actually failed.
+                  const bad = []
+                  const seen = new Set()
+                  const walk = async (u, depth) => {
+                      if (depth < 0 || seen.has(u)) return
+                      seen.add(u)
+                      let text = ''
+                      try { const r = await fetch(u); if (r.status !== 200) { bad.push(u.replace(location.origin, '') + ' → ' + r.status); return } text = await r.text() }
+                      catch (e) { bad.push(u.replace(location.origin, '') + ' → ' + String(e)); return }
+                      const specs = [...text.matchAll(/(?:from|import)\s*["']([^"']+)["']/g)].map((m) => m[1]).filter((x) => x.startsWith('.') || x.startsWith('/'))
+                      for (const spec of specs.slice(0, 40)) { try { await walk(new URL(spec, u).href, depth - 1) } catch {} }
+                  }
+                  try { await walk(location.origin + '/_nexus/src/studio/app.js', 2) } catch (e) { bad.push('walk-err: ' + e.message) }
                   // And the raw status of app.js plus a /_studio call (STUDIO-14
                   // gates those live once auth is on).
                   let appStatus = null, studioStatus = null
@@ -325,7 +340,7 @@ try {
                       bodyChildren: document.body ? document.body.children.length : -1,
                       navEntries: (performance.getEntriesByType('navigation') || []).length,
                       lastError: window.__e2eError || null,
-                      appImport, appStatus, studioStatus,
+                      appImport, appStatus, studioStatus, badModules: bad.slice(0, 15), walkedCount: seen.size,
                       session
                   }
               })()` })
