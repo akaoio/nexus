@@ -304,6 +304,16 @@ try {
                   const login = document.querySelector('#nx-login')
                   let session = null
                   try { const r = await fetch('/api/v1/_session'); session = { status: r.status, body: await r.text() } } catch (e) { session = { error: String(e) } }
+                  // Re-run the exact module load and capture the REAL reason it
+                  // never mounted — a caught window error installed late can
+                  // miss a throw that already happened.
+                  let appImport = null
+                  try { await import('/_nexus/src/studio/app.js?probe=' + Date.now()); appImport = 'loaded' } catch (e) { appImport = 'THREW: ' + String(e && e.stack || e).slice(0, 300) }
+                  // And the raw status of app.js plus a /_studio call (STUDIO-14
+                  // gates those live once auth is on).
+                  let appStatus = null, studioStatus = null
+                  try { appStatus = (await fetch('/_nexus/src/studio/app.js')).status } catch (e) { appStatus = String(e) }
+                  try { studioStatus = (await fetch('/_studio/config')).status } catch (e) { studioStatus = String(e) }
                   return {
                       readyState: document.readyState,
                       hasApp: !!document.querySelector('main'),
@@ -315,6 +325,7 @@ try {
                       bodyChildren: document.body ? document.body.children.length : -1,
                       navEntries: (performance.getEntriesByType('navigation') || []).length,
                       lastError: window.__e2eError || null,
+                      appImport, appStatus, studioStatus,
                       session
                   }
               })()` })
