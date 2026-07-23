@@ -3,7 +3,7 @@
 Spec-first (conformance clauses written RED before code, N6). Every claim below
 is backed by a passing clause on real infrastructure — no stubs, no fakes.
 
-**Green: 773/823 node clauses, 0 red** (`node test.js`)
+**Green: 774/824 node clauses, 0 red** (`node test.js`)
 **Green: 50/50 browser clauses, 0 red** (`npm run test:browser`, real headless Chromium)
 **Green: 9/9 end-to-end clauses, 0 red** (`npm run test:e2e`, real browser driving a real `nexus dev`)
 
